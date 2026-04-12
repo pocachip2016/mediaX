@@ -32,7 +32,7 @@ There are no test commands configured yet.
 This is a **Turbo monorepo** with npm workspaces:
 
 ```
-apps/web/       — Next.js 15 application (App Router)
+apps/web/       — Next.js 16 application (App Router)
 packages/ui/    — Shared shadcn/ui component library
 packages/typescript-config/  — Shared tsconfig bases
 packages/eslint-config/      — Shared ESLint configs

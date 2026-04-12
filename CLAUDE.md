@@ -59,6 +59,8 @@ docker compose up
 | Elasticsearch | 9200 |
 
 ## 각 디렉토리 CLAUDE.md
+- [docs/CLAUDE.md](docs/CLAUDE.md)
+- [mediaX-CMS/CLAUDE.md](mediaX-CMS/CLAUDE.md)
 - [backend/CLAUDE.md](backend/CLAUDE.md)
 - [backend/api/CLAUDE.md](backend/api/CLAUDE.md)
 - [backend/api/programming/CLAUDE.md](backend/api/programming/CLAUDE.md)
