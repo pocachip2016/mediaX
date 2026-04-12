@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 24" fill="none">
+  <!-- KT 붉은 사각형 배지 -->
+  <rect width="26" height="24" rx="3" fill="#E60012"/>
+  <!-- K -->
+  <text x="3" y="17" font-family="Arial,sans-serif" font-weight="800" font-size="13" fill="white">K</text>
+  <!-- T -->
+  <text x="14" y="17" font-family="Arial,sans-serif" font-weight="800" font-size="13" fill="white">T</text>
+  <!-- alpha 텍스트 -->
+  <text x="30" y="16" font-family="Arial,sans-serif" font-weight="700" font-size="11" fill="#E60012">alpha</text>
+</svg>
