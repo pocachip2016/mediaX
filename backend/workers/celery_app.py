@@ -35,6 +35,14 @@ celery_app.conf.update(
             "task": "workers.tasks.metadata.reeval_quality_scores",
             "schedule": {"hour": 1, "minute": 0},
         },
+        "check-missing-episodes": {
+            "task": "workers.tasks.metadata.check_missing_episodes",
+            "schedule": {"hour": 4, "minute": 0},
+        },
+        "retry-failed-enrichments": {
+            "task": "workers.tasks.metadata.retry_failed_enrichments",
+            "schedule": 21600,  # 6시간
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},

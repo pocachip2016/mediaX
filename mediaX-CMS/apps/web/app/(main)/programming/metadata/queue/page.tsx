@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle, XCircle, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import Link from "next/link"
+import { CheckCircle, XCircle, RefreshCw, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react"
 import { metadataApi, type ContentOut, type ContentDetail } from "@/lib/api"
 
 const MOCK_QUEUE: ContentOut[] = [
@@ -18,7 +19,7 @@ const MOCK_DETAIL: Record<number, ContentDetail> = {
     metadata_record: {
       id: 2, content_id: 2,
       cp_synopsis: "456억 원의 상금을 건 생존 게임 두 번째 시즌.",
-      cp_genre: "드라마",
+      cp_genre: "드라마", cp_tags: ["서바이벌"],
       ai_synopsis: "2024년 공개된 넷플릭스 오리지널 시리즈 오징어 게임의 두 번째 시즌. 생존을 건 극한의 게임이 다시 시작되며, 전작의 유일한 생존자가 다시 게임에 뛰어드는 이야기를 담는다. 사회적 불평등과 생존 본능을 다룬 극적 서사.",
       ai_genre_primary: "스릴러", ai_genre_secondary: "드라마",
       ai_mood_tags: ["긴장감", "반전있음", "심야감성"],
@@ -112,9 +113,14 @@ export default function ReviewQueuePage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">검수 큐</h1>
-          <p className="text-sm text-muted-foreground mt-1">AI 처리 완료 — 담당자 리뷰 대기 ({total}건)</p>
+        <div className="flex items-center gap-3">
+          <Link href="/programming/metadata" className="p-1.5 rounded-lg hover:bg-accent">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold">검수 큐</h1>
+            <p className="text-sm text-muted-foreground mt-1">AI 처리 완료 — 담당자 리뷰 대기 ({total}건)</p>
+          </div>
         </div>
         <button onClick={fetchQueue} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> 새로고침
@@ -241,11 +247,11 @@ export default function ReviewQueuePage() {
                   <div className="space-y-2">
                     <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">점수 분석</div>
                     <div className="rounded-lg border border-border p-3 space-y-2">
-                      <ScoreBar label="시놉시스 품질" value={breakdown.synopsis_quality} max={30} />
-                      <ScoreBar label="장르 신뢰도" value={breakdown.genre_confidence} max={20} />
-                      <ScoreBar label="태그 커버리지" value={breakdown.tag_coverage} max={15} />
-                      <ScoreBar label="외부 메타 매핑" value={breakdown.external_meta} max={20} />
-                      <ScoreBar label="필드 충족률" value={breakdown.field_coverage} max={15} />
+                      <ScoreBar label="시놉시스 품질" value={breakdown["synopsis_quality"] ?? 0} max={30} />
+                      <ScoreBar label="장르 신뢰도" value={breakdown["genre_confidence"] ?? 0} max={20} />
+                      <ScoreBar label="태그 커버리지" value={breakdown["tag_coverage"] ?? 0} max={15} />
+                      <ScoreBar label="외부 메타 매핑" value={breakdown["external_meta"] ?? 0} max={20} />
+                      <ScoreBar label="필드 충족률" value={breakdown["field_coverage"] ?? 0} max={15} />
                     </div>
                   </div>
                 )}

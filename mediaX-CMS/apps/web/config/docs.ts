@@ -26,6 +26,26 @@ export const docsNav: NavSection[] = [
     base: "/programming",
     items: [
       {
+        title: "메타데이터",
+        href: "/programming/metadata",
+        items: [
+          { title: "대시보드", href: "/programming/metadata" },
+          { title: "검토 대기풀", href: "/programming/metadata/staging", label: "NEW" },
+          { title: "배치 업로드", href: "/programming/metadata/upload", label: "NEW" },
+          { title: "검수 큐", href: "/programming/metadata/queue" },
+          { title: "AI 메타 생성", href: "/programming/metadata/create" },
+          { title: "── 글자메타 ──", heading: true },
+          { title: "글자메타 관리", href: "/programming/metadata/text" },
+          { title: "글자메타 검수", href: "/programming/metadata/text/review", label: "NEW" },
+          { title: "── 이미지메타 ──", heading: true },
+          { title: "이미지 에셋", href: "/programming/metadata/image" },
+          { title: "이미지 업로드", href: "/programming/metadata/image/upload", label: "NEW" },
+          { title: "── 영상메타 ──", heading: true },
+          { title: "영상 파일 정보", href: "/programming/metadata/video" },
+          { title: "영상 QC", href: "/programming/metadata/video/qc", label: "NEW" },
+        ],
+      },
+      {
         title: "콘텐츠 관리",
         href: "/programming/contents",
         items: [],
@@ -130,6 +150,12 @@ export const docsNav: NavSection[] = [
     title: "모니터링 AX",
     base: "/monitoring",
     items: [
+      {
+        title: "파이프라인 모니터링",
+        href: "/monitoring/pipeline",
+        label: "NEW",
+        items: [],
+      },
       {
         title: "장애 현황",
         href: "/monitoring/incidents",

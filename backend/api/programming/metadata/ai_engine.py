@@ -1,27 +1,29 @@
 """
-1.1.2 AI 처리 엔진 — Ollama llama3.2:3b 연동
+1.1.2 AI 처리 엔진 — 멀티 프로바이더 LLM 연동
 
-엔진 역할:
-  - 장르/카테고리 분류 (엔진 A)
-  - 시놉시스 생성 (엔진 B)
-  - 감성·분위기 태깅 (엔진 D)
-  - 품질 스코어 산정 (엔진 E)
+지원 엔진 (AI_ENGINE 환경변수로 선택):
+  gemini  → Google Gemini 1.5 Flash (기본값)
+  groq    → llama-3.3-70b-versatile
+  ollama  → llama3.2:3b 로컬
 
-Ollama API: http://ollama:11434/api/generate
+폴백: 지정 엔진 실패 → 다음 엔진 자동 시도
+외부 API: KOBIS + TMDB 병렬 조회 (키 없으면 skip)
+품질 스코어: 0~100점 (90+ 자동승인, 70~89 검수큐)
 """
 
 import json
 import re
+import logging
 import httpx
 from sqlalchemy.orm import Session
 
 from shared.config import settings
 from api.programming.metadata.schemas import AIGenerateRequest, AIGenerateResponse
-from api.programming.metadata.models import ContentMetadata
+from api.programming.metadata.llm import get_provider_chain
 
+logger = logging.getLogger(__name__)
 
-OLLAMA_URL = getattr(settings, "OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = getattr(settings, "OLLAMA_MODEL", "llama3.2:3b")
+AI_ENGINE = getattr(settings, "AI_ENGINE", "gemini")
 
 # 장르 목록 (지니TV 표준 코드 기반)
 GENRES = [
@@ -39,34 +41,56 @@ MOOD_TAGS = [
 RATING_OPTIONS = ["전체관람가", "12세이상관람가", "15세이상관람가", "청소년관람불가"]
 
 
+# ── 폴백 체인 핵심 함수 ────────────────────────────────────
+
+async def _call_with_fallback(prompt: str, system: str = "") -> tuple[str, str]:
+    """
+    AI_ENGINE 설정 기준으로 프로바이더 체인 시도.
+    반환: (응답 텍스트, 실제 사용된 engine_name)
+    모든 엔진 실패 시 ValueError raise.
+    """
+    chain = get_provider_chain(AI_ENGINE)
+    last_exc: Exception | None = None
+
+    for ProviderClass in chain:
+        try:
+            provider = ProviderClass()
+            text = await provider.generate(prompt, system)
+            logger.info(f"[ai_engine] 엔진 사용: {provider.engine_name}")
+            return text, provider.engine_name
+        except Exception as exc:
+            logger.warning(
+                f"[ai_engine] {ProviderClass.__name__} 실패 → 다음 엔진으로 폴백: {exc}"
+            )
+            last_exc = exc
+
+    raise ValueError(f"모든 LLM 엔진 실패: {last_exc}")
+
+
 async def call_ollama(prompt: str, system: str = "") -> str:
-    """Ollama REST API 호출"""
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0.3, "num_predict": 800},
-    }
-    if system:
-        payload["system"] = system
+    """
+    하위호환용 — OllamaProvider 직접 호출.
+    workers/tasks/metadata.py 등 외부 코드에서 직접 import 시 사용.
+    """
+    from api.programming.metadata.llm.ollama import OllamaProvider
+    provider = OllamaProvider()
+    return await provider.generate(prompt, system)
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{OLLAMA_URL}/api/generate", json=payload)
-        resp.raise_for_status()
-        return resp.json().get("response", "")
 
+# ── JSON 파싱 유틸 ────────────────────────────────────────
 
 def _extract_json(text: str) -> dict:
     """LLM 응답에서 JSON 블록 추출"""
     match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if match:
         return json.loads(match.group(1))
-    # 코드 블록 없이 바로 JSON인 경우
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         return json.loads(match.group(0))
     raise ValueError("JSON을 파싱할 수 없습니다")
 
+
+# ── 품질 스코어 ───────────────────────────────────────────
 
 def _calculate_quality_score(
     title: str,
@@ -78,8 +102,6 @@ def _calculate_quality_score(
 ) -> tuple[float, dict]:
     """
     엔진 E — 품질 스코어 산정 (0~100점)
-
-    기준:
       - 시놉시스 길이/완성도  : 30점
       - 장르 분류 완성도       : 20점
       - 태그 수                : 15점
@@ -88,7 +110,6 @@ def _calculate_quality_score(
     """
     breakdown = {}
 
-    # 시놉시스 점수 (30점)
     syn_len = len(synopsis or "")
     if syn_len >= 200:
         syn_score = 30
@@ -100,16 +121,13 @@ def _calculate_quality_score(
         syn_score = 0
     breakdown["synopsis_quality"] = syn_score
 
-    # 장르 점수 (20점)
     genre_score = 20 if genre else 0
     breakdown["genre_confidence"] = genre_score
 
-    # 태그 점수 (15점)
     tag_count = len(tags or [])
     tag_score = min(15, tag_count * 3)
     breakdown["tag_coverage"] = tag_score
 
-    # 외부 메타 점수 (20점)
     ext_score = 0
     if kobis_match:
         ext_score += 10
@@ -117,7 +135,6 @@ def _calculate_quality_score(
         ext_score += 10
     breakdown["external_meta"] = ext_score
 
-    # 기본 필드 점수 (15점)
     field_score = 15 if title else 0
     breakdown["field_coverage"] = field_score
 
@@ -125,13 +142,15 @@ def _calculate_quality_score(
     return round(float(total), 1), breakdown
 
 
-async def generate_metadata_ollama(
+# ── 메타 생성 내부 함수 (엔진명 포함 반환) ─────────────────
+
+async def _generate_metadata_with_engine(
     req: AIGenerateRequest,
     db: Session,
-) -> AIGenerateResponse:
+) -> tuple[AIGenerateResponse, str]:
     """
-    실시간 메타 AI 생성 (화면 3)
-    제목 입력 → Ollama → 시놉시스/장르/태그 생성 + 외부 API 매핑
+    내부용 — (AIGenerateResponse, 사용된 engine_name) 반환.
+    process_content_ai에서 ContentAIResult 기록 시 사용.
     """
     system_prompt = (
         "당신은 한국 OTT 플랫폼 지니TV의 콘텐츠 메타데이터 전문가입니다. "
@@ -158,13 +177,16 @@ CP사: {req.cp_name or '미상'}
 
 mood_tags는 다음 중에서 3~5개 선택: {', '.join(MOOD_TAGS)}"""
 
-    # Ollama 호출
-    raw_response = await call_ollama(user_prompt, system_prompt)
+    try:
+        raw_response, used_engine = await _call_with_fallback(user_prompt, system_prompt)
+    except ValueError as e:
+        logger.error(f"[ai_engine] 모든 엔진 실패: {e}")
+        raw_response = ""
+        used_engine = "none"
 
     try:
         ai_data = _extract_json(raw_response)
     except (ValueError, json.JSONDecodeError):
-        # 파싱 실패 시 기본값 반환
         ai_data = {
             "synopsis": f"{req.title}의 시놉시스를 생성하지 못했습니다.",
             "genre_primary": "드라마",
@@ -179,10 +201,8 @@ mood_tags는 다음 중에서 3~5개 선택: {', '.join(MOOD_TAGS)}"""
     mood_tags = ai_data.get("mood_tags", [])
     rating = ai_data.get("rating_suggestion", "15세이상관람가")
 
-    # 외부 API 매핑 (비동기 병렬)
     kobis_match, tmdb_match = await _fetch_external_meta(req.title, req.production_year)
 
-    # 품질 스코어 산정
     quality_score, score_breakdown = _calculate_quality_score(
         req.title, synopsis, genre_primary, mood_tags, kobis_match, tmdb_match
     )
@@ -196,28 +216,51 @@ mood_tags는 다음 중에서 3~5개 선택: {', '.join(MOOD_TAGS)}"""
         quality_score=quality_score,
         kobis_match=kobis_match,
         tmdb_match=tmdb_match,
-    )
+    ), used_engine
 
 
-async def process_content_ai(content_id: int, db: Session) -> ContentMetadata:
+async def generate_metadata_ollama(
+    req: AIGenerateRequest,
+    db: Session,
+) -> AIGenerateResponse:
     """
-    Celery 태스크에서 호출 — 저장된 콘텐츠에 AI 처리 수행 후 DB 업데이트
-    품질 스코어 기준으로 status 자동 설정:
-      90+  → approved
+    실시간 메타 AI 생성 (화면 3 — /generate 엔드포인트).
+    하위호환 시그니처 유지: engine_name 버림.
+    """
+    result, _ = await _generate_metadata_with_engine(req, db)
+    return result
+
+
+# ── Celery 태스크용 AI 처리 ───────────────────────────────
+
+async def process_content_ai(content_id: int, db: Session):
+    """
+    Celery 태스크에서 호출 — 저장된 콘텐츠 AI 처리 후 DB 업데이트.
+    품질 스코어 기준 status 자동 설정:
+      90+   → approved
       70~89 → review
-      ~70  → review (AI 보강 제안)
+      <70   → review (AI 보강 제안)
+    ContentAIResult에 사용된 엔진 기록.
     """
     from datetime import datetime
-    from api.programming.metadata.models import Content, ContentStatus
+    from api.programming.metadata.models import (
+        Content, ContentMetadata, ContentStatus,
+        ContentAIResult, AITaskType,
+    )
 
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise ValueError(f"Content {content_id} not found")
 
+    # status → processing
+    content.status = ContentStatus.processing
+    db.commit()
+
     meta = content.metadata_record
     if not meta:
         meta = ContentMetadata(content_id=content_id)
         db.add(meta)
+        db.flush()
 
     req = AIGenerateRequest(
         title=content.title,
@@ -226,8 +269,9 @@ async def process_content_ai(content_id: int, db: Session) -> ContentMetadata:
         cp_synopsis=meta.cp_synopsis,
     )
 
-    result = await generate_metadata_ollama(req, db)
+    result, used_engine = await _generate_metadata_with_engine(req, db)
 
+    # ContentMetadata 업데이트
     meta.ai_synopsis = result.synopsis
     meta.ai_genre_primary = result.genre_primary
     meta.ai_genre_secondary = result.genre_secondary
@@ -250,10 +294,35 @@ async def process_content_ai(content_id: int, db: Session) -> ContentMetadata:
     else:
         content.status = ContentStatus.review
 
+    # 기존 is_final 레코드 해제
+    db.query(ContentAIResult).filter(
+        ContentAIResult.content_id == content_id,
+        ContentAIResult.is_final == True,  # noqa: E712
+    ).update({"is_final": False})
+
+    # 새 AI 결과 기록
+    db.add(ContentAIResult(
+        content_id=content_id,
+        engine=used_engine,
+        task_type=AITaskType.synopsis,
+        result_json={
+            "synopsis": result.synopsis,
+            "genre_primary": result.genre_primary,
+            "genre_secondary": result.genre_secondary,
+            "mood_tags": result.mood_tags,
+            "rating_suggestion": result.rating_suggestion,
+        },
+        quality_score=result.quality_score,
+        is_final=True,
+        processed_at=datetime.utcnow(),
+    ))
+
     db.commit()
     db.refresh(meta)
     return meta
 
+
+# ── 외부 API 조회 ─────────────────────────────────────────
 
 async def _fetch_external_meta(
     title: str, year: int | None
@@ -272,7 +341,6 @@ async def _fetch_external_meta(
 
 
 async def _fetch_kobis(title: str, year: int | None) -> dict | None:
-    """영진위 KOBIS API 검색"""
     if not settings.KOBIS_API_KEY:
         return None
     params = {
@@ -297,7 +365,6 @@ async def _fetch_kobis(title: str, year: int | None) -> dict | None:
 
 
 async def _fetch_tmdb(title: str, year: int | None) -> dict | None:
-    """TMDB API 검색"""
     if not settings.TMDB_API_KEY:
         return None
     params = {

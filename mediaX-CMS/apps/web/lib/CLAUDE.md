@@ -17,11 +17,38 @@
 `metadataApi` 객체로 백엔드 통신:
 ```ts
 metadataApi.getDashboard()
-metadataApi.listContents({ status, cp_name, page, size })
+metadataApi.listContents({ status, cp_name, title, content_type, production_year, page, size })
+metadataApi.getContent(id)
 metadataApi.createContent({ title, content_type, cp_name, production_year })
 metadataApi.triggerProcess(id)
 metadataApi.getQueue({ page, size })
 metadataApi.reviewAction(id, { action, reviewer, ... })
 metadataApi.generate({ title, production_year, cp_name, cp_synopsis })
+metadataApi.getStaging({ content_type, page, size })
+metadataApi.bulkApprove({ content_ids, reviewer })
+metadataApi.bulkReject({ content_ids, reviewer })
+metadataApi.triggerEnrich(id)
+metadataApi.getHierarchy(id)          // 시리즈 계층 트리 (StagingItem 재귀)
+metadataApi.getPipelineStatus()
+metadataApi.uploadBatch(formData)
+metadataApi.getBatchJob(jobId)
+
+imageMetaApi.list({ completed, page, size })
+imageMetaApi.get(id)                  // ContentImageOut[] 포함
+textMetaApi.list / get / update / bulkComplete
+videoMetaApi.list / get / update / bulkComplete
+serviceReadinessApi.get()             // ServiceReadinessStats
 ```
+
+## 주요 타입
+- `ContentStatus` — `waiting | processing | staging | review | approved | rejected`
+- `ContentType` — `movie | series | season | episode`
+- `ContentOut` — 기본 콘텐츠 (country?: string | null 포함)
+- `ContentDetail` — ContentOut + metadata_record
+- `StagingItem` — `{ content, metadata, diff, external_sources, children }` 재귀 계층
+- `ImageMetaOut` — `images: ContentImageOut[]` + has_poster/thumbnail/stillcut/banner/logo
+- `PipelineStatus` — 상태별 카운트 + avg_quality_score + last_email_poll
+- `ServiceReadinessStats` — text/image/video/all_completed + total
+- `BatchJobOut` — 배치 작업 이력
+
 API 오류 시 페이지별 Mock 데이터로 자동 폴백.
