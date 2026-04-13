@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { Sparkles, Save, RotateCcw } from "lucide-react"
+import Link from "next/link"
+import { Sparkles, Save, RotateCcw, ArrowLeft } from "lucide-react"
 import { metadataApi, type AIGenerateResponse } from "@/lib/api"
 
 const MOOD_TAG_POOL = [
@@ -86,7 +87,7 @@ export default function MetadataCreatePage() {
 
   const handleReset = () => {
     setTitle(""); setYear(""); setCpName(""); setCpSynopsis("")
-    setResult(null); setError(""); setSelectedTags(""); setSaved(false)
+    setResult(null); setError(""); setSelectedTags([]); setSaved(false)
   }
 
   const score = result?.quality_score ?? 0
@@ -95,9 +96,14 @@ export default function MetadataCreatePage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">실시간 메타 생성</h1>
-          <p className="text-sm text-muted-foreground mt-1">제목 입력 → AI 자동완성 → 확정</p>
+        <div className="flex items-center gap-3">
+          <Link href="/programming/metadata" className="p-1.5 rounded-lg hover:bg-accent">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold">실시간 메타 생성</h1>
+            <p className="text-sm text-muted-foreground mt-1">제목 입력 → AI 자동완성 → 확정</p>
+          </div>
         </div>
         {result && (
           <button onClick={handleReset} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent">

@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.2:3b"
 
+    # Multi-provider LLM
+    AI_ENGINE: str = "gemini"      # gemini | groq | ollama
+    GOOGLE_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+
     # IMAP (CP 이메일 폴링)
     IMAP_HOST: str = ""
     IMAP_USER: str = ""

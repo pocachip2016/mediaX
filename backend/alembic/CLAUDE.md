@@ -31,6 +31,8 @@ python3 -c "from shared.database import Base, engine; import api.programming.met
 | 파일 | 내용 |
 |------|------|
 | `0001_init_metadata_module.py` | contents, content_metadata, cp_email_logs, external_meta_cache |
+| `0002_extend_content_base.py` | genre_codes, tag_codes, content_genres, content_tags, person_master, content_credits, content_images, external_meta_sources, content_ai_results + 기본 데이터 시딩 |
+| `0003_add_staging_and_batch_jobs.py` | ContentStatus ENUM에 `staging` 추가 (PostgreSQL) + content_batch_jobs 테이블 신규 |
 
 ## 새 모듈 추가 시
 `env.py` 상단 import 주석 해제:
