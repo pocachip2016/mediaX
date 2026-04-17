@@ -229,7 +229,7 @@ def _content_to_staging_item(content: Content) -> StagingItem:
             id=s.id,
             source_type=s.source_type.value if hasattr(s.source_type, "value") else s.source_type,
             external_id=s.external_id,
-            fetched_at=s.fetched_at,
+            matched_at=s.matched_at,
         )
         for s in (content.external_sources or [])
     ]
@@ -864,8 +864,9 @@ def update_video_meta(db: Session, content_id: int, data):
 
 
 def bulk_complete_video_meta(db: Session, content_ids: list[int]):
-    """다중 콘텐츠 영상메타 완료 처리"""
+    """다중 콘텐츠 영상메타 완료 처리. 해상도·코덱 미입력 시 건너뜀."""
     updated = 0
+    skipped = []
     for cid in content_ids:
         content = db.query(Content).options(joinedload(Content.metadata_record)).filter(
             Content.id == cid
@@ -873,13 +874,13 @@ def bulk_complete_video_meta(db: Session, content_ids: list[int]):
         if not content:
             continue
         meta = content.metadata_record
-        if not meta:
-            meta = ContentMetadata(content_id=cid)
-            db.add(meta)
+        if not meta or not (meta.video_resolution and meta.codec_video):
+            skipped.append(cid)
+            continue
         meta.video_meta_completed = True
         updated += 1
     db.commit()
-    return {"updated": updated}
+    return {"updated": updated, "skipped": skipped}
 
 
 # ── 서비스 준비 현황 ──────────────────────────────────────────────────────────
@@ -921,10 +922,248 @@ def get_service_readiness(db: Session):
         ContentMetadata.video_meta_completed.is_(True),
     ).count()
 
+    def _pct(n: int) -> float:
+        return round(n / total * 100, 1) if total else 0.0
+
     return ServiceReadinessStats(
         total=total,
         text_completed=text_completed,
         image_completed=image_completed,
         video_completed=video_completed,
         all_completed=all_completed,
+        text_rate=_pct(text_completed),
+        image_rate=_pct(image_completed),
+        video_rate=_pct(video_completed),
+        all_rate=_pct(all_completed),
     )
+
+
+# ── 이미지 추가 / 벌크 완료 ────────────────────────────────────────────────────
+
+def add_content_image(
+    db: Session,
+    content_id: int,
+    image_type: str,
+    url: str,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    source: str = "manual",
+) -> Optional[object]:
+    """ContentImage 레코드 추가 후 5종 완료 여부 자동 갱신"""
+    from api.programming.metadata.models import ContentImage, ImageType
+
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        return None
+
+    try:
+        img_type = ImageType(image_type)
+    except ValueError:
+        raise ValueError(f"유효하지 않은 이미지 타입: {image_type}")
+
+    img = ContentImage(
+        content_id=content_id,
+        image_type=img_type,
+        url=url,
+        width=width,
+        height=height,
+        source=source,
+    )
+    db.add(img)
+    db.commit()
+    update_image_completion(db, content_id)   # 5종 완료 자동 갱신
+    return get_image_meta(db, content_id)
+
+
+def bulk_complete_image_meta(db: Session, content_ids: list[int]) -> dict:
+    """다중 콘텐츠 이미지메타 완료 처리"""
+    updated = 0
+    for cid in content_ids:
+        content = db.query(Content).options(joinedload(Content.metadata_record)).filter(
+            Content.id == cid
+        ).first()
+        if not content:
+            continue
+        meta = content.metadata_record
+        if not meta:
+            meta = ContentMetadata(content_id=cid)
+            db.add(meta)
+        meta.image_meta_completed = True
+        updated += 1
+    db.commit()
+    return {"updated": updated}
+
+
+# ── 글자메타 AI 제안 ────────────────────────────────────────────────────────────
+
+def suggest_text_meta(db: Session, content_id: int):
+    """TMDB/KOBIS 외부 소스 → 글자메타 제안. 없으면 기존 AI 결과 반환."""
+    from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType
+    from api.programming.metadata.schemas import TextMetaSuggestion
+
+    content = db.query(Content).options(
+        joinedload(Content.metadata_record),
+        joinedload(Content.external_sources),
+    ).filter(Content.id == content_id).first()
+    if not content:
+        return None
+
+    # TMDB 우선
+    tmdb = next(
+        (s for s in (content.external_sources or []) if s.source_type == ExternalSourceType.tmdb),
+        None,
+    )
+    if tmdb and tmdb.raw_json:
+        raw = tmdb.raw_json
+        overview = raw.get("overview")
+        genres = [g.get("name") for g in raw.get("genres", []) if g.get("name")]
+        return TextMetaSuggestion(
+            source="tmdb",
+            synopsis=overview,
+            genre_primary=genres[0] if genres else None,
+            genre_secondary=genres[1] if len(genres) > 1 else None,
+            mood_tags=None,
+            rating_suggestion=None,
+        )
+
+    # KOBIS 차선
+    kobis = next(
+        (s for s in (content.external_sources or []) if s.source_type == ExternalSourceType.kobis),
+        None,
+    )
+    if kobis and kobis.raw_json:
+        raw = kobis.raw_json
+        movie_info = raw.get("movieInfo", raw)
+        return TextMetaSuggestion(
+            source="kobis",
+            synopsis=None,
+            genre_primary=movie_info.get("genreAlt") or movie_info.get("genre"),
+            genre_secondary=None,
+            mood_tags=None,
+            rating_suggestion=movie_info.get("watchGradeNm"),
+        )
+
+    # 기존 AI 결과 폴백
+    meta = content.metadata_record
+    if meta and (meta.ai_synopsis or meta.ai_genre_primary):
+        return TextMetaSuggestion(
+            source="ai",
+            synopsis=meta.ai_synopsis,
+            genre_primary=meta.ai_genre_primary,
+            genre_secondary=meta.ai_genre_secondary,
+            mood_tags=meta.ai_mood_tags,
+            rating_suggestion=meta.ai_rating_suggestion,
+        )
+
+    return None
+
+
+# ── 이미지메타 TMDB 제안 ─────────────────────────────────────────────────────────
+
+def suggest_image_meta(db: Session, content_id: int):
+    """TMDB 외부 소스에서 누락 이미지 타입별 URL 제안"""
+    from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType
+    from api.programming.metadata.schemas import ImageMetaSuggestions, ImageSuggestion
+
+    content = db.query(Content).options(
+        joinedload(Content.images),
+        joinedload(Content.external_sources),
+    ).filter(Content.id == content_id).first()
+    if not content:
+        return None
+
+    existing_types = {img.image_type.value for img in (content.images or [])}
+
+    tmdb = next(
+        (s for s in (content.external_sources or []) if s.source_type == ExternalSourceType.tmdb),
+        None,
+    )
+    if not tmdb or not tmdb.raw_json:
+        return ImageMetaSuggestions(content_id=content_id, suggestions=[])
+
+    raw = tmdb.raw_json
+    TMDB_W500 = "https://image.tmdb.org/t/p/w500"
+    TMDB_W1280 = "https://image.tmdb.org/t/p/w1280"
+
+    suggestions = []
+    if "poster" not in existing_types and raw.get("poster_path"):
+        suggestions.append(ImageSuggestion(
+            source="tmdb", image_type="poster",
+            url=f"{TMDB_W500}{raw['poster_path']}", width=500, height=750,
+        ))
+    backdrop = raw.get("backdrop_path")
+    if backdrop:
+        if "thumbnail" not in existing_types:
+            suggestions.append(ImageSuggestion(
+                source="tmdb", image_type="thumbnail",
+                url=f"{TMDB_W1280}{backdrop}", width=1280, height=720,
+            ))
+        if "banner" not in existing_types:
+            suggestions.append(ImageSuggestion(
+                source="tmdb", image_type="banner",
+                url=f"{TMDB_W1280}{backdrop}", width=2560, height=480,
+            ))
+
+    return ImageMetaSuggestions(content_id=content_id, suggestions=suggestions)
+
+
+# ── TMDB 동기화 결과 목록 ───────────────────────────────────────────────────────
+
+def list_tmdb_synced(
+    db: Session,
+    content_type: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    size: int = 20,
+):
+    """TMDB ExternalMetaSource가 있는 최상위 콘텐츠 목록"""
+    from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType
+    from api.programming.metadata.schemas import TmdbSyncedItem
+
+    TMDB_IMG = "https://image.tmdb.org/t/p/w300"
+
+    q = (
+        db.query(Content, ExternalMetaSource, ContentMetadata)
+        .join(
+            ExternalMetaSource,
+            (ExternalMetaSource.content_id == Content.id)
+            & (ExternalMetaSource.source_type == ExternalSourceType.tmdb),
+        )
+        .outerjoin(ContentMetadata, ContentMetadata.content_id == Content.id)
+        .filter(Content.parent_id.is_(None))
+    )
+
+    if content_type:
+        q = q.filter(Content.content_type == content_type)
+    if search:
+        q = q.filter(Content.title.ilike(f"%{search}%"))
+
+    total = q.count()
+    rows = (
+        q.order_by(ExternalMetaSource.matched_at.desc().nulls_last())
+        .offset((page - 1) * size)
+        .limit(size)
+        .all()
+    )
+
+    items = []
+    for content, ext, meta in rows:
+        poster_path = ext.raw_json.get("poster_path") if ext.raw_json else None
+        items.append(
+            TmdbSyncedItem(
+                content_id=content.id,
+                title=content.title,
+                original_title=content.original_title,
+                content_type=content.content_type.value,
+                status=content.status.value,
+                production_year=content.production_year,
+                cp_name=content.cp_name,
+                tmdb_id=ext.external_id or "",
+                poster_url=f"{TMDB_IMG}{poster_path}" if poster_path else None,
+                match_confidence=ext.match_confidence,
+                matched_at=ext.matched_at,
+                quality_score=meta.quality_score if meta else None,
+            )
+        )
+
+    return items, total

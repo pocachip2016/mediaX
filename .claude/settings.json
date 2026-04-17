@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/ktalpha/Work/mediaX/.claude/hooks/prompt_check.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/ktalpha/Work/mediaX/.claude/hooks/check_read.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/ktalpha/Work/mediaX/.claude/hooks/check_claudemd_size.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

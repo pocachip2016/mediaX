@@ -111,8 +111,11 @@ GET  /api/programming/metadata/video/{id}             # 영상메타 상세
 PUT  /api/programming/metadata/video/{id}             # 영상메타 수정
 POST /api/programming/metadata/video/bulk-complete    # 영상메타 일괄 완료
 GET  /api/programming/metadata/service-readiness      # 글자+이미지+영상 완료 통계
+GET  /api/programming/metadata/tmdb                   # TMDB 매핑 콘텐츠 목록 — 필터: content_type, search(ilike)
 ```
 
 ## 알려진 주의사항
 - `Content.children` 자기참조 관계: `remote_side="Content.id"` 필수
 - SQLite 개발 시 `connect_args={"check_same_thread": False}` 자동 적용 (`shared/database.py`)
+- `ExternalMetaSource`에는 `fetched_at` 없음 → `matched_at` 사용 (schemas, service, workers 모두 동일)
+- `PersonMaster` 인물명 필드는 `name_ko` / `name_en` — `name` 컬럼 없음

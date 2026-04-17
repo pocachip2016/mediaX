@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from shared.config import settings
 
 celery_app = Celery(
@@ -25,19 +26,19 @@ celery_app.conf.update(
         },
         "sync-kobis-daily": {
             "task": "workers.tasks.metadata.sync_kobis",
-            "schedule": {"hour": 3, "minute": 0},
+            "schedule": crontab(hour=3, minute=0),
         },
-        "sync-tmdb-weekly": {
+        "sync-tmdb-daily": {
             "task": "workers.tasks.metadata.sync_tmdb",
-            "schedule": {"day_of_week": "monday", "hour": 2, "minute": 0},
+            "schedule": crontab(hour=2, minute=0),
         },
         "reeval-quality-scores": {
             "task": "workers.tasks.metadata.reeval_quality_scores",
-            "schedule": {"hour": 1, "minute": 0},
+            "schedule": crontab(hour=1, minute=0),
         },
         "check-missing-episodes": {
             "task": "workers.tasks.metadata.check_missing_episodes",
-            "schedule": {"hour": 4, "minute": 0},
+            "schedule": crontab(hour=4, minute=0),
         },
         "retry-failed-enrichments": {
             "task": "workers.tasks.metadata.retry_failed_enrichments",

@@ -40,3 +40,9 @@ Thumbs.db
 
 # Vim swap files
 *.swp
+
+# Claude 생성 임시 파일
+**/research.md
+tmdb_migration.md
+run_all_beat_tasks.sh
+celerybeat-schedule
