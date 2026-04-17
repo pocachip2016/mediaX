@@ -1,0 +1,13 @@
+# Claude Code 탐색 제외 — 미구현 모듈 docs
+# 새 모듈 구현 시작 시 해당 줄 제거, 완료 후 재추가
+**/research.md
+docs/2_design/
+docs/3_ingest/
+docs/4_analytics/
+docs/5_marketing/
+docs/6_monitoring/
+docs/10_distribution/
+docs/8_architecture/
+backend/.venv/
+celerybeat-schedule
+**/node_modules/

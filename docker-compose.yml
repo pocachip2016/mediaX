@@ -62,9 +62,24 @@ services:
       - ./backend:/app
     env_file:
       - ./backend/.env
+    environment:
+      - PYTHONPATH=/app
     depends_on:
       - postgres
       - redis
+
+  beat:
+    build: ./backend
+    command: celery -A workers.celery_app beat --loglevel=info
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+      - worker
 
   frontend:
     build: ./mediaX-CMS/apps/web

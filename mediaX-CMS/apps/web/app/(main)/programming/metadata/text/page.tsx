@@ -6,7 +6,7 @@ import {
   ArrowLeft, ChevronDown, ChevronRight, CheckCircle, AlertCircle,
   RefreshCw, Film, Tv, Check, Sparkles,
 } from "lucide-react"
-import { textMetaApi, type TextMetaOut } from "@/lib/api"
+import { textMetaApi, type TextMetaOut, type TextMetaSuggestion } from "@/lib/api"
 
 // ── Mock 데이터 ───────────────────────────────────────────────
 const MOCK_ITEMS: TextMetaOut[] = [
@@ -81,6 +81,13 @@ interface EditPanelProps {
   onSaved: () => void
 }
 
+const SOURCE_LABEL: Record<string, string> = { tmdb: "TMDB", kobis: "KOBIS", ai: "AI" }
+const SOURCE_COLOR: Record<string, string> = {
+  tmdb: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
+  kobis: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
+  ai: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400",
+}
+
 function EditPanel({ item, onSaved }: EditPanelProps) {
   const [synopsis, setSynopsis] = useState(item.synopsis ?? "")
   const [genre, setGenre] = useState(item.genre_primary ?? "")
@@ -88,6 +95,40 @@ function EditPanel({ item, onSaved }: EditPanelProps) {
   const [rating, setRating] = useState(item.rating_suggestion ?? "")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  const [suggestion, setSuggestion] = useState<TextMetaSuggestion | null>(null)
+  const [loadingSuggest, setLoadingSuggest] = useState(false)
+  const [showSuggest, setShowSuggest] = useState(false)
+
+  const handleSuggest = async () => {
+    setLoadingSuggest(true)
+    setShowSuggest(true)
+    try {
+      const data = await textMetaApi.suggest(item.id)
+      setSuggestion(data)
+    } catch {
+      setSuggestion(null)
+    } finally {
+      setLoadingSuggest(false)
+    }
+  }
+
+  const applyField = (field: "synopsis" | "genre" | "tags" | "rating") => {
+    if (!suggestion) return
+    if (field === "synopsis" && suggestion.synopsis) setSynopsis(suggestion.synopsis)
+    if (field === "genre" && suggestion.genre_primary) setGenre(suggestion.genre_primary)
+    if (field === "tags" && suggestion.mood_tags) setTags(suggestion.mood_tags.join(", "))
+    if (field === "rating" && suggestion.rating_suggestion) setRating(suggestion.rating_suggestion)
+  }
+
+  const applyAll = () => {
+    if (!suggestion) return
+    if (suggestion.synopsis) setSynopsis(suggestion.synopsis)
+    if (suggestion.genre_primary) setGenre(suggestion.genre_primary)
+    if (suggestion.mood_tags) setTags(suggestion.mood_tags.join(", "))
+    if (suggestion.rating_suggestion) setRating(suggestion.rating_suggestion)
+    setShowSuggest(false)
+  }
 
   const handleSave = async (complete: boolean) => {
     setSaving(true)
@@ -112,14 +153,101 @@ function EditPanel({ item, onSaved }: EditPanelProps) {
   return (
     <div className="h-full flex flex-col">
       <div className="px-5 py-4 border-b border-border">
-        <div className="flex items-center gap-2">
-          <ContentTypeIcon type={item.content_type} />
-          <div>
-            <h3 className="font-bold">{item.title}</h3>
-            <p className="text-xs text-muted-foreground">{CONTENT_TYPE_LABEL[item.content_type]} · {item.cp_name ?? "-"} · {item.production_year ?? "-"}</p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <ContentTypeIcon type={item.content_type} />
+            <div className="min-w-0">
+              <h3 className="font-bold truncate">{item.title}</h3>
+              <p className="text-xs text-muted-foreground">{CONTENT_TYPE_LABEL[item.content_type]} · {item.cp_name ?? "-"} · {item.production_year ?? "-"}</p>
+            </div>
           </div>
+          <button
+            onClick={handleSuggest}
+            disabled={loadingSuggest}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 text-xs font-medium hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-50 transition-colors"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {loadingSuggest ? "조회 중..." : "AI 제안"}
+          </button>
         </div>
       </div>
+
+      {/* AI 제안 패널 */}
+      {showSuggest && (
+        <div className="mx-4 mt-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/60 dark:bg-violet-900/20 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-violet-500" />
+              <span className="text-sm font-medium text-violet-700 dark:text-violet-400">
+                {suggestion ? `${SOURCE_LABEL[suggestion.source] ?? suggestion.source} 제안` : "제안 없음"}
+              </span>
+              {suggestion && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SOURCE_COLOR[suggestion.source] ?? ""}`}>
+                  {SOURCE_LABEL[suggestion.source] ?? suggestion.source}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {suggestion && (
+                <button
+                  onClick={applyAll}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors font-medium"
+                >
+                  전체 반영
+                </button>
+              )}
+              <button onClick={() => setShowSuggest(false)} className="text-muted-foreground hover:text-foreground p-0.5">
+                <span className="text-xs">✕</span>
+              </button>
+            </div>
+          </div>
+
+          {!suggestion && !loadingSuggest && (
+            <p className="text-xs text-muted-foreground">TMDB/KOBIS 동기화 또는 AI 처리 후 제안이 가능합니다.</p>
+          )}
+
+          {suggestion && (
+            <div className="space-y-2 text-xs">
+              {suggestion.synopsis && (
+                <div className="flex gap-2">
+                  <div className="flex-1 text-muted-foreground line-clamp-2">{suggestion.synopsis}</div>
+                  <button onClick={() => applyField("synopsis")}
+                    className="shrink-0 px-2 py-1 rounded border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
+                    반영
+                  </button>
+                </div>
+              )}
+              {suggestion.genre_primary && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">장르: <strong className="text-foreground">{suggestion.genre_primary}</strong>{suggestion.genre_secondary && ` / ${suggestion.genre_secondary}`}</span>
+                  <button onClick={() => applyField("genre")}
+                    className="px-2 py-1 rounded border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
+                    반영
+                  </button>
+                </div>
+              )}
+              {suggestion.mood_tags && suggestion.mood_tags.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">태그: <strong className="text-foreground">{suggestion.mood_tags.join(", ")}</strong></span>
+                  <button onClick={() => applyField("tags")}
+                    className="px-2 py-1 rounded border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
+                    반영
+                  </button>
+                </div>
+              )}
+              {suggestion.rating_suggestion && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">등급: <strong className="text-foreground">{suggestion.rating_suggestion}</strong></span>
+                  <button onClick={() => applyField("rating")}
+                    className="px-2 py-1 rounded border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
+                    반영
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
         <div className="space-y-1.5">

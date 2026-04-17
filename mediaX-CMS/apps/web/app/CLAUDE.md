@@ -29,7 +29,7 @@ app/
 | `/programming/contents` | ✅ 구현 완료 | 다중 조건 검색(제목/CP/유형/상태/연도), 행 클릭 → 상세 이동 |
 | `/programming/contents/[id]` | ✅ 구현 완료 | 콘텐츠 상세 (영화/에피소드: 이미지+메타, 시리즈: 시즌 목록, 시즌: 에피소드 목록) |
 | `/programming/schedule` | 스텁 | |
-| `/programming/tmdb` | 스텁 | |
+| `/programming/tmdb` | ✅ 구현 완료 | TMDB 매핑 목록 — 포스터·제목·유형·CP사·TMDB ID·신뢰도·품질·상태, 제목 검색, 영화/시리즈 필터, 페이지네이션 |
 | `/design/assets`, `/design/generate`, `/design/batch` | 스텁 | |
 | `/ingest/receive`, `/ingest/encoding`, `/ingest/qc` | 스텁 | |
 | `/analytics/viewing`, `/analytics/revenue`, `/analytics/settlement` | 스텁 | |

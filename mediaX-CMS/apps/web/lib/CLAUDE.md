@@ -16,6 +16,7 @@
 ## api.ts
 `metadataApi` 객체로 백엔드 통신:
 ```ts
+tmdbApi.list({ content_type?, search?, page?, size? })  // TMDB 매핑 콘텐츠 목록
 metadataApi.getDashboard()
 metadataApi.listContents({ status, cp_name, title, content_type, production_year, page, size })
 metadataApi.getContent(id)
@@ -50,5 +51,7 @@ serviceReadinessApi.get()             // ServiceReadinessStats
 - `PipelineStatus` — 상태별 카운트 + avg_quality_score + last_email_poll
 - `ServiceReadinessStats` — text/image/video/all_completed + total
 - `BatchJobOut` — 배치 작업 이력
+- `TmdbSyncedItem` — content_id/title/tmdb_id/poster_url/match_confidence/matched_at/quality_score
+- `PaginatedTmdbItems` — items + total + page + size
 
 API 오류 시 페이지별 Mock 데이터로 자동 폴백.

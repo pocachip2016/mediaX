@@ -259,10 +259,65 @@ def sync_kobis():
 
 @celery_app.task(name="workers.tasks.metadata.sync_tmdb")
 def sync_tmdb():
-    """TMDB 주간 동기화 (매주 월 02:00)"""
-    logger.info("[tmdb] TMDB 동기화 시작")
-    # TODO: 신규 콘텐츠·에피소드 추가분 조회
-    return {"status": "ok"}
+    """TMDB 주간 동기화 (매일 02:00) — tmdb_id 미매핑 콘텐츠 일괄 보강"""
+    api_key = getattr(settings, "TMDB_API_KEY", "")
+    if not api_key:
+        logger.warning("[tmdb] TMDB_API_KEY 없음. 스킵.")
+        return {"skipped": True}
+
+    db = SessionLocal()
+    try:
+        stats = asyncio.run(_async_sync_tmdb(db, api_key))
+        logger.info(f"[tmdb] 동기화 완료: {stats}")
+        return stats
+    except Exception as exc:
+        logger.error(f"[tmdb] 동기화 실패: {exc}")
+        return {"error": str(exc)}
+    finally:
+        db.close()
+
+
+async def _async_sync_tmdb(db, api_key: str) -> dict:
+    """TMDB 미매핑 콘텐츠 일괄 보강 — 비동기"""
+    from api.programming.metadata.models import (
+        Content, ContentMetadata, ContentType, ContentStatus,
+    )
+
+    BATCH_LIMIT = 50
+
+    unmapped = (
+        db.query(Content)
+        .join(Content.metadata_record)
+        .filter(
+            ContentMetadata.tmdb_id.is_(None),
+            Content.content_type.in_([ContentType.movie, ContentType.series]),
+            Content.status != ContentStatus.waiting,
+        )
+        .limit(BATCH_LIMIT)
+        .all()
+    )
+
+    updated = skipped = failed = 0
+    for content in unmapped:
+        try:
+            result = await _tmdb_search_and_save(content, db, api_key)
+            if result and result.get("id"):
+                meta = content.metadata_record
+                if meta:
+                    meta.tmdb_id = result["id"]
+                    meta.tmdb_data = result
+                db.commit()
+                updated += 1
+                logger.info(f"[tmdb] content_id={content.id} '{content.title}' 매핑 완료 (tmdb_id={result['id']})")
+            else:
+                skipped += 1
+                logger.debug(f"[tmdb] content_id={content.id} '{content.title}' TMDB 검색 결과 없음")
+        except Exception as exc:
+            logger.warning(f"[tmdb] content_id={content.id} 처리 실패: {exc}")
+            db.rollback()
+            failed += 1
+
+    return {"total": len(unmapped), "updated": updated, "skipped": skipped, "failed": failed}
 
 
 @celery_app.task(name="workers.tasks.metadata.reeval_quality_scores")
@@ -434,7 +489,7 @@ async def _tmdb_search_and_save(content, db, api_key: str) -> dict | None:
                     source_type=ExternalSourceType.tmdb,
                     external_id=str(tmdb_id),
                     raw_json=detail,
-                    fetched_at=datetime.utcnow(),
+                    matched_at=datetime.utcnow(),
                 ))
 
             # 포스터 이미지 저장
@@ -496,16 +551,12 @@ def _save_credits(content_id: int, credits: dict, db):
         ) if tmdb_person_id else None
 
         if not person:
-            person = db.query(PersonMaster).filter(PersonMaster.name == name).first()
+            person = db.query(PersonMaster).filter(PersonMaster.name_ko == name).first()
 
         if not person:
             person = PersonMaster(
-                name=name,
+                name_ko=name,
                 tmdb_person_id=tmdb_person_id,
-                profile_image_url=(
-                    f"https://image.tmdb.org/t/p/w185{person_data['profile_path']}"
-                    if person_data.get("profile_path") else None
-                ),
             )
             db.add(person)
             db.flush()
@@ -655,7 +706,7 @@ async def _kobis_search_and_save(content, db, api_key: str) -> dict | None:
                     source_type=ExternalSourceType.kobis,
                     external_id=movie_cd,
                     raw_json=movie,
-                    fetched_at=datetime.utcnow(),
+                    matched_at=datetime.utcnow(),
                 ))
             db.flush()
             return movie

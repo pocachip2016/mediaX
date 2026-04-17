@@ -142,7 +142,7 @@ class ExternalSourceOut(BaseModel):
     id: int
     source_type: str
     external_id: Optional[str]
-    fetched_at: Optional[datetime]
+    matched_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
 
@@ -357,6 +357,10 @@ class VideoBulkCompleteRequest(BaseModel):
     content_ids: list[int]
 
 
+class ImageBulkCompleteRequest(BaseModel):
+    content_ids: list[int]
+
+
 class ServiceReadinessStats(BaseModel):
     """서비스 준비 현황 통계"""
     total: int
@@ -364,6 +368,60 @@ class ServiceReadinessStats(BaseModel):
     image_completed: int
     video_completed: int
     all_completed: int     # 세 가지 모두 완료 = 서비스 준비 완료
+    # 비율 (소수점 1자리, 0~100)
+    text_rate: float = 0.0
+    image_rate: float = 0.0
+    video_rate: float = 0.0
+    all_rate: float = 0.0
+
+
+class TextMetaSuggestion(BaseModel):
+    """글자메타 AI 제안 — TMDB/KOBIS/LLM 소스"""
+    source: str              # "tmdb" | "kobis" | "ai"
+    synopsis: Optional[str] = None
+    genre_primary: Optional[str] = None
+    genre_secondary: Optional[str] = None
+    mood_tags: Optional[list[str]] = None
+    rating_suggestion: Optional[str] = None
+
+
+class ImageSuggestion(BaseModel):
+    """이미지 단건 제안"""
+    source: str              # "tmdb"
+    image_type: str          # poster/thumbnail/stillcut/banner/logo
+    url: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+
+class ImageMetaSuggestions(BaseModel):
+    """이미지메타 TMDB 제안 목록"""
+    content_id: int
+    suggestions: list[ImageSuggestion] = []
+
+
+# ── TMDB 동기화 결과 ──────────────────────────────────────
+
+class TmdbSyncedItem(BaseModel):
+    content_id: int
+    title: str
+    original_title: Optional[str]
+    content_type: str
+    status: str
+    production_year: Optional[int]
+    cp_name: Optional[str]
+    tmdb_id: str
+    poster_url: Optional[str]
+    match_confidence: Optional[float]
+    matched_at: Optional[datetime]
+    quality_score: Optional[float]
+
+
+class PaginatedTmdbItems(BaseModel):
+    items: list[TmdbSyncedItem]
+    total: int
+    page: int
+    size: int
 
 
 TextMetaOut.model_rebuild()

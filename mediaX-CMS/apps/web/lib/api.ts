@@ -330,6 +330,32 @@ export interface ServiceReadinessStats {
   image_completed: number
   video_completed: number
   all_completed: number
+  text_rate: number
+  image_rate: number
+  video_rate: number
+  all_rate: number
+}
+
+export interface TextMetaSuggestion {
+  source: "tmdb" | "kobis" | "ai"
+  synopsis: string | null
+  genre_primary: string | null
+  genre_secondary: string | null
+  mood_tags: string[] | null
+  rating_suggestion: string | null
+}
+
+export interface ImageSuggestion {
+  source: string
+  image_type: string
+  url: string
+  width: number | null
+  height: number | null
+}
+
+export interface ImageMetaSuggestions {
+  content_id: number
+  suggestions: ImageSuggestion[]
 }
 
 interface PaginatedTextMeta { items: TextMetaOut[]; total: number; page: number; size: number }
@@ -362,6 +388,9 @@ export const textMetaApi = {
       method: "POST",
       body: JSON.stringify({ content_ids }),
     }),
+
+  suggest: (id: number) =>
+    request<TextMetaSuggestion>(`/api/programming/metadata/text/${id}/suggest`),
 }
 
 // ── imageMetaApi ──────────────────────────────────────────────
@@ -377,6 +406,35 @@ export const imageMetaApi = {
 
   get: (id: number) =>
     request<ImageMetaOut>(`/api/programming/metadata/image/${id}`),
+
+  bulkComplete: (content_ids: number[]) =>
+    request<{ updated: number }>("/api/programming/metadata/image/bulk-complete", {
+      method: "POST",
+      body: JSON.stringify({ content_ids }),
+    }),
+
+  suggest: (id: number) =>
+    request<ImageMetaSuggestions>(`/api/programming/metadata/image/${id}/suggest`),
+
+  uploadUrl: (
+    contentId: number,
+    data: { image_type: string; url: string; width?: number; height?: number; source?: string }
+  ) => {
+    const form = new FormData()
+    form.append("image_type", data.image_type)
+    form.append("url", data.url)
+    if (data.width != null) form.append("width", String(data.width))
+    if (data.height != null) form.append("height", String(data.height))
+    form.append("source", data.source ?? "manual")
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+    return fetch(`${BASE_URL}/api/programming/metadata/image/${contentId}/upload`, {
+      method: "POST",
+      body: form,
+    }).then(async (res) => {
+      if (!res.ok) throw new Error(`image upload → ${res.status}: ${await res.text()}`)
+      return res.json() as Promise<ImageMetaOut>
+    })
+  },
 }
 
 // ── videoMetaApi ──────────────────────────────────────────────
@@ -414,4 +472,39 @@ export const videoMetaApi = {
 
 export const serviceReadinessApi = {
   get: () => request<ServiceReadinessStats>("/api/programming/metadata/service-readiness"),
+}
+
+// ── tmdbApi ──────────────────────────────────────────────────
+
+export interface TmdbSyncedItem {
+  content_id: number
+  title: string
+  original_title: string | null
+  content_type: string
+  status: ContentStatus
+  production_year: number | null
+  cp_name: string | null
+  tmdb_id: string
+  poster_url: string | null
+  match_confidence: number | null
+  matched_at: string | null
+  quality_score: number | null
+}
+
+export interface PaginatedTmdbItems {
+  items: TmdbSyncedItem[]
+  total: number
+  page: number
+  size: number
+}
+
+export const tmdbApi = {
+  list: (params?: { content_type?: string; search?: string; page?: number; size?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.content_type) q.set("content_type", params.content_type)
+    if (params?.search) q.set("search", params.search)
+    if (params?.page) q.set("page", String(params.page))
+    if (params?.size) q.set("size", String(params.size))
+    return request<PaginatedTmdbItems>(`/api/programming/metadata/tmdb?${q}`)
+  },
 }

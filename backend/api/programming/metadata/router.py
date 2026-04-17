@@ -52,10 +52,11 @@ from api.programming.metadata.schemas import (
     DashboardStats, CpEmailLogOut,
     PaginatedStagingItems, StagingItem, BulkActionRequest, PipelineStatus,
     BatchJobOut,
-    TextMetaOut, TextMetaUpdate, TextMetaBulkCompleteRequest,
-    ImageMetaOut,
+    TextMetaOut, TextMetaUpdate, TextMetaBulkCompleteRequest, TextMetaSuggestion,
+    ImageMetaOut, ImageBulkCompleteRequest, ImageMetaSuggestions,
     VideoMetaOut, VideoMetaUpdate, VideoBulkCompleteRequest,
     ServiceReadinessStats,
+    PaginatedTmdbItems,
 )
 from api.programming.metadata.models import CpEmailLog
 
@@ -355,6 +356,17 @@ def update_text_meta(content_id: int, data: TextMetaUpdate, db: Session = Depend
     return result
 
 
+# ── 글자메타 AI 제안 ──────────────────────────────────────────────────────────
+
+@router.get("/text/{content_id}/suggest", response_model=TextMetaSuggestion, summary="글자메타 AI 제안")
+def suggest_text_meta(content_id: int, db: Session = Depends(get_db)):
+    """TMDB/KOBIS 외부 소스 기반 글자메타 제안. 없으면 기존 AI 결과 반환."""
+    result = service.suggest_text_meta(db, content_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="제안 데이터가 없습니다. TMDB/KOBIS 동기화 또는 AI 처리를 먼저 실행하세요.")
+    return result
+
+
 # ── 이미지메타 엔드포인트 ─────────────────────────────────────────────────────
 
 @router.get("/image", summary="이미지메타 목록")
@@ -365,6 +377,40 @@ def list_image_meta(
     db: Session = Depends(get_db),
 ):
     return service.get_image_meta_list(db, completed=completed, page=page, size=size)
+
+
+@router.post("/image/bulk-complete", summary="이미지메타 일괄 완료 처리")
+def bulk_complete_image_meta(req: ImageBulkCompleteRequest, db: Session = Depends(get_db)):
+    return service.bulk_complete_image_meta(db, req.content_ids)
+
+
+@router.get("/image/{content_id}/suggest", response_model=ImageMetaSuggestions, summary="TMDB 이미지 제안")
+def suggest_image_meta(content_id: int, db: Session = Depends(get_db)):
+    """TMDB 외부 소스에서 누락 이미지 타입별 URL 제안"""
+    result = service.suggest_image_meta(db, content_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="콘텐츠를 찾을 수 없습니다")
+    return result
+
+
+@router.post("/image/{content_id}/upload", response_model=ImageMetaOut, status_code=201, summary="이미지 URL 등록")
+def upload_image(
+    content_id: int,
+    image_type: str = Form(..., description="poster|thumbnail|stillcut|banner|logo"),
+    url: str = Form(..., description="이미지 URL"),
+    width: Optional[int] = Form(None),
+    height: Optional[int] = Form(None),
+    source: str = Form("manual", description="cp|tmdb|manual"),
+    db: Session = Depends(get_db),
+):
+    """이미지 URL을 ContentImage로 등록. 5종 완료 시 image_meta_completed 자동 갱신."""
+    try:
+        result = service.add_content_image(db, content_id, image_type, url, width, height, source)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="콘텐츠를 찾을 수 없습니다")
+    return result
 
 
 @router.get("/image/{content_id}", response_model=ImageMetaOut, summary="특정 콘텐츠 이미지 목록")
@@ -413,6 +459,20 @@ def update_video_meta(content_id: int, data: VideoMetaUpdate, db: Session = Depe
 @router.get("/service-readiness", response_model=ServiceReadinessStats, summary="서비스 준비 현황 통계")
 def get_service_readiness(db: Session = Depends(get_db)):
     return service.get_service_readiness(db)
+
+
+# ── TMDB 동기화 결과 ──────────────────────────────────────────────────────────
+
+@router.get("/tmdb", response_model=PaginatedTmdbItems, summary="TMDB 매핑 콘텐츠 목록")
+def list_tmdb_synced(
+    content_type: Optional[str] = Query(None, description="movie | series"),
+    search: Optional[str] = Query(None, description="제목 검색"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_tmdb_synced(db, content_type=content_type, search=search, page=page, size=size)
+    return PaginatedTmdbItems(items=items, total=total, page=page, size=size)
 
 
 def _safe_int(val) -> Optional[int]:
