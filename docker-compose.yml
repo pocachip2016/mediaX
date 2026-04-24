@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: media_ax
       POSTGRES_USER: media_ax
@@ -12,11 +13,13 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
 
   elasticsearch:
     image: elasticsearch:8.14.0
+    restart: unless-stopped
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
@@ -28,6 +31,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    restart: unless-stopped
     ports:
       - "11434:11434"
     volumes:
@@ -43,6 +47,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./backend:/app
@@ -57,6 +62,7 @@ services:
 
   worker:
     build: ./backend
+    restart: unless-stopped
     command: celery -A workers.celery_app worker --loglevel=info -Q design.high,design.normal,design.brand_check,design.cdn,ingest,analytics,metadata
     volumes:
       - ./backend:/app
@@ -70,6 +76,7 @@ services:
 
   beat:
     build: ./backend
+    restart: unless-stopped
     command: celery -A workers.celery_app beat --loglevel=info
     volumes:
       - ./backend:/app
@@ -83,13 +90,14 @@ services:
 
   frontend:
     build: ./mediaX-CMS/apps/web
+    restart: unless-stopped
     command: npm run dev
     volumes:
       - ./mediaX-CMS:/app
       - /app/node_modules
       - /app/apps/web/.next
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://backend:8000
     depends_on:
