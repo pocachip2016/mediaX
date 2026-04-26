@@ -71,6 +71,7 @@ docker compose up
 
 ### 세션 진입
 - plans/{모듈}.md 존재 시 반드시 먼저 읽고 시작 (docs/ 전체 탐색 금지)
+- dev task plan: `plans/dev-<slug>/` 형식 사용 (챕터 콘텐츠 `plans/01-*/`~`plans/07-*/` 와 네임스페이스 분리)
 - 선언한 세션 범위 외 파일 수정 금지
 - Explore 에이전트 3회 이상 호출 후에는 /compact 제안
 
