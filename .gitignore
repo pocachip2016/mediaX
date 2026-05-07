@@ -16,6 +16,8 @@ dist/
 # Env
 .env
 .env.local
+.env.sqlite
+.env.celery
 backend/.env
 frontend/.env.local
 

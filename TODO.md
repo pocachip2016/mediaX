@@ -15,6 +15,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-tmdb-cache — TMDB 로컬 캐시 DB + 백필 워커 + Daily Beat + 모니터링 UI (2026-05-07)
+- [x] systemd 자동 구동 — mediaX/Dam/TabGet 8개 서비스, 재시작 시 자동 기동 (2026-05-07)
 - [x] 1.1 메타데이터 AI 기반 — 백엔드/프론트 완료
 - [x] 1.1 파이프라인 자동화 — staging 상태 + Beat 6개 + 3개 화면
 - [x] 1.1 TMDB 동기화 — 일일 Beat + 탐색 페이지
