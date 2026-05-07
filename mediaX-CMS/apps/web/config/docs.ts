@@ -60,6 +60,12 @@ export const docsNav: NavSection[] = [
         href: "/programming/tmdb",
         items: [],
       },
+      {
+        title: "TMDB 캐시 모니터링",
+        href: "/programming/tmdb-sync",
+        label: "NEW",
+        items: [],
+      },
     ],
   },
   {

@@ -11,6 +11,7 @@ celery_app = Celery(
         "workers.tasks.ingest",       # 인코딩·QC·DRM·CDN
         "workers.tasks.analytics",    # 리포트·정산 배치
         "workers.tasks.metadata",     # 메타 AI 분류·외부 메타 수집
+        "workers.tasks.tmdb_cache",   # TMDB 로컬 캐시 백필·일일 증분
     ],
 )
 
@@ -43,6 +44,14 @@ celery_app.conf.update(
         "retry-failed-enrichments": {
             "task": "workers.tasks.metadata.retry_failed_enrichments",
             "schedule": 21600,  # 6시간
+        },
+        "tmdb-daily-changes": {
+            "task": "workers.tasks.tmdb_cache.daily_changes",
+            "schedule": crontab(hour=3, minute=30),  # 매일 03:30 KST
+        },
+        "tmdb-daily-new-releases": {
+            "task": "workers.tasks.tmdb_cache.daily_new_releases",
+            "schedule": crontab(hour=3, minute=45),  # 매일 03:45 KST
         },
     },
     task_routes={

@@ -508,3 +508,84 @@ export const tmdbApi = {
     return request<PaginatedTmdbItems>(`/api/programming/metadata/tmdb?${q}`)
   },
 }
+
+// ── tmdbCacheApi ─────────────────────────────────────────
+
+export interface TmdbCacheDailyPoint {
+  date: string
+  movies: number
+  tv: number
+  errors: number
+}
+
+export interface TmdbCacheStats {
+  total_movies: number
+  total_tv: number
+  total_persons: number
+  last_24h_movies_added: number
+  last_24h_tv_added: number
+  last_24h_errors: number
+  last_7d_daily: TmdbCacheDailyPoint[]
+  oldest_movie_year: number | null
+  newest_movie_year: number | null
+  last_run_at: string | null
+  last_run_status: string | null
+}
+
+export interface TmdbSyncLogItem {
+  id: number
+  run_id: string
+  source: string
+  target_year: number | null
+  target_date: string | null
+  status: string
+  started_at: string
+  finished_at: string | null
+  pages_fetched: number
+  items_fetched: number
+  items_inserted: number
+  items_updated: number
+  items_unchanged: number
+  errors: number
+}
+
+export interface PaginatedSyncLog {
+  items: TmdbSyncLogItem[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface TmdbCacheRecentItem {
+  id: number
+  title: string
+  original_title: string | null
+  release_date: string | null
+  first_air_date: string | null
+  popularity: number | null
+  vote_average: number | null
+  poster_url: string | null
+  kind: "movie" | "tv"
+  fetched_at: string
+}
+
+export const tmdbCacheApi = {
+  getStats: () =>
+    request<TmdbCacheStats>("/api/programming/metadata/tmdb-cache/stats"),
+
+  getSyncLog: (params?: { source?: string; status?: string; page?: number; size?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.source) q.set("source", params.source)
+    if (params?.status) q.set("status", params.status)
+    if (params?.page) q.set("page", String(params.page))
+    if (params?.size) q.set("size", String(params.size))
+    return request<PaginatedSyncLog>(`/api/programming/metadata/tmdb-cache/sync-log?${q}`)
+  },
+
+  getRecent: (params?: { kind?: string; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.kind) q.set("kind", params.kind)
+    if (params?.limit) q.set("limit", String(params.limit))
+    return request<TmdbCacheRecentItem[]>(`/api/programming/metadata/tmdb-cache/recent?${q}`)
+  },
+}

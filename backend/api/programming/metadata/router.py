@@ -57,6 +57,7 @@ from api.programming.metadata.schemas import (
     VideoMetaOut, VideoMetaUpdate, VideoBulkCompleteRequest,
     ServiceReadinessStats,
     PaginatedTmdbItems,
+    TmdbCacheStats, TmdbSyncLogItem, PaginatedSyncLog, TmdbCacheRecentItem,
 )
 from api.programming.metadata.models import CpEmailLog
 
@@ -490,3 +491,31 @@ def _normalize_content_type(val: str) -> str:
         "에피소드": "episode", "episode": "episode",
     }
     return mapping.get(val.strip(), "movie")
+
+
+# ── TMDB 캐시 모니터링 ────────────────────────────────────────────────────────
+
+@router.get("/tmdb-cache/stats", response_model=TmdbCacheStats, summary="TMDB 캐시 통계")
+def get_tmdb_cache_stats(db: Session = Depends(get_db)):
+    return service.get_tmdb_cache_stats(db)
+
+
+@router.get("/tmdb-cache/sync-log", response_model=PaginatedSyncLog, summary="TMDB 동기화 로그")
+def list_tmdb_sync_log(
+    source: Optional[str] = Query(None, description="discover_movie | changes_movie | backfill_movie_year 등"),
+    status: Optional[str] = Query(None, description="running | completed | failed"),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_tmdb_sync_log(db, source=source, status=status, page=page, size=size)
+    return PaginatedSyncLog(items=items, total=total, page=page, size=size)
+
+
+@router.get("/tmdb-cache/recent", response_model=list[TmdbCacheRecentItem], summary="최근 fetch 캐시 항목")
+def list_tmdb_cache_recent(
+    kind: str = Query("both", description="movie | tv | both"),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return service.list_tmdb_cache_recent(db, kind=kind, limit=limit)

@@ -1167,3 +1167,111 @@ def list_tmdb_synced(
         )
 
     return items, total
+
+
+# ── TMDB 캐시 모니터링 ─────────────────────────────────────────────────────────
+
+def get_tmdb_cache_stats(db) -> dict:
+    """tmdb_movie_cache / tmdb_tv_cache / tmdb_sync_log 기반 통계."""
+    from datetime import datetime, timedelta
+    from api.programming.metadata.models import (
+        TmdbMovieCache, TmdbTvCache, TmdbPersonCache, TmdbSyncLog,
+    )
+    from sqlalchemy import func
+    from collections import defaultdict
+
+    now = datetime.utcnow()
+    cutoff_24h = now - timedelta(hours=24)
+    cutoff_7d = now - timedelta(days=7)
+
+    total_movies = db.query(TmdbMovieCache).count()
+    total_tv = db.query(TmdbTvCache).count()
+    total_persons = db.query(TmdbPersonCache).count()
+
+    last_24h_movies = db.query(TmdbMovieCache).filter(TmdbMovieCache.first_fetched_at >= cutoff_24h).count()
+    last_24h_tv = db.query(TmdbTvCache).filter(TmdbTvCache.first_fetched_at >= cutoff_24h).count()
+    last_24h_errors = (
+        db.query(func.coalesce(func.sum(TmdbSyncLog.errors), 0))
+        .filter(TmdbSyncLog.started_at >= cutoff_24h)
+        .scalar() or 0
+    )
+
+    recent_logs = (
+        db.query(TmdbSyncLog)
+        .filter(TmdbSyncLog.started_at >= cutoff_7d)
+        .all()
+    )
+
+    day_map: dict = defaultdict(lambda: {"movies": 0, "tv": 0, "errors": 0})
+    for log in recent_logs:
+        if log.started_at:
+            day_str = log.started_at.strftime("%Y-%m-%d")
+            is_movie = "movie" in str(log.source)
+            day_map[day_str]["movies" if is_movie else "tv"] += log.items_inserted or 0
+            day_map[day_str]["errors"] += log.errors or 0
+
+    last_7d = [
+        {"date": d, "movies": v["movies"], "tv": v["tv"], "errors": v["errors"]}
+        for d, v in sorted(day_map.items())
+    ]
+
+    oldest = db.query(func.min(TmdbMovieCache.release_date)).scalar()
+    newest = db.query(func.max(TmdbMovieCache.release_date)).scalar()
+
+    last_log = db.query(TmdbSyncLog).order_by(TmdbSyncLog.started_at.desc()).first()
+
+    return {
+        "total_movies": total_movies,
+        "total_tv": total_tv,
+        "total_persons": total_persons,
+        "last_24h_movies_added": last_24h_movies,
+        "last_24h_tv_added": last_24h_tv,
+        "last_24h_errors": int(last_24h_errors),
+        "last_7d_daily": last_7d,
+        "oldest_movie_year": oldest.year if oldest else None,
+        "newest_movie_year": newest.year if newest else None,
+        "last_run_at": last_log.started_at if last_log else None,
+        "last_run_status": last_log.status.value if last_log else None,
+    }
+
+
+def list_tmdb_sync_log(db, source: str | None, status: str | None, page: int, size: int):
+    from api.programming.metadata.models import TmdbSyncLog
+
+    q = db.query(TmdbSyncLog)
+    if source:
+        q = q.filter(TmdbSyncLog.source == source)
+    if status:
+        q = q.filter(TmdbSyncLog.status == status)
+
+    total = q.count()
+    items = q.order_by(TmdbSyncLog.started_at.desc()).offset((page - 1) * size).limit(size).all()
+    return items, total
+
+
+def list_tmdb_cache_recent(db, kind: str, limit: int) -> list:
+    from datetime import datetime
+    from api.programming.metadata.models import TmdbMovieCache, TmdbTvCache
+    from api.programming.metadata.tmdb_client import TmdbClient
+
+    results = []
+    if kind in ("movie", "both"):
+        for r in db.query(TmdbMovieCache).order_by(TmdbMovieCache.last_fetched_at.desc()).limit(limit).all():
+            results.append({
+                "id": r.id, "title": r.title, "original_title": r.original_title,
+                "release_date": r.release_date, "first_air_date": None,
+                "popularity": r.popularity, "vote_average": r.vote_average,
+                "poster_url": TmdbClient.poster_url(r.poster_path),
+                "kind": "movie", "fetched_at": r.last_fetched_at,
+            })
+    if kind in ("tv", "both"):
+        for r in db.query(TmdbTvCache).order_by(TmdbTvCache.last_fetched_at.desc()).limit(limit).all():
+            results.append({
+                "id": r.id, "title": r.name, "original_title": r.original_name,
+                "release_date": None, "first_air_date": r.first_air_date,
+                "popularity": r.popularity, "vote_average": r.vote_average,
+                "poster_url": TmdbClient.poster_url(r.poster_path),
+                "kind": "tv", "fetched_at": r.last_fetched_at,
+            })
+    results.sort(key=lambda x: x["fetched_at"] or datetime.min, reverse=True)
+    return results[:limit]

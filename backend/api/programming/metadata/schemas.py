@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
@@ -422,6 +422,69 @@ class PaginatedTmdbItems(BaseModel):
     total: int
     page: int
     size: int
+
+
+# ── TMDB 캐시 모니터링 ────────────────────────────────────
+
+class TmdbCacheDailyPoint(BaseModel):
+    date: str
+    movies: int
+    tv: int
+    errors: int
+
+
+class TmdbCacheStats(BaseModel):
+    total_movies: int
+    total_tv: int
+    total_persons: int
+    last_24h_movies_added: int
+    last_24h_tv_added: int
+    last_24h_errors: int
+    last_7d_daily: list[TmdbCacheDailyPoint]
+    oldest_movie_year: Optional[int]
+    newest_movie_year: Optional[int]
+    last_run_at: Optional[datetime]
+    last_run_status: Optional[str]
+
+
+class TmdbSyncLogItem(BaseModel):
+    id: int
+    run_id: str
+    source: str
+    target_year: Optional[int]
+    target_date: Optional[date]
+    status: str
+    started_at: datetime
+    finished_at: Optional[datetime]
+    pages_fetched: int
+    items_fetched: int
+    items_inserted: int
+    items_updated: int
+    items_unchanged: int
+    errors: int
+
+    class Config:
+        from_attributes = True
+
+
+class PaginatedSyncLog(BaseModel):
+    items: list[TmdbSyncLogItem]
+    total: int
+    page: int
+    size: int
+
+
+class TmdbCacheRecentItem(BaseModel):
+    id: int
+    title: str
+    original_title: Optional[str]
+    release_date: Optional[date]
+    first_air_date: Optional[date]
+    popularity: Optional[float]
+    vote_average: Optional[float]
+    poster_url: Optional[str]
+    kind: str   # "movie" | "tv"
+    fetched_at: datetime
 
 
 TextMetaOut.model_rebuild()

@@ -46,6 +46,16 @@ from api.programming.metadata.models.external import (
     AITaskType,
 )
 
+# TMDB 로컬 캐시
+from api.programming.metadata.models.tmdb_cache import (
+    TmdbMovieCache,
+    TmdbTvCache,
+    TmdbPersonCache,
+    TmdbSyncLog,
+    TmdbSyncSource,
+    TmdbSyncStatus,
+)
+
 __all__ = [
     # content
     "Content", "ContentMetadata", "CpEmailLog", "ContentBatchJob",
@@ -58,4 +68,7 @@ __all__ = [
     "ContentImage", "ImageType",
     # external
     "ExternalMetaSource", "ContentAIResult", "ExternalSourceType", "AITaskType",
+    # tmdb cache
+    "TmdbMovieCache", "TmdbTvCache", "TmdbPersonCache", "TmdbSyncLog",
+    "TmdbSyncSource", "TmdbSyncStatus",
 ]

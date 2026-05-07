@@ -1,0 +1,63 @@
+{
+  "project": "mediaX",
+  "phase": "dev-tmdb-cache",
+  "description": "TMDB 로컬 캐시 DB 구축 + 백필(옛·신규) + Daily 증분 + 모니터링 페이지",
+  "steps": [
+    {
+      "step": 0,
+      "name": "schema-and-strategy-design",
+      "status": "completed",
+      "summary": "현 TMDB 구현 인벤토리 + 갭 분석 + 4개 캐시 테이블 스키마 + 백필/Daily 전략 + 쿼터 계산 (findings.md 11섹션)",
+      "completed_at": "2026-05-06T19:10:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "alembic-migration-tmdb-cache",
+      "status": "completed",
+      "summary": "tmdb_movie_cache/tv_cache/person_cache/sync_log 모델 + 0005_tmdb_cache.py 마이그레이션 작성, SQLite insert·query 검증 완료",
+      "completed_at": "2026-05-06T19:25:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "tmdb-client-with-rate-limiter",
+      "status": "completed",
+      "summary": "tmdb_client.py — Semaphore(25) + 429 exponential backoff + API키 redact, pytest 6/6 pass",
+      "completed_at": "2026-05-06T19:40:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "backfill-worker-discover",
+      "status": "completed",
+      "summary": "tmdb_cache.py backfill_movies/tv — 연도 슬라이싱·upsert 멱등성·TmdbSyncLog 기록, dry_run으로 실API 검증(2024년 52976건)",
+      "completed_at": "2026-05-06T19:55:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "daily-incremental-worker-and-beat",
+      "status": "completed",
+      "summary": "daily_changes(changes API→detail upsert) + daily_new_releases(discover) + Beat 03:30/03:45 등록, 실API 검증 완료",
+      "completed_at": "2026-05-06T20:10:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "monitoring-api",
+      "status": "completed",
+      "summary": "GET /tmdb-cache/stats·sync-log·recent 3개 엔드포인트 + schemas/service 추가, SQLite end-to-end 검증 완료",
+      "completed_at": "2026-05-06T20:25:00+09:00"
+    },
+    {
+      "step": 6,
+      "name": "monitoring-ui-page",
+      "status": "completed",
+      "summary": "programming/tmdb-sync 모니터링 페이지 — 4개 KPI 카드, 7일 CSS 바 차트, 동기화 로그 테이블, 최근 수집 그리드, Mock 폴백 포함",
+      "completed_at": "2026-05-06T21:10:00+09:00"
+    },
+    {
+      "step": 7,
+      "name": "backfill-rehearsal-and-e2e-validation",
+      "status": "completed",
+      "summary": "dry_run API 확인(영화 52,982건/TV 14,705건) + 실 upsert(각 20건) + 모니터링 API 3개 200 OK, pytest 6/6 pass",
+      "completed_at": "2026-05-07T09:30:00+09:00"
+    }
+  ]
+}
