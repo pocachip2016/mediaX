@@ -14,6 +14,8 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Literal
 
+import httpx
+
 from workers.celery_app import celery_app
 from shared.database import SessionLocal
 from shared.config import settings
@@ -395,6 +397,13 @@ async def _fetch_changed_details(client, kind: Literal["movie", "tv"], changed_i
                 updated += 1
             else:
                 unchanged += 1
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                # TMDB changes API includes deleted items — 404 is expected, skip silently
+                logger.debug("[tmdb_cache] %s_id=%d not found (deleted) — skip", kind, tmdb_id)
+            else:
+                logger.warning("[tmdb_cache] detail fetch 실패 %s_id=%d: %s", kind, tmdb_id, exc)
+                errors += 1
         except Exception as exc:
             logger.warning("[tmdb_cache] detail fetch 실패 %s_id=%d: %s", kind, tmdb_id, exc)
             errors += 1
