@@ -114,6 +114,16 @@ GET  /api/programming/metadata/service-readiness      # 글자+이미지+영상 
 GET  /api/programming/metadata/tmdb                   # TMDB 매핑 콘텐츠 목록 — 필터: content_type, search(ilike)
 ```
 
+## Score Conventions
+
+| 점수 | 정의 | 범위 | 위치 |
+|------|------|------|------|
+| `quality_score` | 콘텐츠 메타 완성도 | 0~100 | `ContentMetadata.quality_score` |
+| `match_score` | candidate ↔ Content 동일성 | 0.0~1.0 | `MatchEdge.score` (`api.meta_core.scoring`) |
+
+두 점수는 다른 축 — 이름·변수명 혼용 금지.
+`score_breakdown` JSON 키: `synopsis_completeness`, `genre_classification`, `tag_count`, `external_meta`, `basic_fields_filled`.
+
 ## 알려진 주의사항
 - `Content.children` 자기참조 관계: `remote_side="Content.id"` 필수
 - SQLite 개발 시 `connect_args={"check_same_thread": False}` 자동 적용 (`shared/database.py`)

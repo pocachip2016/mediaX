@@ -1,6 +1,9 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.meta_core.router import router as meta_core_router
 from api.programming.router import router as programming_router
 from api.design.router import router as design_router
 from api.ingest.router import router as ingest_router
@@ -10,10 +13,18 @@ from api.monitoring.router import router as monitoring_router
 from api.common.router import router as common_router
 from api.distribution.router import router as distribution_router
 
+@asynccontextmanager
+async def lifespan(app):
+    from api.meta_core.public_api.changefeed import setup_changefeed_events
+    setup_changefeed_events()
+    yield
+
+
 app = FastAPI(
     title="미디어AX API",
     description="KT 지니TV VOD AI Transformation Platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -29,6 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(meta_core_router,   prefix="/api/meta-core",   tags=["Meta-Core (canonical)"])
 app.include_router(programming_router, prefix="/api/programming", tags=["편성 기획 AX"])
 app.include_router(design_router,      prefix="/api/design",      tags=["디자인 AX"])
 app.include_router(ingest_router,      prefix="/api/ingest",      tags=["인제스트 AX"])

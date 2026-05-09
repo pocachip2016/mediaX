@@ -226,7 +226,7 @@ async def _backfill_year(
     client, kind: Literal["movie", "tv"], year: int, db
 ) -> dict:
     """한 연도 백필 — 10k 한계 초과 시 상반기/하반기 재슬라이싱."""
-    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus
+    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus, ExternalSourceType
 
     source = TmdbSyncSource.backfill_movie_year if kind == "movie" else TmdbSyncSource.backfill_tv_year
 
@@ -247,6 +247,7 @@ async def _backfill_year(
     log = TmdbSyncLog(
         run_id=str(uuid.uuid4()),
         source=source,
+        external_source=ExternalSourceType.tmdb,
         target_year=year,
         status=TmdbSyncStatus.running,
     )
@@ -416,7 +417,7 @@ async def _fetch_changed_details(client, kind: Literal["movie", "tv"], changed_i
 
 async def _run_daily_changes(api_key: str, target_date: str, db) -> dict:
     """changes API → detail → upsert for movie + tv."""
-    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus
+    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus, ExternalSourceType
 
     totals = {"movie": {}, "tv": {}}
     async with TmdbClient(api_key=api_key) as client:
@@ -425,6 +426,7 @@ async def _run_daily_changes(api_key: str, target_date: str, db) -> dict:
             log = TmdbSyncLog(
                 run_id=str(uuid.uuid4()),
                 source=source,
+                external_source=ExternalSourceType.tmdb,
                 target_date=date.fromisoformat(target_date),
                 status=TmdbSyncStatus.running,
             )
@@ -509,7 +511,7 @@ def daily_new_releases(target_date: str | None = None) -> dict:
         yesterday = (datetime.now(ZoneInfo("Asia/Seoul")) - timedelta(days=1)).date()
         target_date = yesterday.isoformat()
 
-    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus
+    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus, ExternalSourceType
 
     db = SessionLocal()
     totals = {}
@@ -522,6 +524,7 @@ def daily_new_releases(target_date: str | None = None) -> dict:
                     log = TmdbSyncLog(
                         run_id=str(uuid.uuid4()),
                         source=source,
+                        external_source=ExternalSourceType.tmdb,
                         target_date=date.fromisoformat(target_date),
                         status=TmdbSyncStatus.running,
                     )

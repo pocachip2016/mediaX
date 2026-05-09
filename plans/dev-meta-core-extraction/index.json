@@ -1,0 +1,70 @@
+{
+  "project": "mediaX",
+  "phase": "dev-meta-core-extraction",
+  "description": "ContentMetadata 의 Layer1(canonical meta) / Layer2(KT 서비스) 혼재 정리. meta_core 모듈 신설, ExternalMetaSource 통합, external_sync_log 일반화, KOBIS sync 완성(Dam에서 이관), 레거시 컬럼 제거.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "inventory",
+      "status": "completed",
+      "summary": "14개 테이블 Layer 분류 완료. kobis_movie_cd/tmdb_id(ContentMetadata) → ExternalMetaSource 이관 대상 확정. meta_core 이동 대상: Content·Person·Credit·Taxonomy·Image·ExternalMetaSource·tmdb_*_cache. service_kt 유지: ContentMetadata 대부분·AI결과·배치·CP이메일.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "meta-core-module",
+      "status": "completed",
+      "summary": "backend/api/meta_core/ 신설 — models/__init__.py(canonical 모델 re-export), router.py(빈 /api/meta-core), main.py 등록, alembic/env.py import 추가. 기존 import 경로 무변경.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "external-source-merge",
+      "status": "completed",
+      "summary": "_upsert_external_source 헬퍼 + ai_engine.process_content_ai 듀얼라이트 추가(kobis/tmdb). backfill_external_meta_sources.py 작성(dry-run 검증 완료). 레거시 컬럼은 유지(step7에서 drop).",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "sync-log-generalize",
+      "status": "completed",
+      "summary": "tmdb_sync_log → external_sync_log rename + external_source 컬럼 추가(0006 마이그레이션). TmdbSyncLog 모델 __tablename__ 변경, workers 3곳 external_source=tmdb 듀얼라이트. SQLite dev DB 검증 완료.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "kobis-sync-completion",
+      "status": "completed",
+      "summary": "TmdbSyncSource에 kobis_daily/kobis_backfill 추가(0007 마이그레이션). sync_kobis 재작성 — ExternalMetaSource upsert + external_sync_log 기록 + O(N) DB-레벨 제목 매칭 + 듀얼라이트 유지.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "external-fuzzy-match",
+      "status": "completed",
+      "summary": "WebSearchCache 모델+0008 마이그레이션 추가. _cached_web_search 헬퍼(Brave/SerpAPI, 키 없으면 graceful skip, 7일 TTL). sync_kobis에 difflib fuzzy fallback(ratio>=0.85) + match_confidence 기록.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 6,
+      "name": "kobis-backfill-expand",
+      "status": "completed",
+      "summary": "backfill_kobis Celery 태스크 추가(start_year~end_year 연도별 KOBIS 페이지 순회, 정확+fuzzy 매칭, TmdbSyncLog kobis_backfill 기록, 수동 트리거 전용).",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 7,
+      "name": "legacy-column-drop",
+      "status": "completed",
+      "summary": "ContentMetadata.kobis_movie_cd/kobis_data/tmdb_id 제거(0009 마이그레이션). sync_kobis/backfill_kobis dual-write 제거, _async_sync_tmdb ExternalMetaSource anti-join으로 전환. tmdb_data 유지.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 8,
+      "name": "wrap",
+      "status": "completed",
+      "summary": "TODO.md dev-meta-core-extraction 완료 처리. workers/CLAUDE.md sync_kobis/backfill_kobis 설명 갱신. alembic/CLAUDE.md 0006~0009 마이그레이션 목록 추가.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    }
+  ]
+}

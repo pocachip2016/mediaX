@@ -11,9 +11,11 @@
 품질 스코어: 0~100점 (90+ 자동승인, 70~89 검수큐)
 """
 
+import hashlib
 import json
 import re
 import logging
+from datetime import datetime, timedelta
 import httpx
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,91 @@ from api.programming.metadata.schemas import AIGenerateRequest, AIGenerateRespon
 from api.programming.metadata.llm import get_provider_chain
 
 logger = logging.getLogger(__name__)
+
+
+def _upsert_external_source(db: Session, content_id: int, source_type, external_id: str, raw_json: dict):
+    """ExternalMetaSource 행 upsert — (content_id, source_type) 기준."""
+    from api.programming.metadata.models import ExternalMetaSource
+    existing = (
+        db.query(ExternalMetaSource)
+        .filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == source_type,
+        )
+        .first()
+    )
+    if existing:
+        existing.external_id = external_id
+        existing.raw_json = raw_json
+        existing.matched_at = datetime.utcnow()
+    else:
+        db.add(ExternalMetaSource(
+            content_id=content_id,
+            source_type=source_type,
+            external_id=external_id,
+            raw_json=raw_json,
+            matched_at=datetime.utcnow(),
+        ))
+
+def _cached_web_search(query: str, db: Session, ttl_days: int = 7) -> list:
+    """Brave/SerpAPI 웹 검색 — DB 캐시 우선, 키 없으면 빈 리스트 반환."""
+    from api.programming.metadata.models.tmdb_cache import WebSearchCache
+
+    query_hash = hashlib.sha256(query.encode()).hexdigest()
+    now = datetime.utcnow()
+
+    cached = db.query(WebSearchCache).filter(WebSearchCache.query_hash == query_hash).first()
+    if cached and cached.expires_at > now:
+        return cached.results_json or []
+
+    results: list = []
+    source = "none"
+
+    brave_key = getattr(settings, "BRAVE_SEARCH_API_KEY", "")
+    serp_key = getattr(settings, "SERP_API_KEY", "")
+
+    if brave_key:
+        try:
+            resp = httpx.get(
+                "https://api.search.brave.com/res/v1/web/search",
+                headers={"Accept": "application/json", "X-Subscription-Token": brave_key},
+                params={"q": query, "count": 5},
+                timeout=10.0,
+            )
+            results = resp.json().get("web", {}).get("results", [])
+            source = "brave"
+        except Exception as exc:
+            logger.warning(f"[web_search] Brave 실패: {exc}")
+    elif serp_key:
+        try:
+            resp = httpx.get(
+                "https://serpapi.com/search",
+                params={"q": query, "num": 5, "api_key": serp_key},
+                timeout=10.0,
+            )
+            results = resp.json().get("organic_results", [])
+            source = "serp"
+        except Exception as exc:
+            logger.warning(f"[web_search] SerpAPI 실패: {exc}")
+
+    expires_at = now + timedelta(days=ttl_days if source != "none" else 1)
+    if cached:
+        cached.query = query
+        cached.source = source
+        cached.results_json = results
+        cached.fetched_at = now
+        cached.expires_at = expires_at
+    else:
+        db.add(WebSearchCache(
+            query_hash=query_hash,
+            query=query,
+            source=source,
+            results_json=results,
+            expires_at=expires_at,
+        ))
+    db.flush()
+    return results
+
 
 AI_ENGINE = getattr(settings, "AI_ENGINE", "gemini")
 
@@ -101,6 +188,9 @@ def _calculate_quality_score(
     tmdb_match: dict | None,
 ) -> tuple[float, dict]:
     """
+    콘텐츠 메타 완성도 점수 (0~100). 외부 후보와의 동일성 점수(match_score, 0~1)와 다름.
+    동일성 비교: api.meta_core.scoring.compute_match_score 참조.
+
     엔진 E — 품질 스코어 산정 (0~100점)
       - 시놉시스 길이/완성도  : 30점
       - 장르 분류 완성도       : 20점
@@ -242,10 +332,9 @@ async def process_content_ai(content_id: int, db: Session):
       <70   → review (AI 보강 제안)
     ContentAIResult에 사용된 엔진 기록.
     """
-    from datetime import datetime
     from api.programming.metadata.models import (
         Content, ContentMetadata, ContentStatus,
-        ContentAIResult, AITaskType,
+        ContentAIResult, AITaskType, ExternalSourceType,
     )
 
     content = db.query(Content).filter(Content.id == content_id).first()
@@ -279,14 +368,15 @@ async def process_content_ai(content_id: int, db: Session):
     meta.ai_rating_suggestion = result.rating_suggestion
     meta.quality_score = result.quality_score
     meta.score_breakdown = {}
-    meta.kobis_data = result.kobis_match
     meta.tmdb_data = result.tmdb_match
     meta.ai_processed_at = datetime.utcnow()
 
     if result.kobis_match and result.kobis_match.get("movieCd"):
-        meta.kobis_movie_cd = result.kobis_match["movieCd"]
+        _upsert_external_source(db, content_id, ExternalSourceType.kobis,
+                                result.kobis_match["movieCd"], result.kobis_match)
     if result.tmdb_match and result.tmdb_match.get("id"):
-        meta.tmdb_id = result.tmdb_match["id"]
+        _upsert_external_source(db, content_id, ExternalSourceType.tmdb,
+                                str(result.tmdb_match["id"]), result.tmdb_match)
 
     # 품질 스코어 기반 status 결정
     if result.quality_score >= 90:

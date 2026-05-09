@@ -33,6 +33,14 @@ python3 -c "from shared.database import Base, engine; import api.programming.met
 | `0001_init_metadata_module.py` | contents, content_metadata, cp_email_logs, external_meta_cache |
 | `0002_extend_content_base.py` | genre_codes, tag_codes, content_genres, content_tags, person_master, content_credits, content_images, external_meta_sources, content_ai_results + 기본 데이터 시딩 |
 | `0003_add_staging_and_batch_jobs.py` | ContentStatus ENUM에 `staging` 추가 (PostgreSQL) + content_batch_jobs 테이블 신규 |
+| `0004_add_tmdb_cache.py` | tmdb_movie_cache, tmdb_tv_cache, tmdb_person_cache, tmdb_sync_log |
+| `0005_add_text_meta_flags.py` | ContentMetadata에 text/image/video_meta_completed 플래그 추가 |
+| `0006_external_sync_log.py` | tmdb_sync_log → external_sync_log rename + external_source 컬럼 추가 |
+| `0007_add_kobis_sync_source.py` | TmdbSyncSource ENUM에 kobis_daily/kobis_backfill 추가 (PostgreSQL) |
+| `0008_add_web_search_cache.py` | web_search_cache 테이블 신설 (Brave/SerpAPI 결과 캐시) |
+| `0009_drop_legacy_meta_columns.py` | content_metadata.kobis_movie_cd/kobis_data/tmdb_id 제거 (ExternalMetaSource SSOT 완성) |
+| `0010_add_dam_events.py` | dam_events 테이블 신설 (Dam 자산 매핑 피드백 수신 로그) |
+| `0011_meta_intelligence_tables.py` | metadata_candidates/match_edges/field_suggestions/field_resolutions/seed_candidates 신설 + externalsourcetype+=kmdb + external_sync_log 모니터링 컬럼 2개 |
 
 ## 새 모듈 추가 시
 `env.py` 상단 import 주석 해제:

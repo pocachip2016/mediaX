@@ -454,17 +454,20 @@ def reeval_quality_scores():
                  max_retries=3, default_retry_delay=120)
 def enrich_content_metadata(self, content_id: int):
     """
-    에이전틱 멀티소스 검색 태스크
-    1. TMDB 검색 → 시리즈면 시즌/에피소드 재귀 수집
-    2. KOBIS 검색
-    3. ExternalMetaSource, ContentCredit, ContentImage 저장
-    4. LLM으로 최종 메타 통합
-    5. status → staging
+    에이전틱 멀티소스 검색 태스크 — meta_core.enrich 위임.
+    candidate/suggestion 흐름으로 외부 소스 호출.
+    ContentMetadata 직접 쓰기 없음 (Aggregator step7 책임).
     """
+    from api.meta_core.enrich import enrich_content as _enrich_content
     db = SessionLocal()
     try:
-        asyncio.run(_async_enrich_content(content_id, db))
-        logger.info(f"[enrich] content_id={content_id} enrichment 완료")
+        result = _enrich_content(content_id, db)
+        db.commit()
+        logger.info(
+            "[enrich] content_id=%d candidates=%d edges=%d suggestions=%d skipped=%s",
+            content_id, result.candidates_upserted, result.match_edges_created,
+            result.suggestions_created, result.sources_skipped,
+        )
     except Exception as exc:
         logger.error(f"[enrich] content_id={content_id} 실패: {exc}")
         raise self.retry(exc=exc)

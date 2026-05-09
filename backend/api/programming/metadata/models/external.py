@@ -23,6 +23,7 @@ class ExternalSourceType(str, enum.Enum):
     naver = "naver"
     daum = "daum"
     other = "other"
+    kmdb = "kmdb"  # 한국영상자료원 KMDb
 
 
 class AITaskType(str, enum.Enum):
