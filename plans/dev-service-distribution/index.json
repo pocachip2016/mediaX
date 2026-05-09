@@ -1,0 +1,42 @@
+{
+  "project": "mediaX",
+  "phase": "dev-service-distribution",
+  "description": "Layer2 KT 서비스 도메인 신설. ContentDistribution(IPTV/OTT 유통채널 1:N), ServiceCategory(KT 큐레이션·랭킹), DeviceVariant(mobile/TV/PC). meta_core 분리 완료 후 착수.",
+  "decisions": {
+    "iptv_bulk": "KT 지니TV 실데이터 확보 조건부로 step1 실행",
+    "ott_scope": "Watcha/Netflix Top10/Wave/Tving popularity — 직접 API 또는 public top chart",
+    "distribution_vs_meta": "OTT/IPTV는 유통채널(ContentDistribution) 이며 메타권위(ExternalMetaSource)와 분리"
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "distribution-schema",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "iptv-kt-bulk-import",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "ott-popularity-sync",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "service-category",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "device-variant",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "wrap",
+      "status": "pending"
+    }
+  ]
+}

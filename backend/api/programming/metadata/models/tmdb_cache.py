@@ -1,14 +1,12 @@
 """
-TMDB 로컬 캐시 모델
-
-로컬 참조용 캐시 DB — ContentMetadata 와 독립. 신규 콘텐츠 입력 시 AI 메타 보완,
-이미지(포스터/백드롭) 매핑, 중복 TMDB API 호출 회피 목적.
+TMDB 로컬 캐시 모델 + 외부 소스 동기화 이력
 
 테이블:
   - tmdb_movie_cache  : 영화 메타 캐시 (PK = TMDB movie_id)
   - tmdb_tv_cache     : TV 시리즈 메타 캐시 (PK = TMDB tv_id)
   - tmdb_person_cache : 인물 메타 캐시 (PK = TMDB person_id)
-  - tmdb_sync_log     : 동기화 실행 이력 (백필·Daily 증분 추적)
+  - external_sync_log : 전 외부소스 동기화 이력 (TMDB·KOBIS 등 공용)
+  - web_search_cache  : Brave/SerpAPI 웹 검색 결과 캐시 (쿼터 보호)
 """
 
 import enum
@@ -22,6 +20,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.types import TIMESTAMP
 
 from shared.database import Base
+from api.programming.metadata.models.external import ExternalSourceType
 
 
 def _new_uuid() -> str:
@@ -35,6 +34,9 @@ class TmdbSyncSource(str, enum.Enum):
     changes_tv = "changes_tv"
     backfill_movie_year = "backfill_movie_year"
     backfill_tv_year = "backfill_tv_year"
+    kobis_daily = "kobis_daily"
+    kobis_backfill = "kobis_backfill"
+    llm_merge = "llm_merge"
 
 
 class TmdbSyncStatus(str, enum.Enum):
@@ -111,11 +113,15 @@ class TmdbPersonCache(Base):
 
 
 class TmdbSyncLog(Base):
-    __tablename__ = "tmdb_sync_log"
+    __tablename__ = "external_sync_log"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     run_id = Column(String(36), nullable=False, default=_new_uuid)
+    # TMDB 전용 sync 종류 (backfill_movie_year / changes_movie / discover_movie 등)
     source = Column(SAEnum(TmdbSyncSource, name="tmdbsyncsource"), nullable=False)
+    # 어떤 외부 소스의 sync 인지 (tmdb / kobis / …) — step3에서 추가
+    external_source = Column(SAEnum(ExternalSourceType, name="externalsourcetype",
+                                    create_type=False), nullable=True, index=True)
     target_year = Column(Integer)                   # 백필 연도 슬라이싱
     target_date = Column(Date)                      # Daily changes 날짜
 
@@ -133,3 +139,18 @@ class TmdbSyncLog(Base):
     items_unchanged = Column(Integer, default=0)
     errors = Column(Integer, default=0)
     error_sample = Column(JSON)                     # 최초 5개 에러 메시지
+
+
+ExternalSyncLog = TmdbSyncLog
+
+
+class WebSearchCache(Base):
+    __tablename__ = "web_search_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    query_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA-256 hex
+    query = Column(Text, nullable=False)
+    source = Column(String(20), nullable=False)      # "brave" | "serp" | "none"
+    results_json = Column(JSON)
+    fetched_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=False, index=True)

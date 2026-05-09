@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 # 모든 모델을 메타데이터에 등록
 import api.programming.metadata.models  # noqa: F401
+import api.meta_core.models  # noqa: F401
 from shared.database import Base
 
 

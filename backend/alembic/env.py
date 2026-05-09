@@ -6,6 +6,8 @@ from shared.database import Base
 
 # 모든 모델 임포트 (Alembic이 테이블을 인식하도록)
 import api.programming.metadata.models  # noqa: F401
+import api.meta_core.models  # noqa: F401  — meta_core re-export (동일 테이블, 중복 등록 무해)
+import api.meta_core.public_api.models  # noqa: F401  — DamEvent
 # import api.programming.catalog.models  # noqa: F401  — 추후 추가
 # import api.design.models               # noqa: F401  — 추후 추가
 

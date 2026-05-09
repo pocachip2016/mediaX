@@ -1,0 +1,91 @@
+{
+  "project": "mediaX",
+  "phase": "dev-meta-intelligence",
+  "description": "메타 인텔리전스 시스템 — 외부 소스(TMDB/KOBIS/KMDb/WebSearch) 통합 → 후보(candidate) → 매칭(match) → 필드별 결정(field_resolution) → SEED(신규 콘텐츠) 파이프라인. backend/crosscheck.md 설계 반영. Phase A(foundations) + Phase B(MVP1: 기존 DB 보완) 10 step. Phase C(MVP2: SEED), Phase D(WebSearch)는 Phase B 완료 후 별도 task로 분기.",
+  "phases": {
+    "A": "foundations — ADR, 마이그레이션 0011, scoring 모듈, score 분리",
+    "B": "mvp1 — Gap Analyzer, enrich→suggestions(+KMDb), Strategy Catalog, Aggregator, API, 검수 백엔드"
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "adr-meta-intelligence",
+      "phase": "A",
+      "status": "completed",
+      "summary": "docs/dev/meta-intelligence.md 신설 (386줄). §1 용어 5단계, §2 필드 5분류, §3 match_score/quality_score 2축, §4 소스 가중치, §5 자동 확정 가드, §6 KMDb, §7 비용·운영 가드. backend/api/CLAUDE.md 보강은 파일 부재로 step3 의 meta_core/CLAUDE.md 신설과 합침.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "migration-0011-candidates-resolutions-seeds",
+      "phase": "A",
+      "status": "completed",
+      "summary": "alembic 0011 신설 (5테이블 + externalsourcetype+=kmdb + external_sync_log 2컬럼). intelligence.py 모델 5개, meta_core/models/__init__.py re-export 추가. SQLite upgrade head 통과.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "scoring-module",
+      "phase": "A",
+      "status": "completed",
+      "summary": "api/meta_core/scoring.py 신설 — normalize_title/year_score/cast_overlap/external_id/source_reliability + compute_match_score(가중치 7항) + classify_match(4임계). 단위 테스트 27개 전통과. .env.example에 KMDB_API_KEY + META_SOURCE_WEIGHT 주석 추가.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "score-disambiguation",
+      "phase": "A",
+      "status": "completed",
+      "summary": "ai_engine._calculate_quality_score docstring에 '완성도/동일성 분리' 명시. content.py score_breakdown 키 컨벤션 주석. programming/metadata/CLAUDE.md Score Conventions 표 추가. api/meta_core/CLAUDE.md 신설(모듈 인덱스 + 점수 표). 산식 변경 0줄.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "gap-analyzer",
+      "phase": "B",
+      "status": "completed",
+      "summary": "api/meta_core/gap.py 신설 — FieldGap/GapReport 데이터클래스 + analyze_gap(1건) + analyze_gap_batch(배치). 6개 필드(external_id/poster/synopsis/cast/director/primary_genre) 검사, 우선순위 1~3. 단위 테스트 10개 전통과.",
+      "completed_at": "2026-05-09T15:00:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "enrich-to-suggestions-with-kmdb",
+      "phase": "B",
+      "status": "completed",
+      "summary": "api/meta_core/clients/kmdb_client.py 신설(KmdbClient). api/meta_core/enrich.py 신설(enrich_content: Gap→소스호출→MetadataCandidate upsert→MatchEdge→FieldSuggestion). shared/config.py KMDB_API_KEY 추가. workers enrich_content_metadata 위임 리팩토링. 테스트 7개 전통과.",
+      "completed_at": "2026-05-09T16:00:00+09:00"
+    },
+    {
+      "step": 6,
+      "name": "field-strategy-catalog",
+      "phase": "B",
+      "status": "completed",
+      "summary": "api/meta_core/field_strategy.py 신설 — FieldType(A~E) + FieldStrategy dataclass + FIELD_STRATEGIES 카탈로그(19 필드) + 정규화 함수 5개 + env override(_agree/_weight). DB 접근 없음. 단위 테스트 26개 전통과.",
+      "completed_at": "2026-05-09T17:00:00+09:00"
+    },
+    {
+      "step": 7,
+      "name": "field-aggregator",
+      "phase": "B",
+      "status": "completed",
+      "summary": "api/meta_core/aggregator.py 신설 — aggregate_content/aggregate_batch. A(auto_agreement 가드), B(멤버 union+cap), C(항상 pending), D(source_priority pick+ContentImage), E(ExternalMetaSource upsert). manual_pick 보존. FIELD_STRATEGIES에 external_id 키 추가. 테스트 9개 전통과(전체 79개).",
+      "completed_at": "2026-05-09T18:00:00+09:00"
+    },
+    {
+      "step": 8,
+      "name": "resolution-api",
+      "phase": "B",
+      "status": "completed",
+      "summary": "api/meta_core/intelligence/{schemas,router}.py 신설. GET 5개 엔드포인트(/gap /resolutions /resolutions/{field} /match-edges /queue/resolutions). meta_core/router.py에 include. TestClient mini-app 패턴으로 테스트 12개 전통과(전체 91개).",
+      "completed_at": "2026-05-09T19:00:00+09:00"
+    },
+    {
+      "step": 9,
+      "name": "review-backend",
+      "phase": "B",
+      "status": "completed",
+      "summary": "5 POST 엔드포인트(accept/pick/merge/reject/bulk-accept) + llm_merge_synopses(Gemini→Groq→Ollama 폴백 + ExternalSyncLog 기록) + write 스키마(PickRequest/MergeRequest/BulkAcceptRequest/ActionResultOut). 테스트 13개 전통과(전체 104개).",
+      "completed_at": "2026-05-09T20:00:00+09:00"
+    }
+  ]
+}

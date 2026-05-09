@@ -1,0 +1,42 @@
+{
+  "project": "mediaX",
+  "phase": "dev-dam-bridge",
+  "description": "meta_core Layer1 → Dam 연결 인터페이스. read-only public API, content 증분 내보내기 엔드포인트, changefeed webhook 발신, Dam 피드백 수신. Dam dev-asset-content-mapping 의 선결 조건.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "public-api-module",
+      "status": "completed",
+      "summary": "api/meta_core/public_api/ 서브모듈 신설 — ContentSummary/ContentSummaryPage 스키마, /health 스텁 라우터, meta_core router에 마운트.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "content-export-api",
+      "status": "completed",
+      "summary": "GET /contents/since(ts 기반 증분, ContentSummaryPage 반환) + GET /contents/{id} 단건 조회 구현. COALESCE(updated_at, created_at) 필터, next_ts 커서.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "content-changefeed",
+      "status": "completed",
+      "summary": "changefeed.py 신설(SQLAlchemy mapper 이벤트 → send_dam_webhook.apply_async countdown=2). send_dam_webhook Celery 태스크(DAM_WEBHOOK_URL 미설정 시 skip). main.py lifespan에 setup_changefeed_events() 등록.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "dam-feedback-receiver",
+      "status": "completed",
+      "summary": "DamEvent 모델+0010 마이그레이션(dam_events), DamEventRequest 스키마, POST /dam-events 엔드포인트. alembic env.py import 추가.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "wrap",
+      "status": "completed",
+      "summary": "TODO.md dev-dam-bridge 완료 처리. workers/CLAUDE.md send_dam_webhook 추가. alembic/CLAUDE.md 0010 추가.",
+      "completed_at": "2026-05-09T00:00:00+09:00"
+    }
+  ]
+}

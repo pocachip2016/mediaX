@@ -123,10 +123,7 @@ class ContentMetadata(Base):
     ai_cast = Column(JSON)
     ai_rating_suggestion = Column(String(20))  # 전체/12세/15세/청불
 
-    # 외부 API 메타
-    kobis_movie_cd = Column(String(20), index=True)
-    kobis_data = Column(JSON)
-    tmdb_id = Column(Integer, index=True)
+    # 외부 API 메타 (kobis_movie_cd/kobis_data/tmdb_id → external_meta_sources로 이관)
     tmdb_data = Column(JSON)
 
     # 최종 확정 메타 (담당자 검수 후)
@@ -136,8 +133,10 @@ class ContentMetadata(Base):
     final_cast = Column(JSON)
     final_source = Column(Enum(MetaSource, name="metasource"), default=MetaSource.ai)
 
-    # 품질 스코어링
-    quality_score = Column(Float, default=0.0, index=True)  # 0~100
+    # 품질 스코어링 (콘텐츠 메타 완성도, 0~100 — match_score 와 별도)
+    quality_score = Column(Float, default=0.0, index=True)
+    # score_breakdown 키: synopsis_completeness, genre_classification,
+    # tag_count, external_meta, basic_fields_filled
     score_breakdown = Column(JSON)
 
     # 메타 완료 플래그 (글자메타 / 이미지메타 / 영상메타)
