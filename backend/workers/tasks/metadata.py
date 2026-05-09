@@ -13,10 +13,12 @@
 """
 
 import asyncio
+import difflib
 import imaplib
 import email
 import logging
 import httpx
+import redis as redis_lib
 from email.header import decode_header
 from datetime import datetime, timedelta
 
@@ -25,6 +27,25 @@ from shared.database import SessionLocal
 from shared.config import settings
 
 logger = logging.getLogger(__name__)
+
+_KOBIS_DAILY_LIMIT = 2900  # 일일 3000 한도, 100 여유
+
+
+def _kobis_rate_allowed() -> bool:
+    """일일 KOBIS API 호출 횟수를 Redis로 추적. 한도 초과 시 False."""
+    try:
+        r = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
+        key = f"kobis:daily_calls:{datetime.utcnow().strftime('%Y%m%d')}"
+        count = r.incr(key)
+        if count == 1:
+            r.expire(key, 90000)  # 25시간 TTL
+        if count > _KOBIS_DAILY_LIMIT:
+            logger.warning(f"[kobis] 일일 한도 초과 (count={count}/{_KOBIS_DAILY_LIMIT}). 호출 스킵.")
+            return False
+        return True
+    except Exception as exc:
+        logger.warning(f"[kobis] rate-check Redis 오류, fail-open: {exc}")
+        return True
 
 
 # ── AI 처리 ───────────────────────────────────────────────
@@ -208,49 +229,131 @@ def _extract_body(msg) -> str:
 # ── 외부 메타 동기화 배치 ──────────────────────────────────
 
 @celery_app.task(name="workers.tasks.metadata.sync_kobis")
-def sync_kobis():
-    """영진위 KOBIS 일일 동기화 (매일 03:00) — 전일 신규 영화 → DB 매핑 업데이트"""
+def sync_kobis(target_date: str | None = None):
+    """영진위 KOBIS 일일 동기화 (매일 03:00) — 전일 개봉 영화 → ExternalMetaSource + external_sync_log"""
     if not getattr(settings, "KOBIS_API_KEY", ""):
         logger.warning("[kobis] KOBIS_API_KEY 없음. 스킵.")
         return {"skipped": True}
 
+    from api.programming.metadata.models import (
+        Content, ContentMetadata, ContentType,
+        ExternalSourceType, TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus,
+    )
+    from api.programming.metadata.ai_engine import _upsert_external_source
+
     db = SessionLocal()
-    updated = 0
+    date_str = target_date or (datetime.utcnow() - timedelta(days=1)).strftime("%Y%m%d")
+
+    log = TmdbSyncLog(
+        source=TmdbSyncSource.kobis_daily,
+        external_source=ExternalSourceType.kobis,
+        target_date=datetime.strptime(date_str, "%Y%m%d").date(),
+        status=TmdbSyncStatus.running,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+
+    inserted = updated = errors = 0
     try:
-        from api.programming.metadata.models import ContentMetadata
-        yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y%m%d")
-        params = {
-            "key": settings.KOBIS_API_KEY,
-            "openStartDt": yesterday,
-            "openEndDt": yesterday,
-            "itemPerPage": "100",
-        }
+        if not _kobis_rate_allowed():
+            log.status = TmdbSyncStatus.failed
+            log.error_sample = ["일일 한도 초과"]
+            log.finished_at = datetime.utcnow()
+            db.commit()
+            return {"skipped": True, "reason": "daily_limit_exceeded"}
         resp = httpx.get(
             "http://www.kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json",
-            params=params,
+            params={
+                "key": settings.KOBIS_API_KEY,
+                "openStartDt": date_str,
+                "openEndDt": date_str,
+                "itemPerPage": "100",
+            },
             timeout=15.0,
         )
         movies = resp.json().get("movieListResult", {}).get("movieList", [])
+        log.items_fetched = len(movies)
+
         for movie in movies:
             movie_nm = movie.get("movieNm", "")
             movie_cd = movie.get("movieCd", "")
             if not movie_nm or not movie_cd:
                 continue
-            # 제목 매칭으로 기존 ContentMetadata 업데이트
-            rows = (
-                db.query(ContentMetadata)
-                .join(ContentMetadata.content)
-                .filter(ContentMetadata.kobis_movie_cd.is_(None))
-                .all()
+            # DB-레벨 제목 매칭 (O(N) — 전체 루프 제거)
+            content = (
+                db.query(Content)
+                .filter(Content.title == movie_nm, Content.content_type == ContentType.movie)
+                .first()
             )
-            for meta in rows:
-                if meta.content and meta.content.title == movie_nm:
-                    meta.kobis_movie_cd = movie_cd
+            fuzzy_confidence: float | None = None
+            if not content:
+                # fuzzy fallback: 같은 연도 영화에서 ratio >= 0.85 탐색
+                prdtYear = movie.get("prdtYear", "")
+                if prdtYear and prdtYear.isdigit():
+                    candidates = (
+                        db.query(Content)
+                        .filter(
+                            Content.content_type == ContentType.movie,
+                            Content.production_year == int(prdtYear),
+                        )
+                        .all()
+                    )
+                    best_ratio, best_cand = 0.0, None
+                    for cand in candidates:
+                        ratio = difflib.SequenceMatcher(None, movie_nm, cand.title).ratio()
+                        if ratio > best_ratio:
+                            best_ratio, best_cand = ratio, cand
+                    if best_ratio >= 0.85:
+                        content = best_cand
+                        fuzzy_confidence = round(best_ratio, 4)
+            if not content:
+                continue
+            try:
+                from api.programming.metadata.models import ExternalMetaSource
+                prev = (
+                    db.query(ExternalMetaSource)
+                    .filter(
+                        ExternalMetaSource.content_id == content.id,
+                        ExternalMetaSource.source_type == ExternalSourceType.kobis,
+                    )
+                    .first()
+                )
+                _upsert_external_source(db, content.id, ExternalSourceType.kobis, movie_cd, movie)
+                if fuzzy_confidence is not None:
+                    src = (
+                        db.query(ExternalMetaSource)
+                        .filter(
+                            ExternalMetaSource.content_id == content.id,
+                            ExternalMetaSource.source_type == ExternalSourceType.kobis,
+                        )
+                        .first()
+                    )
+                    if src:
+                        src.match_confidence = fuzzy_confidence
+                if prev:
                     updated += 1
+                else:
+                    inserted += 1
+            except Exception as exc:
+                logger.warning(f"[kobis] content_id={content.id} 처리 실패: {exc}")
+                errors += 1
+
         db.commit()
-        logger.info(f"[kobis] {updated}건 kobis_movie_cd 업데이트")
-        return {"updated": updated, "total_from_kobis": len(movies)}
+        log.items_inserted = inserted
+        log.items_updated = updated
+        log.errors = errors
+        log.status = TmdbSyncStatus.completed
+        log.finished_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(f"[kobis] inserted={inserted} updated={updated} errors={errors} total={len(movies)}")
+        return {"inserted": inserted, "updated": updated, "errors": errors, "total_from_kobis": len(movies)}
     except Exception as exc:
+        log.status = TmdbSyncStatus.failed
+        log.error_sample = [str(exc)]
+        log.finished_at = datetime.utcnow()
+        db.commit()
         logger.error(f"[kobis] 동기화 실패: {exc}")
         return {"error": str(exc)}
     finally:
@@ -280,16 +383,21 @@ def sync_tmdb():
 async def _async_sync_tmdb(db, api_key: str) -> dict:
     """TMDB 미매핑 콘텐츠 일괄 보강 — 비동기"""
     from api.programming.metadata.models import (
-        Content, ContentMetadata, ContentType, ContentStatus,
+        Content, ContentType, ContentStatus,
+        ExternalMetaSource, ExternalSourceType,
     )
 
     BATCH_LIMIT = 50
 
     unmapped = (
         db.query(Content)
-        .join(Content.metadata_record)
+        .outerjoin(
+            ExternalMetaSource,
+            (ExternalMetaSource.content_id == Content.id) &
+            (ExternalMetaSource.source_type == ExternalSourceType.tmdb),
+        )
         .filter(
-            ContentMetadata.tmdb_id.is_(None),
+            ExternalMetaSource.id.is_(None),
             Content.content_type.in_([ContentType.movie, ContentType.series]),
             Content.status != ContentStatus.waiting,
         )
@@ -304,7 +412,6 @@ async def _async_sync_tmdb(db, api_key: str) -> dict:
             if result and result.get("id"):
                 meta = content.metadata_record
                 if meta:
-                    meta.tmdb_id = result["id"]
                     meta.tmdb_data = result
                 db.commit()
                 updated += 1
@@ -401,11 +508,8 @@ async def _async_enrich_content(content_id: int, db):
         db.flush()
 
     if tmdb_result and tmdb_result.get("id"):
-        meta.tmdb_id = tmdb_result["id"]
         meta.tmdb_data = tmdb_result
-    if kobis_result and kobis_result.get("movieCd"):
-        meta.kobis_movie_cd = kobis_result["movieCd"]
-        meta.kobis_data = kobis_result
+
 
     # ── status → staging ──────────────────────────────────
     content.status = ContentStatus.staging
@@ -671,6 +775,21 @@ async def _kobis_search_and_save(content, db, api_key: str) -> dict | None:
     """KOBIS 검색 → ExternalMetaSource 저장"""
     from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType
 
+    # 이미 저장된 소스가 있으면 API 호출 없이 반환
+    existing_src = (
+        db.query(ExternalMetaSource)
+        .filter(
+            ExternalMetaSource.content_id == content.id,
+            ExternalMetaSource.source_type == ExternalSourceType.kobis,
+        )
+        .first()
+    )
+    if existing_src:
+        return existing_src.raw_json
+
+    if not _kobis_rate_allowed():
+        return None
+
     params = {
         "key": api_key,
         "movieNm": content.title,
@@ -691,23 +810,13 @@ async def _kobis_search_and_save(content, db, api_key: str) -> dict | None:
                 return None
             movie = movies[0]
             movie_cd = movie.get("movieCd", "")
-
-            existing_src = (
-                db.query(ExternalMetaSource)
-                .filter(
-                    ExternalMetaSource.content_id == content.id,
-                    ExternalMetaSource.source_type == ExternalSourceType.kobis,
-                )
-                .first()
-            )
-            if not existing_src:
-                db.add(ExternalMetaSource(
-                    content_id=content.id,
-                    source_type=ExternalSourceType.kobis,
-                    external_id=movie_cd,
-                    raw_json=movie,
-                    matched_at=datetime.utcnow(),
-                ))
+            db.add(ExternalMetaSource(
+                content_id=content.id,
+                source_type=ExternalSourceType.kobis,
+                external_id=movie_cd,
+                raw_json=movie,
+                matched_at=datetime.utcnow(),
+            ))
             db.flush()
             return movie
     except Exception as exc:
@@ -827,3 +936,200 @@ def retry_failed_enrichments():
         return {"retried": retried, "rejected": rejected_count}
     finally:
         db.close()
+
+
+# ── KOBIS 소급 백필 ────────────────────────────────────────
+
+@celery_app.task(name="workers.tasks.metadata.backfill_kobis")
+def backfill_kobis(start_year: int = 1990, end_year: int = 1999):
+    """KOBIS 연도 범위 소급 백필 — 수동/일회성 태스크 (Beat 미등록)"""
+    if not getattr(settings, "KOBIS_API_KEY", ""):
+        logger.warning("[kobis_backfill] KOBIS_API_KEY 없음. 스킵.")
+        return {"skipped": True}
+
+    from api.programming.metadata.models import (
+        Content, ContentType, ExternalMetaSource,
+        ExternalSourceType, TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus,
+    )
+    from api.programming.metadata.ai_engine import _upsert_external_source
+
+    db = SessionLocal()
+    total_inserted = total_updated = total_unchanged = total_errors = 0
+
+    try:
+        for year in range(start_year, end_year + 1):
+            log = TmdbSyncLog(
+                source=TmdbSyncSource.kobis_backfill,
+                external_source=ExternalSourceType.kobis,
+                target_year=year,
+                status=TmdbSyncStatus.running,
+            )
+            db.add(log)
+            db.commit()
+            db.refresh(log)
+
+            inserted = updated = unchanged = errors = 0
+            page = 1
+            date_start = f"{year}0101"
+            date_end = f"{year}1231"
+
+            while True:
+                try:
+                    if not _kobis_rate_allowed():
+                        logger.warning(f"[kobis_backfill] 일일 한도 초과. year={year} page={page} 에서 중단.")
+                        break
+                    resp = httpx.get(
+                        "http://www.kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json",
+                        params={
+                            "key": settings.KOBIS_API_KEY,
+                            "openStartDt": date_start,
+                            "openEndDt": date_end,
+                            "itemPerPage": "100",
+                            "curPage": str(page),
+                        },
+                        timeout=20.0,
+                    )
+                    result = resp.json().get("movieListResult", {})
+                    movies = result.get("movieList", [])
+                    if not movies:
+                        break
+                    log.items_fetched = (log.items_fetched or 0) + len(movies)
+
+                    for movie in movies:
+                        movie_nm = movie.get("movieNm", "")
+                        movie_cd = movie.get("movieCd", "")
+                        if not movie_nm or not movie_cd:
+                            continue
+
+                        # 이미 매핑된 경우 스킵
+                        existing = (
+                            db.query(ExternalMetaSource)
+                            .filter(
+                                ExternalMetaSource.source_type == ExternalSourceType.kobis,
+                                ExternalMetaSource.external_id == movie_cd,
+                            )
+                            .first()
+                        )
+                        if existing:
+                            unchanged += 1
+                            continue
+
+                        # 정확 매칭
+                        content = (
+                            db.query(Content)
+                            .filter(
+                                Content.title == movie_nm,
+                                Content.content_type == ContentType.movie,
+                            )
+                            .first()
+                        )
+
+                        fuzzy_confidence: float | None = None
+                        if not content:
+                            prdtYear = movie.get("prdtYear", "")
+                            if prdtYear and prdtYear.isdigit():
+                                candidates = (
+                                    db.query(Content)
+                                    .filter(
+                                        Content.content_type == ContentType.movie,
+                                        Content.production_year == int(prdtYear),
+                                    )
+                                    .all()
+                                )
+                                best_ratio, best_cand = 0.0, None
+                                for cand in candidates:
+                                    ratio = difflib.SequenceMatcher(None, movie_nm, cand.title).ratio()
+                                    if ratio > best_ratio:
+                                        best_ratio, best_cand = ratio, cand
+                                if best_ratio >= 0.85:
+                                    content = best_cand
+                                    fuzzy_confidence = round(best_ratio, 4)
+
+                        if not content:
+                            continue
+
+                        try:
+                            _upsert_external_source(
+                                db, content.id, ExternalSourceType.kobis, movie_cd, movie
+                            )
+                            if fuzzy_confidence is not None:
+                                src = (
+                                    db.query(ExternalMetaSource)
+                                    .filter(
+                                        ExternalMetaSource.content_id == content.id,
+                                        ExternalMetaSource.source_type == ExternalSourceType.kobis,
+                                    )
+                                    .first()
+                                )
+                                if src:
+                                    src.match_confidence = fuzzy_confidence
+                            inserted += 1
+                        except Exception as exc:
+                            logger.warning(f"[kobis_backfill] content_id={content.id} 처리 실패: {exc}")
+                            errors += 1
+
+                    db.commit()
+                    page += 1
+                    # totalCnt 기반 조기 종료
+                    total_cnt = int(result.get("totCnt", 0))
+                    if total_cnt and (page - 1) * 100 >= total_cnt:
+                        break
+                except Exception as exc:
+                    logger.error(f"[kobis_backfill] year={year} page={page} 실패: {exc}")
+                    errors += 1
+                    break
+
+            log.items_inserted = inserted
+            log.items_updated = updated
+            log.items_unchanged = unchanged
+            log.errors = errors
+            log.status = TmdbSyncStatus.completed if errors == 0 else TmdbSyncStatus.failed
+            log.finished_at = datetime.utcnow()
+            db.commit()
+
+            total_inserted += inserted
+            total_updated += updated
+            total_unchanged += unchanged
+            total_errors += errors
+            logger.info(
+                f"[kobis_backfill] year={year} inserted={inserted} updated={updated} "
+                f"unchanged={unchanged} errors={errors}"
+            )
+
+        return {
+            "years": list(range(start_year, end_year + 1)),
+            "inserted": total_inserted,
+            "updated": total_updated,
+            "unchanged": total_unchanged,
+            "errors": total_errors,
+        }
+    finally:
+        db.close()
+
+
+# ── Dam changefeed webhook ─────────────────────────────────
+
+@celery_app.task(name="workers.tasks.metadata.send_dam_webhook")
+def send_dam_webhook(event_type: str, content_id: int, title: str,
+                     content_type: str, occurred_at: str):
+    """Dam에 Content 변경 이벤트 발신 (best-effort). DAM_WEBHOOK_URL 미설정 시 스킵."""
+    url = getattr(settings, "DAM_WEBHOOK_URL", "")
+    if not url:
+        return {"skipped": True}
+    try:
+        resp = httpx.post(
+            url,
+            json={
+                "event": event_type,
+                "content_id": content_id,
+                "title": title,
+                "content_type": content_type,
+                "occurred_at": occurred_at,
+            },
+            timeout=5.0,
+        )
+        logger.info(f"[dam_webhook] {event_type} content_id={content_id} → {resp.status_code}")
+        return {"status": resp.status_code}
+    except Exception as exc:
+        logger.warning(f"[dam_webhook] 발신 실패 content_id={content_id}: {exc}")
+        return {"error": str(exc)}

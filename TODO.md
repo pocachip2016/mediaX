@@ -6,7 +6,11 @@
 ## Now (진행 중, 1~3개)
 <!-- 지금 당장 작업 중인 것 -->
 
-## Next (이번 마일스톤)
+## Next (이번 마일스톤 — Dam 연동)
+- [ ] Dam dev-asset-content-mapping M.1 — mediaX backend 재시작 후 /verify M.1 실행, 이후 M.2(CLIP 매핑) 착수
+
+## Later (백로그)
+- [ ] dev-service-distribution — ContentDistribution(IPTV/OTT), ServiceCategory, DeviceVariant
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
 - [ ] 1.3 큐레이션 모듈 설계 확정
 
@@ -15,6 +19,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-dam-bridge — meta_core public API(/contents/since, /dam-events), changefeed webhook, Dam 피드백 수신 (2026-05-09)
+- [x] dev-meta-core-extraction — meta_core 모듈, ExternalMetaSource SSOT, external_sync_log, KOBIS sync/backfill, WebSearchCache, 레거시 컬럼 제거 (2026-05-09)
 - [x] dev-tmdb-cache — TMDB 로컬 캐시 DB + 백필 워커 + Daily Beat + 모니터링 UI (2026-05-07)
 - [x] systemd 자동 구동 — mediaX/Dam/TabGet 8개 서비스, 재시작 시 자동 기동 (2026-05-07)
 - [x] 1.1 메타데이터 AI 기반 — 백엔드/프론트 완료
