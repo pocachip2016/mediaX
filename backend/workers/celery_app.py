@@ -10,8 +10,9 @@ celery_app = Celery(
         "workers.tasks.design",       # AI 이미지 생성·브랜드 검수·배치
         "workers.tasks.ingest",       # 인코딩·QC·DRM·CDN
         "workers.tasks.analytics",    # 리포트·정산 배치
-        "workers.tasks.metadata",     # 메타 AI 분류·외부 메타 수집
-        "workers.tasks.tmdb_cache",   # TMDB 로컬 캐시 백필·일일 증분
+        "workers.tasks.metadata",          # 메타 AI 분류·외부 메타 수집
+        "workers.tasks.tmdb_cache",        # TMDB 로컬 캐시 백필·일일 증분
+        "workers.tasks.discovery_tasks",   # Phase C SEED 발굴
     ],
 )
 
@@ -52,6 +53,27 @@ celery_app.conf.update(
         "tmdb-daily-new-releases": {
             "task": "workers.tasks.tmdb_cache.daily_new_releases",
             "schedule": crontab(hour=3, minute=45),  # 매일 03:45 KST
+        },
+        # Phase C SEED 발굴 — 04:30~05:30 (기존 beat 충돌 방지)
+        "discover-tmdb-daily": {
+            "task": "workers.tasks.discovery_tasks.discover_tmdb",
+            "schedule": crontab(hour=4, minute=30),
+            "kwargs": {"mode": "trending_day"},
+        },
+        "discover-kobis-daily": {
+            "task": "workers.tasks.discovery_tasks.discover_kobis",
+            "schedule": crontab(hour=5, minute=0),
+            "kwargs": {"mode": "box_office_daily"},
+        },
+        "discover-kmdb-daily": {
+            "task": "workers.tasks.discovery_tasks.discover_kmdb",
+            "schedule": crontab(hour=5, minute=30),
+            "kwargs": {"mode": "new_release"},
+        },
+        "discover-tmdb-weekly": {
+            "task": "workers.tasks.discovery_tasks.discover_tmdb",
+            "schedule": crontab(hour=6, minute=0, day_of_week=0),
+            "kwargs": {"mode": "trending_week"},
         },
     },
     task_routes={

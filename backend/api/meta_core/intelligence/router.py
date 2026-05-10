@@ -24,9 +24,13 @@ from .schemas import (
     MatchEdgesOut, MatchEdgeOut,
     ResolutionQueueOut, ResolutionQueueItem,
     PickRequest, MergeRequest, BulkAcceptRequest, ActionResultOut,
+    PromoteRequest, PromoteResultOut,
 )
 
 router = APIRouter(tags=["Intelligence"])
+
+from api.meta_core.intelligence.seed_router import router as seed_router  # noqa: E402
+router.include_router(seed_router)
 
 _AUTO_DECISIONS = {"auto_agreement", "auto_quality"}
 
@@ -354,6 +358,48 @@ def bulk_accept(
 
     db.commit()
     return results
+
+
+# ── POST /seeds/{seed_id}/promote ────────────────────────────────────────────
+
+@router.post("/seeds/{seed_id}/promote", response_model=PromoteResultOut)
+def promote_seed_endpoint(
+    seed_id: int,
+    body: PromoteRequest,
+    db: Session = Depends(get_db),
+):
+    """SEED → Content 승격.
+
+    - 200: 정상 승격
+    - 409: dedup 재확인에서 기존 Content 감지 (override_dup=true 로 강제 가능)
+    - 423: 다른 사용자가 lock 보유 중
+    """
+    from api.meta_core.discovery.promote import (
+        promote_seed,
+        SeedNotFound, SeedAlreadyProcessed, SeedLockedByOther, PossibleDuplicate,
+    )
+    try:
+        content = promote_seed(db, seed_id, actor=body.actor, override_dup=body.override_dup)
+        db.commit()
+        return PromoteResultOut(content_id=content.id, status="created")
+    except SeedNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except SeedAlreadyProcessed as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except SeedLockedByOther as exc:
+        raise HTTPException(
+            status_code=423,
+            detail={"error": "locked_by_other",
+                    "locked_by": exc.locked_by,
+                    "locked_at": exc.locked_at.isoformat() if exc.locked_at else None},
+        )
+    except PossibleDuplicate as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "possible_duplicate",
+                    "content_id": exc.content_id,
+                    "score": exc.score},
+        )
 
 
 # ── 내부 헬퍼 ─────────────────────────────────────────────────────────────────

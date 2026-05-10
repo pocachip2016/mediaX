@@ -8,7 +8,7 @@
 
 ## Next (이번 마일스톤 — Dam 연동)
 - [ ] Dam dev-asset-content-mapping M.1 — mediaX backend 재시작 후 /verify M.1 실행, 이후 M.2(CLIP 매핑) 착수
-- [ ] dev-meta-intelligence Phase C — SEED 신규 콘텐츠 파이프라인 (또는 Phase D WebSearch)
+- [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
 
 ## Later (백로그)
 - [ ] dev-service-distribution — ContentDistribution(IPTV/OTT), ServiceCategory, DeviceVariant
@@ -20,6 +20,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-meta-intelligence — Phase C 완료 (SEED 발굴 파이프라인: discovery×4소스, dedup, promote, 검수 API×8, Beat×4, 모니터링 3API, 테스트 91개) (2026-05-10)
 - [x] dev-meta-intelligence — Phase B MVP1 완료 (gap→enrich→strategy→aggregator→resolution API→검수 백엔드, 테스트 104개) (2026-05-09)
 - [x] dev-dam-bridge — meta_core public API(/contents/since, /dam-events), changefeed webhook, Dam 피드백 수신 (2026-05-09)
 - [x] dev-meta-core-extraction — meta_core 모듈, ExternalMetaSource SSOT, external_sync_log, KOBIS sync/backfill, WebSearchCache, 레거시 컬럼 제거 (2026-05-09)

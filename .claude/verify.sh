@@ -126,9 +126,171 @@ print('  ✓ import OK')
     echo "=== PASS ==="
     ;;
 
+  phase-c-step0)
+    echo "=== phase-c-step0: ADR docs/dev/phase-c/ ==="
+    DIR="$SCRIPT_DIR/../docs/dev/phase-c"
+    test -d "$DIR" || { echo "  ✗ $DIR 없음"; exit 1; }
+    REQUIRED_FILES=("_index.md" "lifecycle.md" "sources.md" "promotion-guard.md" "dedup.md" "beat-schedule.md" "ops-cost.md")
+    for f in "${REQUIRED_FILES[@]}"; do
+      test -f "$DIR/$f" || { echo "  ✗ $f 누락"; exit 1; }
+    done
+    echo "  ✓ 7개 파일 존재 (_index + 6 섹션)"
+    INDEX="$DIR/_index.md"
+    for sec in "lifecycle.md" "sources.md" "promotion-guard.md" "dedup.md" "beat-schedule.md" "ops-cost.md"; do
+      grep -q "$sec" "$INDEX" || { echo "  ✗ _index.md 에 $sec 링크 누락"; exit 1; }
+    done
+    echo "  ✓ _index.md 에 6개 섹션 링크 확인"
+    grep -qi "phase d\|websearch" "$INDEX" && grep -qi "별도 task\|별도 phase" "$INDEX" \
+      || echo "  ⚠ Phase D 경계 명시 권장"
+    TOTAL=$(wc -l "$DIR"/*.md | tail -1 | awk '{print $1}')
+    test "$TOTAL" -ge 200 || { echo "  ✗ ADR 총 분량 부족 ($TOTAL 줄, 최소 200)"; exit 1; }
+    echo "  ✓ 총 분량 $TOTAL 줄"
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step1)
+    echo "=== phase-c-step1: migration 0012 + ContentSeed/SeedDiscoveryLog ORM ==="
+    # 1. migration 파일 존재
+    test -f "$BACKEND/alembic/versions/0012_seed_tables.py" \
+      || { echo "  ✗ 0012_seed_tables.py 없음"; exit 1; }
+    echo "  ✓ 0012_seed_tables.py 존재"
+    # 2. ORM import
+    python3 -c "
+from api.meta_core.models.seed import ContentSeed, SeedDiscoveryLog
+from api.meta_core.models import ContentSeed as CS, SeedDiscoveryLog as SDL
+from api.programming.metadata.models.external import ExternalSourceType
+assert hasattr(ExternalSourceType, 'omdb'), 'ExternalSourceType.omdb 없음 (migration 0012 upgrade 실행 필요)'
+from api.meta_core.models.intelligence import MetadataCandidate
+assert hasattr(MetadataCandidate, 'target_type'), 'MetadataCandidate.target_type 없음'
+assert hasattr(MetadataCandidate, 'target_id'), 'MetadataCandidate.target_id 없음'
+assert hasattr(ContentSeed, 'is_locked'), 'ContentSeed.is_locked property 없음'
+print('  ✓ import + attribute OK')
+"
+    # 3. 임시 SQLite engine 으로 테이블 생성 검증 (.env DB 연결 불필요)
+    python3 -c "
+import sqlalchemy as sa
+from sqlalchemy.orm import declarative_base
+_engine = sa.create_engine('sqlite:////tmp/verify_0012.db', connect_args={'check_same_thread': False})
+from shared.database import Base
+import api.meta_core.models  # noqa
+Base.metadata.create_all(_engine)
+insp = sa.inspect(_engine)
+tables = insp.get_table_names()
+for t in ['content_seeds', 'seed_discovery_log']:
+    assert t in tables, f'{t} 테이블 없음'
+cols = {c['name'] for c in insp.get_columns('content_seeds')}
+for col in ['status', 'locked_by', 'locked_at', 'suspected_match_content_id',
+            'last_seen_at', 'alt_external_ids', 'promoted_to_content_id']:
+    assert col in cols, f'content_seeds.{col} 컬럼 없음'
+mc_cols = {c['name'] for c in insp.get_columns('metadata_candidates')}
+assert 'target_type' in mc_cols, 'metadata_candidates.target_type 없음'
+assert 'target_id' in mc_cols, 'metadata_candidates.target_id 없음'
+print('  ✓ 테이블 + 컬럼 확인 OK')
+import os; os.remove('/tmp/verify_0012.db')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step2)
+    echo "=== phase-c-step2: discovery framework + TmdbDiscoverySource ==="
+    python3 -c "
+from api.meta_core.discovery import DiscoverySource, TmdbDiscoverySource, run_discovery
+from api.meta_core.discovery.base import DiscoveryResult
+print('  ✓ import OK')
+"
+    python3 -m pytest tests/meta_core/test_discovery_tmdb.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step3)
+    echo "=== phase-c-step3: KobisDiscoverySource ==="
+    python3 -c "
+from api.meta_core.discovery import KobisDiscoverySource
+from api.meta_core.clients.kobis_client import KobisClient
+print('  ✓ import OK')
+"
+    python3 -m pytest tests/meta_core/test_discovery_kobis.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step4)
+    echo "=== phase-c-step4: KmdbDiscoverySource ==="
+    python3 -c "
+from api.meta_core.discovery import KmdbDiscoverySource
+from api.meta_core.clients.kmdb_client import KmdbClient
+assert hasattr(KmdbClient, 'search_recent'), 'KmdbClient.search_recent 없음'
+assert hasattr(KmdbClient, 'iter_collection'), 'KmdbClient.iter_collection 없음'
+print('  ✓ import + 확장 메서드 OK')
+"
+    python3 -m pytest tests/meta_core/test_discovery_kmdb.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step5)
+    echo "=== phase-c-step5: OmdbDiscoverySource ==="
+    python3 -c "
+from api.meta_core.discovery import OmdbDiscoverySource
+from api.meta_core.clients.omdb_client import OmdbClient, OmdbApiKeyMissing
+print('  ✓ import OK')
+"
+    python3 -m pytest tests/meta_core/test_discovery_omdb.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step6)
+    echo "=== phase-c-step6: seed-dedup-match ==="
+    python3 -c "
+from api.meta_core.discovery.dedup import match_or_create_seed
+print('  ✓ import OK')
+"
+    python3 -m pytest tests/meta_core/test_seed_dedup.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step7)
+    echo "=== phase-c-step7: seed-promote-api ==="
+    python3 -c "
+from api.meta_core.discovery.promote import promote_seed, SeedNotFound, SeedAlreadyProcessed, SeedLockedByOther, PossibleDuplicate
+from api.meta_core.intelligence.router import router
+from api.meta_core.intelligence.schemas import PromoteRequest, PromoteResultOut
+print('  ✓ import OK')
+"
+    python3 -m pytest tests/meta_core/test_seed_promote.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step8)
+    echo "=== phase-c-step8: seed-review-backend ==="
+    python3 -c "
+from api.meta_core.intelligence.seed_router import router as seed_router
+from api.meta_core.intelligence.seed_schemas import SeedListResponse, SeedBulkPromoteRequest, SeedStatsOut
+print('  ✓ import OK')
+"
+    python3 -m pytest tests/meta_core/test_seed_review.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-c-step9)
+    echo "=== phase-c-step9: seed-beat-monitoring ==="
+    python3 -c "
+from workers.tasks.discovery_tasks import discover_tmdb, discover_kobis, discover_kmdb, discover_all_daily
+from api.meta_core.intelligence.seed_router import discovery_log, discovery_stats, seed_funnel
+# beat 스케줄 확인
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'discover-tmdb-daily' in sched, 'discover-tmdb-daily beat 없음'
+assert 'discover-kobis-daily' in sched, 'discover-kobis-daily beat 없음'
+assert 'discover-kmdb-daily' in sched, 'discover-kmdb-daily beat 없음'
+assert 'discover-tmdb-weekly' in sched, 'discover-tmdb-weekly beat 없음'
+print('  ✓ import + beat 4개 확인 OK')
+"
+    python3 -m pytest tests/workers/test_discovery_tasks.py tests/meta_core/test_discovery_monitoring.py -q
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9"
     exit 1
     ;;
 esac

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     TMDB_API_KEY: str = ""
     KOBIS_API_KEY: str = ""
     KMDB_API_KEY: str = ""
+    OMDB_API_KEY: str = ""
 
     # Ollama
     OLLAMA_URL: str = "http://localhost:11434"

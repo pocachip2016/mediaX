@@ -134,3 +134,13 @@ class ActionResultOut(BaseModel):
     decision: str
     applied: bool
     message: str = ""
+
+
+class PromoteRequest(BaseModel):
+    actor: str
+    override_dup: bool = False
+
+
+class PromoteResultOut(BaseModel):
+    content_id: int
+    status: str = "created"

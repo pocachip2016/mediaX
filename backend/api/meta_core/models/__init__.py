@@ -50,6 +50,10 @@ from api.meta_core.models.intelligence import (
     FieldResolution,
     SeedCandidate,
 )
+from api.meta_core.models.seed import (
+    ContentSeed,
+    SeedDiscoveryLog,
+)
 
 __all__ = [
     # content master
@@ -68,4 +72,6 @@ __all__ = [
     "WebSearchCache",
     # meta intelligence
     "MetadataCandidate", "MatchEdge", "FieldSuggestion", "FieldResolution", "SeedCandidate",
+    # phase c seed
+    "ContentSeed", "SeedDiscoveryLog",
 ]

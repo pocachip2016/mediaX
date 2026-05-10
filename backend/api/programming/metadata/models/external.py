@@ -24,6 +24,7 @@ class ExternalSourceType(str, enum.Enum):
     daum = "daum"
     other = "other"
     kmdb = "kmdb"  # 한국영상자료원 KMDb
+    omdb = "omdb"  # OMDb — IMDb 글로벌 보완 (Phase C)
 
 
 class AITaskType(str, enum.Enum):
