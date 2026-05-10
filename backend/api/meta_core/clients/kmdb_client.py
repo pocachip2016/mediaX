@@ -60,3 +60,44 @@ class KmdbClient:
             return data["Data"][0]["Result"][0]
         except (KeyError, IndexError, TypeError):
             return {}
+
+    def search_recent(self, days: int, collection: str = "kmdb_public2",
+                      list_count: int = 100) -> list[dict]:
+        """최근 N일 등록작 — releaseDts 필터."""
+        from datetime import datetime, timedelta, timezone
+        today = datetime.now(timezone.utc)
+        start = (today - timedelta(days=days)).strftime("%Y%m%d")
+        end = today.strftime("%Y%m%d")
+        data = self._get({
+            "collection": collection,
+            "releaseDts": start,
+            "releaseDte": end,
+            "listCount": str(list_count),
+            "startCount": "0",
+        })
+        try:
+            return data["Data"][0]["Result"]
+        except (KeyError, IndexError, TypeError):
+            return []
+
+    def iter_collection(self, collection: str = "kmdb_public2",
+                        list_count: int = 100):
+        """전체 collection 페이지네이션 이터레이터 — 백필 용도."""
+        start = 0
+        while True:
+            data = self._get({
+                "collection": collection,
+                "listCount": str(list_count),
+                "startCount": str(start),
+            })
+            try:
+                results = data["Data"][0]["Result"]
+                total = int(data["Data"][0].get("TotalCount", 0))
+            except (KeyError, IndexError, TypeError, ValueError):
+                break
+            if not results:
+                break
+            yield from results
+            start += list_count
+            if start >= total:
+                break

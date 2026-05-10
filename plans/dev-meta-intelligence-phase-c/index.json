@@ -1,0 +1,110 @@
+{
+  "project": "mediaX",
+  "phase": "dev-meta-intelligence-phase-c",
+  "description": "SEED 신규 콘텐츠 발굴 파이프라인. mediaX DB에 없는 콘텐츠를 외부 소스(TMDB Trending/Upcoming/Discover, KOBIS 개봉예정·박스오피스, KMDB 신규 등록, OMDb)에서 자동 발굴 → content_seeds candidate → 인간 검토 후 Content 승격. Phase B aggregator·field_strategy·scoring 인프라 재활용. Phase D(WebSearch)는 별도 task.",
+  "decisions": {
+    "seed_table_separate": "content_seeds 별도 테이블 — 승인 전 Content 노출 X",
+    "auto_promotion_forbidden": "confidence ≥ 0.95 여도 자동 승격 금지, 인간 검토 필수",
+    "discovery_sources": ["tmdb", "kobis", "kmdb", "omdb"],
+    "phase_b_reuse": "MetadataCandidate/MatchEdge/FieldSuggestion 인프라 그대로 — target_type 컬럼만 추가(content vs content_seed)",
+    "beat_schedule": "Daily 새벽 — TMDB 03:00, KOBIS 03:30, KMDB 04:00, OMDb on-demand"
+  },
+  "dependencies": {
+    "phase_b_completed": [
+      "scoring (compute_match_score)",
+      "field_strategy (FIELD_STRATEGIES)",
+      "aggregator (aggregate_content)",
+      "intelligence/router (resolution API)"
+    ]
+  },
+  "steps": [
+    {
+      "step": "C.0",
+      "name": "adr-phase-c-seed",
+      "status": "completed",
+      "scope": "docs/dev/meta-intelligence-phase-c.md — SEED 라이프사이클 5단계, 소스 우선순위, 승격 가드, dedup 정책, beat 스케줄",
+      "summary": "ADR docs/dev/phase-c/ 신설 — _index + 6 섹션 분할로 SEED 라이프사이클·소스 우선순위·승격가드·dedup·Beat 04:30~·비용 정책 확정",
+      "completed_at": "2026-05-10T13:00:00+09:00"
+    },
+    {
+      "step": "C.1",
+      "name": "migration-0012-seeds",
+      "status": "completed",
+      "scope": "alembic 0012 — content_seeds, seed_discovery_log 테이블 + ExternalSourceType.omdb 추가 + MetadataCandidate.target_type 컬럼",
+      "summary": "alembic 0012 신설 — content_seeds(SEED 라이프사이클, 9컬럼), seed_discovery_log, ExternalSourceType.omdb, MetadataCandidate.target_type/target_id 추가",
+      "completed_at": "2026-05-10T14:00:00+09:00"
+    },
+    {
+      "step": "C.2",
+      "name": "discovery-framework-tmdb",
+      "status": "completed",
+      "scope": "api/meta_core/discovery/ — DiscoverySource 추상 인터페이스 + TmdbDiscoverySource (Trending day/week, Upcoming, Discover with KR region filter)",
+      "summary": "discovery/ 패키지 신설 — DiscoverySource ABC + TmdbDiscoverySource(trending/upcoming/discover KR) + run_discovery 단일 진입점, 테스트 11 pass",
+      "completed_at": "2026-05-10T15:00:00+09:00"
+    },
+    {
+      "step": "C.3",
+      "name": "kobis-discovery",
+      "status": "completed",
+      "scope": "KobisDiscoverySource — 개봉예정작 + 박스오피스 일/주 + 신규 등록 영화 collector",
+      "summary": "KobisClient + KobisDiscoverySource 신설 — upcoming/box_office_daily/weekly/new_release 4 mode, 19+·단편 필터, 테스트 12 pass",
+      "completed_at": "2026-05-10T15:30:00+09:00"
+    },
+    {
+      "step": "C.4",
+      "name": "kmdb-discovery",
+      "status": "completed",
+      "scope": "KmdbDiscoverySource — 신규 등록 영화·시리즈 collector (kmdb_client.py 확장)",
+      "summary": "KmdbClient 확장(search_recent/iter_collection) + KmdbDiscoverySource 신설 — new_release/discover_drama/discover_movie 3 mode, HTML태그·!HS마커 제거, 가짜 영문제목 필터, 테스트 17 pass",
+      "completed_at": "2026-05-10T16:00:00+09:00"
+    },
+    {
+      "step": "C.5",
+      "name": "omdb-client",
+      "status": "completed",
+      "scope": "api/meta_core/clients/omdb_client.py — OMDb API 클라이언트 (IMDb 글로벌 보완), ExternalMetaSource.omdb 통합",
+      "summary": "OmdbClient + OmdbDiscoverySource 신설 — by_imdb_id/search_title 2 mode, N/A 포스터·시놉시스→None 처리, run_discovery **kwargs 지원으로 mode별 파라미터 전달, 테스트 16 pass",
+      "completed_at": "2026-05-10T16:30:00+09:00"
+    },
+    {
+      "step": "C.6",
+      "name": "seed-dedup-match",
+      "status": "completed",
+      "scope": "DiscoverySource 결과 → 기존 Content 매칭 (Phase B scoring 재활용) → 미매칭만 content_seeds 적재 + SEED 간 중복 제거",
+      "summary": "match_or_create_seed 신설 — Content 매칭(≥0.85)/SEED 중복(≥0.92)/alt_id 누적/신규생성 4단계 dedup, runner.py raw-insert를 dedup 흐름으로 교체, 테스트 9 pass",
+      "completed_at": "2026-05-10T17:00:00+09:00"
+    },
+    {
+      "step": "C.7",
+      "name": "seed-promote-api",
+      "status": "completed",
+      "scope": "POST /seeds/{id}/promote — SEED → Content 승격 + ExternalMetaSource 자동 등록 + Phase B aggregator 트리거",
+      "summary": "promote_seed 신설 — 잠금TTL/dedup재확인/Content+ExternalMetaSource INSERT/Celery enqueue, POST /seeds/{id}/promote (200/409/423), 테스트 10 pass",
+      "completed_at": "2026-05-10T17:30:00+09:00"
+    },
+    {
+      "step": "C.8",
+      "name": "seed-review-backend",
+      "status": "completed",
+      "scope": "GET /seeds (필터·페이징), POST /seeds/{id}/accept|reject|edit, POST /seeds/bulk-promote — 검수 백엔드",
+      "summary": "seed 검수 API 8 엔드포인트 신설 — GET /seeds(필터/페이징)/stats/{id}, POST lock/unlock/accept/reject/edit/bulk-promote, StaticPool TestClient 패턴, 테스트 15 pass",
+      "completed_at": "2026-05-10T18:00:00+09:00"
+    },
+    {
+      "step": "C.9",
+      "name": "seed-beat-monitoring",
+      "status": "completed",
+      "scope": "Celery Beat — discover_tmdb/kobis/kmdb daily, GET /seeds/stats 통계 API, 모니터링 UI 백엔드 데이터 제공",
+      "summary": "discovery_tasks 4 Celery task + Beat 4스케줄(04:30~05:30 KST), /seeds/discovery-log·stats·funnel 모니터링 3 API, 고정경로 우선등록 패턴, 테스트 12 pass",
+      "completed_at": "2026-05-10T18:30:00+09:00"
+    },
+    {
+      "step": "C.10",
+      "name": "wrap",
+      "status": "completed",
+      "scope": "TODO.md·CHANGELOG·main 머지, Phase C → Phase D 전환 메모",
+      "summary": "TODO.md Phase C→Done/Phase D→Next 갱신, CHANGELOG.md 신설(C.0~C.9 전체), meta_core/CLAUDE.md Phase C 모듈 인덱스 추가",
+      "completed_at": "2026-05-10T19:00:00+09:00"
+    }
+  ]
+}

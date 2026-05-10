@@ -43,6 +43,10 @@ class MetadataCandidate(Base):
     fetched_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     status = Column(String(20), nullable=False, server_default="active", index=True)
     # status: active | expired | rejected
+    target_type = Column(String(20), nullable=False, server_default="content")
+    # target_type: content | content_seed  (Phase C 이후 SEED candidate 지원)
+    target_id = Column(Integer, nullable=True)
+    # target_id: content_id 또는 content_seed_id (target_type 에 따라 결정)
 
     match_edges = relationship("MatchEdge", back_populates="candidate",
                                cascade="all, delete-orphan")
