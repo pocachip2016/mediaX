@@ -589,3 +589,62 @@ export const tmdbCacheApi = {
     return request<TmdbCacheRecentItem[]>(`/api/programming/metadata/tmdb-cache/recent?${q}`)
   },
 }
+
+// ── 외부 소스 (KOBIS / KMDB) ──────────────────────────────
+
+export interface ExternalSourceDailyPoint {
+  date: string
+  count: number
+  errors: number
+}
+
+export interface ExternalSourceStats {
+  total_synced: number
+  last_run_at: string | null
+  last_run_status: string | null
+  last_7d_daily: ExternalSourceDailyPoint[]
+}
+
+export interface ExternalSourceItem {
+  id: number
+  content_id: number | null
+  source_type: string
+  external_id: string | null
+  title_on_source: string | null
+  match_confidence: number | null
+  matched_at: string | null
+  created_at: string
+}
+
+export interface PaginatedExternalItems {
+  items: ExternalSourceItem[]
+  total: number
+  page: number
+  size: number
+}
+
+function makeExternalApi(source: "kobis" | "kmdb") {
+  const base = `/api/programming/metadata/${source}`
+  return {
+    getStats: () => request<ExternalSourceStats>(`${base}/stats`),
+
+    getSyncLog: (params?: { status?: string; page?: number; size?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.status) q.set("status", params.status)
+      if (params?.page) q.set("page", String(params.page))
+      if (params?.size) q.set("size", String(params.size))
+      return request<PaginatedSyncLog>(`${base}/sync-log?${q}`)
+    },
+
+    search: (params?: { title?: string; page?: number; size?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.title) q.set("title", params.title)
+      if (params?.page) q.set("page", String(params.page))
+      if (params?.size) q.set("size", String(params.size))
+      return request<PaginatedExternalItems>(`${base}/search?${q}`)
+    },
+  }
+}
+
+export const kobisApi = makeExternalApi("kobis")
+export const kmdbApi = makeExternalApi("kmdb")

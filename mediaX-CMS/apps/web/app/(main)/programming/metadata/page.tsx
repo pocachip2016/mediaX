@@ -76,6 +76,10 @@ const MOCK_READINESS: ServiceReadinessStats = {
   image_completed: 156,
   video_completed: 142,
   all_completed: 137,
+  text_rate: 76.5,
+  image_rate: 63.2,
+  video_rate: 57.5,
+  all_rate: 55.5,
 }
 
 export default function MetadataDashboardPage() {
@@ -172,7 +176,7 @@ export default function MetadataDashboardPage() {
             {
               label: "이미지메타",
               value: readiness.image_completed,
-              href: "/programming/metadata/image",
+              href: "/programming/sources",
               color: "text-violet-600",
               bg: "bg-violet-50 dark:bg-violet-900/20",
               border: "border-violet-200 dark:border-violet-800",

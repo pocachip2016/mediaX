@@ -58,6 +58,7 @@ from api.programming.metadata.schemas import (
     ServiceReadinessStats,
     PaginatedTmdbItems,
     TmdbCacheStats, TmdbSyncLogItem, PaginatedSyncLog, TmdbCacheRecentItem,
+    ExternalSourceStats, PaginatedExternalItems,
 )
 from api.programming.metadata.models import CpEmailLog
 
@@ -519,3 +520,61 @@ def list_tmdb_cache_recent(
     db: Session = Depends(get_db),
 ):
     return service.list_tmdb_cache_recent(db, kind=kind, limit=limit)
+
+
+# ── KOBIS 모니터링 ────────────────────────────────────────────────────────────
+
+@router.get("/kobis/stats", response_model=ExternalSourceStats, summary="KOBIS 동기화 통계")
+def get_kobis_stats(db: Session = Depends(get_db)):
+    return service.get_external_source_stats(db, "kobis")
+
+
+@router.get("/kobis/sync-log", response_model=PaginatedSyncLog, summary="KOBIS 동기화 로그")
+def list_kobis_sync_log(
+    status: Optional[str] = Query(None, description="running | completed | failed"),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_external_source_sync_log(db, "kobis", status=status, page=page, size=size)
+    return PaginatedSyncLog(items=items, total=total, page=page, size=size)
+
+
+@router.get("/kobis/search", response_model=PaginatedExternalItems, summary="KOBIS 캐시 검색")
+def search_kobis(
+    title: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    items, total = service.search_external_sources(db, "kobis", title=title, year=None, page=page, size=size)
+    return PaginatedExternalItems(items=items, total=total, page=page, size=size)
+
+
+# ── KMDB 모니터링 ────────────────────────────────────────────────────────────
+
+@router.get("/kmdb/stats", response_model=ExternalSourceStats, summary="KMDB 동기화 통계")
+def get_kmdb_stats(db: Session = Depends(get_db)):
+    return service.get_external_source_stats(db, "kmdb")
+
+
+@router.get("/kmdb/sync-log", response_model=PaginatedSyncLog, summary="KMDB 동기화 로그 (항상 빈 결과)")
+def list_kmdb_sync_log(
+    status: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_external_source_sync_log(db, "kmdb", status=status, page=page, size=size)
+    return PaginatedSyncLog(items=items, total=total, page=page, size=size)
+
+
+@router.get("/kmdb/search", response_model=PaginatedExternalItems, summary="KMDB 캐시 검색")
+def search_kmdb(
+    title: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    items, total = service.search_external_sources(db, "kmdb", title=title, year=None, page=page, size=size)
+    return PaginatedExternalItems(items=items, total=total, page=page, size=size)

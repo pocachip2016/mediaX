@@ -324,9 +324,64 @@ print('  ✓ KMDB rate limit + quota wired')
     echo "=== PASS ==="
     ;;
 
+  sources-step0)
+    echo "=== sources-step0: KOBIS/KMDB 백엔드 엔드포인트 ==="
+    python3 -c "
+from api.programming.metadata import router
+from api.programming.metadata.schemas import ExternalSourceStats, ExternalSourceItem, PaginatedExternalItems
+from api.programming.metadata.service import get_external_source_stats, list_external_source_sync_log, search_external_sources
+print('  ✓ import OK')
+"
+    python3 -c "
+from api.programming.metadata.router import router as r
+paths = [str(route.path) for route in r.routes]
+for p in ['/kobis/stats', '/kobis/sync-log', '/kobis/search', '/kmdb/stats', '/kmdb/sync-log', '/kmdb/search']:
+    assert p in paths, f'{p} 엔드포인트 없음'
+print('  ✓ 6개 엔드포인트 확인 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  sources-step1)
+    echo "=== sources-step1: api.ts kobisApi/kmdbApi 타입 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    grep -q "kobisApi" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ kobisApi 없음"; exit 1; }
+    grep -q "kmdbApi" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ kmdbApi 없음"; exit 1; }
+    grep -q "ExternalSourceStats" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ ExternalSourceStats 타입 없음"; exit 1; }
+    echo "  ✓ api.ts 확인 OK"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  sources-step2)
+    echo "=== sources-step2: 프론트엔드 라우팅 + 페이지 파일 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming"
+    for p in "sources/page.tsx" "sources/tmdb/page.tsx" "sources/tmdb-sync/page.tsx" "sources/kobis/page.tsx" "sources/kmdb/page.tsx"; do
+      test -f "$CMS/$p" || { echo "  ✗ $p 없음"; exit 1; }
+    done
+    test ! -f "$CMS/tmdb/page.tsx" || { echo "  ✗ 기존 tmdb/page.tsx 남아 있음 — 삭제 필요"; exit 1; }
+    test ! -f "$CMS/tmdb-sync/page.tsx" || { echo "  ✗ 기존 tmdb-sync/page.tsx 남아 있음 — 삭제 필요"; exit 1; }
+    echo "  ✓ 페이지 파일 구조 OK"
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npm run build --silent 2>&1 | tail -10
+    echo "=== PASS ==="
+    ;;
+
+  sources-step3)
+    echo "=== sources-step3: 네비게이션 + metadata 대시보드 연결 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q '"/programming/sources"' "$CMS/config/docs.ts" || { echo "  ✗ docs.ts에 /programming/sources 없음"; exit 1; }
+    grep -q "/programming/sources/tmdb" "$CMS/config/docs.ts" || { echo "  ✗ sources/tmdb 링크 없음"; exit 1; }
+    grep -q "/programming/sources/kobis" "$CMS/config/docs.ts" || { echo "  ✗ sources/kobis 링크 없음"; exit 1; }
+    grep -q '"/programming/sources"' "$CMS/app/(main)/programming/metadata/page.tsx" \
+      || { echo "  ✗ metadata/page.tsx 이미지메타 href 미수정"; exit 1; }
+    echo "  ✓ 네비게이션 + 대시보드 연결 OK"
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3"
     exit 1
     ;;
 esac

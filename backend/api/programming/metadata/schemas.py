@@ -488,3 +488,39 @@ class TmdbCacheRecentItem(BaseModel):
 
 
 TextMetaOut.model_rebuild()
+
+
+# ── 외부 소스 (KOBIS / KMDB) ──────────────────────────────
+
+class ExternalSourceDailyPoint(BaseModel):
+    date: str
+    count: int
+    errors: int
+
+
+class ExternalSourceStats(BaseModel):
+    total_synced: int
+    last_run_at: Optional[datetime]
+    last_run_status: Optional[str]
+    last_7d_daily: list[ExternalSourceDailyPoint]
+
+
+class ExternalSourceItem(BaseModel):
+    id: int
+    content_id: Optional[int]
+    source_type: str
+    external_id: Optional[str]
+    title_on_source: Optional[str]
+    match_confidence: Optional[float]
+    matched_at: Optional[datetime]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PaginatedExternalItems(BaseModel):
+    items: list[ExternalSourceItem]
+    total: int
+    page: int
+    size: int

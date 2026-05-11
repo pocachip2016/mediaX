@@ -1275,3 +1275,92 @@ def list_tmdb_cache_recent(db, kind: str, limit: int) -> list:
             })
     results.sort(key=lambda x: x["fetched_at"] or datetime.min, reverse=True)
     return results[:limit]
+
+
+# ── 외부 소스 (KOBIS / KMDB) ──────────────────────────────────────────────────
+
+def get_external_source_stats(db, source_type: str) -> dict:
+    """KOBIS 또는 KMDB 통계: external_meta_sources 건수 + sync_log 집계."""
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType, TmdbSyncLog, TmdbSyncSource
+    from sqlalchemy import func
+
+    ext_type = ExternalSourceType(source_type)
+    total = db.query(ExternalMetaSource).filter(ExternalMetaSource.source_type == ext_type).count()
+
+    # KOBIS만 sync_log가 있음
+    kobis_sources = [TmdbSyncSource.kobis_daily, TmdbSyncSource.kobis_backfill]
+    if source_type == "kobis":
+        sync_sources = kobis_sources
+        last_log = (
+            db.query(TmdbSyncLog)
+            .filter(TmdbSyncLog.source.in_(sync_sources))
+            .order_by(TmdbSyncLog.started_at.desc())
+            .first()
+        )
+        cutoff_7d = datetime.utcnow() - timedelta(days=7)
+        recent_logs = (
+            db.query(TmdbSyncLog)
+            .filter(TmdbSyncLog.source.in_(sync_sources), TmdbSyncLog.started_at >= cutoff_7d)
+            .all()
+        )
+        day_map: dict = defaultdict(lambda: {"count": 0, "errors": 0})
+        for log in recent_logs:
+            if log.started_at:
+                day_str = log.started_at.strftime("%Y-%m-%d")
+                day_map[day_str]["count"] += log.items_inserted or 0
+                day_map[day_str]["errors"] += log.errors or 0
+        last_7d = [{"date": d, "count": v["count"], "errors": v["errors"]} for d, v in sorted(day_map.items())]
+        return {
+            "total_synced": total,
+            "last_run_at": last_log.started_at if last_log else None,
+            "last_run_status": last_log.status.value if last_log else None,
+            "last_7d_daily": last_7d,
+        }
+
+    # KMDB: sync_log 없으므로 matched_at 기준
+    last_matched = (
+        db.query(func.max(ExternalMetaSource.matched_at))
+        .filter(ExternalMetaSource.source_type == ext_type)
+        .scalar()
+    )
+    return {
+        "total_synced": total,
+        "last_run_at": last_matched,
+        "last_run_status": None,
+        "last_7d_daily": [],
+    }
+
+
+def list_external_source_sync_log(db, source_type: str, status: str | None, page: int, size: int):
+    """KOBIS sync 이력 (KMDB는 항상 빈 결과)."""
+    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource
+
+    if source_type != "kobis":
+        return [], 0
+
+    q = db.query(TmdbSyncLog).filter(
+        TmdbSyncLog.source.in_([TmdbSyncSource.kobis_daily, TmdbSyncSource.kobis_backfill])
+    )
+    if status:
+        q = q.filter(TmdbSyncLog.status == status)
+
+    total = q.count()
+    items = q.order_by(TmdbSyncLog.started_at.desc()).offset((page - 1) * size).limit(size).all()
+    return items, total
+
+
+def search_external_sources(db, source_type: str, title: str | None, year: int | None, page: int, size: int):
+    """external_meta_sources에서 소스별 검색."""
+    from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType
+
+    ext_type = ExternalSourceType(source_type)
+    q = db.query(ExternalMetaSource).filter(ExternalMetaSource.source_type == ext_type)
+
+    if title:
+        q = q.filter(ExternalMetaSource.title_on_source.ilike(f"%{title}%"))
+
+    total = q.count()
+    items = q.order_by(ExternalMetaSource.matched_at.desc()).offset((page - 1) * size).limit(size).all()
+    return items, total

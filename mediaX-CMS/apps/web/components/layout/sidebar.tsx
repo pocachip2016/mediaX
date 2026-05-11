@@ -30,10 +30,10 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
 } from "@workspace/ui/components/sidebar"
-import { Collapsible, CollapsibleContent } from "@workspace/ui/components/collapsible"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@workspace/ui/components/collapsible"
 import { Badge } from "@workspace/ui/components/badge"
 import { cn } from "@workspace/ui/lib/utils"
-import { docsNav, type NavSection } from "@/config/docs"
+import { docsNav, type NavSection, type NavItem } from "@/config/docs"
 import { siteConfig } from "@/config/site-config"
 
 /** 섹션 base → 아이콘 매핑 */
@@ -44,6 +44,77 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   "/analytics": BarChart2,
   "/marketing": Megaphone,
   "/monitoring": Activity,
+}
+
+function SubGroup({
+  item,
+  pathname,
+  isGroupActive,
+}: {
+  item: NavItem
+  pathname: string
+  isGroupActive: boolean
+}) {
+  const [open, setOpen] = useState(isGroupActive)
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <SidebarMenuSubItem>
+        {/* 제목 → 페이지 이동 / 화살표 → 토글 */}
+        <div className="flex items-center w-full">
+          <SidebarMenuSubButton
+            asChild
+            isActive={isGroupActive}
+            className={cn(
+              "flex-1 min-w-0 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              isGroupActive && "text-sidebar-accent-foreground font-medium"
+            )}
+          >
+            <Link href={item.href!} onClick={() => setOpen(true)}>
+              <span className="flex-1 truncate">{item.title}</span>
+              {item.label && (
+                <Badge variant="secondary" className="h-4 px-1 text-[10px] shrink-0">{item.label}</Badge>
+              )}
+            </Link>
+          </SidebarMenuSubButton>
+          <CollapsibleTrigger asChild>
+            <button className="shrink-0 p-1 rounded hover:bg-sidebar-accent text-sidebar-foreground/40 hover:text-sidebar-accent-foreground transition-colors">
+              <ChevronRight className={cn("size-3.5 transition-transform duration-200", open && "rotate-90")} />
+            </button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {(item.items ?? []).filter((sub) => !sub.disabled).map((sub) => {
+              const isSubActive = pathname === sub.href
+              return (
+                <SidebarMenuSubItem key={sub.href ?? sub.title}>
+                  <SidebarMenuSubButton
+                    asChild={!!sub.href}
+                    isActive={isSubActive}
+                    className={cn(
+                      "pl-4 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      isSubActive && "text-sidebar-accent-foreground font-medium"
+                    )}
+                  >
+                    {sub.href ? (
+                      <Link href={sub.href} className="flex w-full items-center justify-between">
+                        <span>{sub.title}</span>
+                        {sub.label && (
+                          <Badge variant="secondary" className="h-4 px-1 text-[10px]">{sub.label}</Badge>
+                        )}
+                      </Link>
+                    ) : (
+                      <span>{sub.title}</span>
+                    )}
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              )
+            })}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuSubItem>
+    </Collapsible>
+  )
 }
 
 function NavGroup({
@@ -94,6 +165,20 @@ function NavGroup({
               .filter((item) => !item.disabled)
               .map((item) => {
                 const isItemActive = pathname === item.href
+                const hasChildren = item.items && item.items.length > 0
+
+                if (hasChildren) {
+                  const isGroupActive = pathname.startsWith(item.href ?? "__never__")
+                  return (
+                    <SubGroup
+                      key={item.href ?? item.title}
+                      item={item}
+                      pathname={pathname}
+                      isGroupActive={isGroupActive}
+                    />
+                  )
+                }
+
                 return (
                   <SidebarMenuSubItem key={item.href ?? item.title}>
                     <SidebarMenuSubButton

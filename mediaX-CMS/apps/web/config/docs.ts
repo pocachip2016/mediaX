@@ -29,7 +29,6 @@ export const docsNav: NavSection[] = [
         title: "메타데이터",
         href: "/programming/metadata",
         items: [
-          { title: "대시보드", href: "/programming/metadata" },
           { title: "검토 대기풀", href: "/programming/metadata/staging", label: "NEW" },
           { title: "배치 업로드", href: "/programming/metadata/upload", label: "NEW" },
           { title: "검수 큐", href: "/programming/metadata/queue" },
@@ -56,15 +55,14 @@ export const docsNav: NavSection[] = [
         items: [],
       },
       {
-        title: "TMDB 탐색",
-        href: "/programming/tmdb",
-        items: [],
-      },
-      {
-        title: "TMDB 캐시 모니터링",
-        href: "/programming/tmdb-sync",
-        label: "NEW",
-        items: [],
+        title: "외부 소스",
+        href: "/programming/sources",
+        items: [
+          { title: "TMDB 탐색", href: "/programming/sources/tmdb" },
+          { title: "TMDB 캐시", href: "/programming/sources/tmdb-sync" },
+          { title: "KOBIS", href: "/programming/sources/kobis" },
+          { title: "KMDB", href: "/programming/sources/kmdb" },
+        ],
       },
     ],
   },
