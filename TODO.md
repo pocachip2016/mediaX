@@ -20,6 +20,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] chore: fix external source cache display (mock fallback for empty data) + TMDB menu consolidation (2026-05-12)
 - [x] dev-meta-intelligence — Phase C 완료 (SEED 발굴 파이프라인: discovery×4소스, dedup, promote, 검수 API×8, Beat×4, 모니터링 3API, 테스트 91개) (2026-05-10)
 - [x] dev-meta-intelligence — Phase B MVP1 완료 (gap→enrich→strategy→aggregator→resolution API→검수 백엔드, 테스트 104개) (2026-05-09)
 - [x] dev-dam-bridge — meta_core public API(/contents/since, /dam-events), changefeed webhook, Dam 피드백 수신 (2026-05-09)
