@@ -39,7 +39,8 @@ def upgrade() -> None:
                     'changes_movie', 'changes_tv',
                     'backfill_movie_year', 'backfill_tv_year'
                 );
-            EXCEPTION WHEN duplicate_object THEN NULL;
+            EXCEPTION WHEN duplicate_object THEN
+                ALTER TYPE tmdbsyncsource ADD VALUE IF NOT EXISTS 'discover_movie';
             END $$;
         """)
         op.execute("""
@@ -123,38 +124,51 @@ def upgrade() -> None:
 
     # ── tmdb_sync_log ──────────────────────────────────────────────────
     if dialect == "postgresql":
-        source_type = sa.Enum("discover_movie", "discover_tv",
-                               "changes_movie", "changes_tv",
-                               "backfill_movie_year", "backfill_tv_year",
-                               name="tmdbsyncsource", create_type=False)
-        status_type = sa.Enum("running", "completed", "failed",
-                               name="tmdbbsyncstatus", create_type=False)
+        op.execute(f"""
+            CREATE TABLE IF NOT EXISTS tmdb_sync_log (
+                id SERIAL PRIMARY KEY,
+                run_id VARCHAR(36) NOT NULL,
+                source tmdbsyncsource NOT NULL,
+                target_year INTEGER,
+                target_date DATE,
+                status tmdbbsyncstatus NOT NULL,
+                started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT {now_default},
+                finished_at TIMESTAMP WITH TIME ZONE,
+                pages_fetched INTEGER DEFAULT 0,
+                items_fetched INTEGER DEFAULT 0,
+                items_inserted INTEGER DEFAULT 0,
+                items_updated INTEGER DEFAULT 0,
+                items_unchanged INTEGER DEFAULT 0,
+                errors INTEGER DEFAULT 0,
+                error_sample JSONB
+            );
+            CREATE INDEX IF NOT EXISTS ix_tmdb_sync_log_started_at ON tmdb_sync_log(started_at);
+            CREATE INDEX IF NOT EXISTS ix_tmdb_sync_log_source_year ON tmdb_sync_log(source, target_year);
+            CREATE INDEX IF NOT EXISTS ix_tmdb_sync_log_target_date ON tmdb_sync_log(target_date);
+        """)
     else:
-        source_type = sa.String(50)
-        status_type = sa.String(20)
-
-    op.create_table(
-        "tmdb_sync_log",
-        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("run_id", sa.String(36), nullable=False),
-        sa.Column("source", source_type, nullable=False),
-        sa.Column("target_year", sa.Integer),
-        sa.Column("target_date", sa.Date),
-        sa.Column("status", status_type, nullable=False),
-        sa.Column("started_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text(now_default), nullable=False),
-        sa.Column("finished_at", sa.TIMESTAMP(timezone=True)),
-        sa.Column("pages_fetched", sa.Integer, default=0),
-        sa.Column("items_fetched", sa.Integer, default=0),
-        sa.Column("items_inserted", sa.Integer, default=0),
-        sa.Column("items_updated", sa.Integer, default=0),
-        sa.Column("items_unchanged", sa.Integer, default=0),
-        sa.Column("errors", sa.Integer, default=0),
-        sa.Column("error_sample", sa.JSON),
-    )
-    op.create_index("ix_tmdb_sync_log_started_at", "tmdb_sync_log", ["started_at"])
-    op.create_index("ix_tmdb_sync_log_source_year", "tmdb_sync_log", ["source", "target_year"])
-    op.create_index("ix_tmdb_sync_log_target_date", "tmdb_sync_log", ["target_date"])
+        op.create_table(
+            "tmdb_sync_log",
+            sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+            sa.Column("run_id", sa.String(36), nullable=False),
+            sa.Column("source", sa.String(50), nullable=False),
+            sa.Column("target_year", sa.Integer),
+            sa.Column("target_date", sa.Date),
+            sa.Column("status", sa.String(20), nullable=False),
+            sa.Column("started_at", sa.TIMESTAMP(timezone=True),
+                      server_default=sa.text(now_default), nullable=False),
+            sa.Column("finished_at", sa.TIMESTAMP(timezone=True)),
+            sa.Column("pages_fetched", sa.Integer, default=0),
+            sa.Column("items_fetched", sa.Integer, default=0),
+            sa.Column("items_inserted", sa.Integer, default=0),
+            sa.Column("items_updated", sa.Integer, default=0),
+            sa.Column("items_unchanged", sa.Integer, default=0),
+            sa.Column("errors", sa.Integer, default=0),
+            sa.Column("error_sample", sa.JSON),
+        )
+        op.create_index("ix_tmdb_sync_log_started_at", "tmdb_sync_log", ["started_at"])
+        op.create_index("ix_tmdb_sync_log_source_year", "tmdb_sync_log", ["source", "target_year"])
+        op.create_index("ix_tmdb_sync_log_target_date", "tmdb_sync_log", ["target_date"])
 
 
 def downgrade() -> None:
