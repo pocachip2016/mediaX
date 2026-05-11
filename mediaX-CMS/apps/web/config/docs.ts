@@ -58,8 +58,7 @@ export const docsNav: NavSection[] = [
         title: "외부 소스",
         href: "/programming/sources",
         items: [
-          { title: "TMDB 탐색", href: "/programming/sources/tmdb" },
-          { title: "TMDB 캐시", href: "/programming/sources/tmdb-sync" },
+          { title: "TMDB", href: "/programming/sources/tmdb" },
           { title: "KOBIS", href: "/programming/sources/kobis" },
           { title: "KMDB", href: "/programming/sources/kmdb" },
         ],

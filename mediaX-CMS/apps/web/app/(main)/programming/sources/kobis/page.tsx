@@ -97,9 +97,11 @@ export default function KobisPage() {
         kobisApi.getSyncLog({ page: 1, size: 20 }),
         kobisApi.search({ title: title || undefined, size: 20 }),
       ])
-      setStats(s)
-      setLogs(l.items)
-      setItems(i.items)
+      if (s.total_synced > 0) {
+        setStats(s)
+        setLogs(l.items)
+        setItems(i.items)
+      }
     } catch {
       // Mock 유지
     } finally {

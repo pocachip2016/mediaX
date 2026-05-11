@@ -2,11 +2,34 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Search, X, ChevronLeft, ChevronRight, RefreshCw, Film, Tv, Star } from "lucide-react"
-import { tmdbApi, type TmdbSyncedItem, type ContentStatus } from "@/lib/api"
+import { Search, X, ChevronLeft, ChevronRight, RefreshCw, Film, Tv, Star, Database, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { tmdbApi, tmdbCacheApi, type TmdbSyncedItem, type TmdbCacheStats, type TmdbSyncLogItem, type ContentStatus } from "@/lib/api"
 import Image from "next/image"
 
 // ── Mock 데이터 ───────────────────────────────────────────
+
+const MOCK_STATS: TmdbCacheStats = {
+  total_movies: 847_230, total_tv: 192_440, total_persons: 0,
+  last_24h_movies_added: 65, last_24h_tv_added: 16, last_24h_errors: 0,
+  last_7d_daily: [
+    { date: "2026-05-05", movies: 42, tv: 11, errors: 0 },
+    { date: "2026-05-06", movies: 58, tv: 14, errors: 0 },
+    { date: "2026-05-07", movies: 31, tv: 8,  errors: 1 },
+    { date: "2026-05-08", movies: 77, tv: 22, errors: 0 },
+    { date: "2026-05-09", movies: 55, tv: 18, errors: 0 },
+    { date: "2026-05-10", movies: 65, tv: 16, errors: 0 },
+    { date: "2026-05-11", movies: 0,  tv: 0,  errors: 0 },
+  ],
+  oldest_movie_year: 1900, newest_movie_year: 2026,
+  last_run_at: "2026-05-10T18:45:00+09:00", last_run_status: "completed",
+}
+
+const MOCK_LOGS: TmdbSyncLogItem[] = [
+  { id: 4, run_id: "a4", source: "daily_new_releases", target_year: null, target_date: "2026-05-05", status: "completed", started_at: "2026-05-05T03:45:00+09:00", finished_at: "2026-05-05T03:52:00+09:00", pages_fetched: 4, items_fetched: 80, items_inserted: 65, items_updated: 12, items_unchanged: 3, errors: 0 },
+  { id: 3, run_id: "a3", source: "daily_changes",      target_year: null, target_date: "2026-05-05", status: "completed", started_at: "2026-05-05T03:30:00+09:00", finished_at: "2026-05-05T03:44:00+09:00", pages_fetched: 8, items_fetched: 143, items_inserted: 0, items_updated: 143, items_unchanged: 0, errors: 0 },
+  { id: 2, run_id: "a2", source: "daily_new_releases", target_year: null, target_date: "2026-05-04", status: "completed", started_at: "2026-05-04T03:45:00+09:00", finished_at: "2026-05-04T03:51:00+09:00", pages_fetched: 3, items_fetched: 55, items_inserted: 55, items_updated: 8,   items_unchanged: 0, errors: 0 },
+  { id: 1, run_id: "a1", source: "backfill_discover",  target_year: 2024, target_date: null,          status: "completed", started_at: "2026-05-04T10:00:00+09:00", finished_at: "2026-05-04T14:30:00+09:00", pages_fetched: 4240, items_fetched: 847_230, items_inserted: 847_000, items_updated: 0, items_unchanged: 0, errors: 12 },
+]
 
 const MOCK_ITEMS: TmdbSyncedItem[] = [
   { content_id: 1, title: "기생충", original_title: "Parasite", content_type: "movie", status: "approved", production_year: 2019, cp_name: "CJ ENM", tmdb_id: "496243", poster_url: "https://image.tmdb.org/t/p/w300/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg", match_confidence: 0.98, matched_at: "2026-04-13T10:00:00", quality_score: 96 },
@@ -35,6 +58,20 @@ const STATUS_CLASS: Record<ContentStatus, string> = {
   rejected:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 }
 
+const SOURCE_LABEL: Record<string, string> = {
+  daily_changes: "일별 변경",
+  daily_new_releases: "신규 출시",
+  backfill_discover: "전체 백필",
+  manual: "수동",
+}
+
+const SYNC_STATUS_LABEL: Record<string, string> = {
+  completed: "완료",
+  running: "진행중",
+  failed: "실패",
+  partial: "일부완료",
+}
+
 function qualityColor(score: number | null) {
   if (score === null) return "text-muted-foreground"
   if (score >= 90) return "text-green-600 dark:text-green-400"
@@ -47,6 +84,19 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })
 }
 
+function formatDateTime(iso: string | null) {
+  if (!iso) return "-"
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  return m ? `${m[2]}.${m[3]} ${m[4]}:${m[5]}` : iso
+}
+
+function statusIcon(status: string) {
+  if (status === "completed") return <CheckCircle className="w-4 h-4 text-green-500" />
+  if (status === "running")   return <RefreshCw   className="w-4 h-4 text-blue-500 animate-spin" />
+  if (status === "failed")    return <XCircle     className="w-4 h-4 text-red-500" />
+  return <AlertCircle className="w-4 h-4 text-amber-500" />
+}
+
 function buildPages(current: number, total: number): (number | "…")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
   const pages: (number | "…")[] = [1]
@@ -57,11 +107,49 @@ function buildPages(current: number, total: number): (number | "…")[] {
   return pages
 }
 
-// ── 컴포넌트 ───────────────────────────────────────────────
+function BarChart({ data }: { data: TmdbCacheStats["last_7d_daily"] }) {
+  const max = Math.max(...data.map((d) => d.movies + d.tv), 1)
+  return (
+    <div className="rounded-xl border bg-card p-4 shadow-sm">
+      <p className="text-sm font-medium mb-4">최근 7일 수집량</p>
+      <div className="flex items-end gap-2 h-32">
+        {data.map((d) => {
+          const total = d.movies + d.tv
+          const moviePct = (d.movies / max) * 100
+          const tvPct    = (d.tv    / max) * 100
+          const label = d.date.slice(5)
+          return (
+            <div key={d.date} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+              <span className="text-xs text-muted-foreground tabular-nums">{total > 0 ? total : ""}</span>
+              <div className="w-full flex flex-col justify-end gap-px" style={{ height: "80%" }}>
+                <div className="w-full bg-blue-400/80 dark:bg-blue-500/70 rounded-sm transition-all" style={{ height: `${tvPct}%` }} />
+                <div className="w-full bg-primary/70 rounded-sm transition-all" style={{ height: `${moviePct}%` }} />
+              </div>
+              <span className="text-[10px] text-muted-foreground">{label}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-center gap-4 mt-3">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="inline-block w-3 h-2 rounded-sm bg-primary/70" />영화
+        </span>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="inline-block w-3 h-2 rounded-sm bg-blue-400/80 dark:bg-blue-500/70" />TV
+        </span>
+      </div>
+    </div>
+  )
+}
 
 export default function TmdbPage() {
   const router = useRouter()
 
+  // Stats & Logs
+  const [stats, setStats] = useState<TmdbCacheStats>(MOCK_STATS)
+  const [logs, setLogs] = useState<TmdbSyncLogItem[]>(MOCK_LOGS)
+
+  // Search
   const [search, setSearch] = useState("")
   const [appliedSearch, setAppliedSearch] = useState("")
   const [typeFilter, setTypeFilter] = useState<"" | "movie" | "series">("")
@@ -69,7 +157,23 @@ export default function TmdbPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+
   const SIZE = 20
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const [s, l] = await Promise.all([
+        tmdbCacheApi.getStats(),
+        tmdbCacheApi.getSyncLog({ page: 1, size: 20 }),
+      ])
+      if (s.total_movies + s.total_tv > 0) {
+        setStats(s)
+        setLogs(l.items)
+      }
+    } catch {
+      // Mock 유지
+    }
+  }, [])
 
   const fetchData = useCallback(async (p: number, s: string, t: string) => {
     setLoading(true)
@@ -91,8 +195,9 @@ export default function TmdbPage() {
   }, [])
 
   useEffect(() => {
+    fetchStats()
     fetchData(page, appliedSearch, typeFilter)
-  }, [page, appliedSearch, typeFilter, fetchData])
+  }, [page, appliedSearch, typeFilter, fetchData, fetchStats])
 
   function applySearch() {
     setAppliedSearch(search)
@@ -112,64 +217,144 @@ export default function TmdbPage() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">TMDB 탐색</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">TMDB</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            TMDB에서 매핑된 콘텐츠 목록 ·{" "}
-            <span className="font-medium text-foreground">{total.toLocaleString()}</span>건
+            로컬 TMDB 캐시 DB 수집 현황 — 영화 {stats.oldest_movie_year ?? "?"}~{stats.newest_movie_year ?? "?"}
           </p>
         </div>
-        <button
-          onClick={() => fetchData(page, appliedSearch, typeFilter)}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          새로고침
+        <button onClick={fetchStats} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <RefreshCw className="w-4 h-4" />새로고침
         </button>
       </div>
 
-      {/* 검색 / 필터 */}
-      <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && applySearch()}
-            placeholder="제목 검색..."
-            className="w-full pl-9 pr-8 py-2 text-sm rounded-md border bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          {search && (
-            <button
-              onClick={clearSearch}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+      {/* KPI 카드 4개 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-xl border bg-card p-4 shadow-sm flex items-start gap-3">
+          <div className="mt-0.5 text-muted-foreground"><Film className="w-5 h-5" /></div>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">영화 총 건수</p>
+            <p className="text-2xl font-semibold tabular-nums tracking-tight mt-0.5">{stats.total_movies.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">어제 +{stats.last_24h_movies_added}</p>
+          </div>
         </div>
+        <div className="rounded-xl border bg-card p-4 shadow-sm flex items-start gap-3">
+          <div className="mt-0.5 text-muted-foreground"><Tv className="w-5 h-5" /></div>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">TV 총 건수</p>
+            <p className="text-2xl font-semibold tabular-nums tracking-tight mt-0.5">{stats.total_tv.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">어제 +{stats.last_24h_tv_added}</p>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-card p-4 shadow-sm flex items-start gap-3">
+          <div className="mt-0.5 text-muted-foreground"><Database className="w-5 h-5" /></div>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">전체 합계</p>
+            <p className="text-2xl font-semibold tabular-nums tracking-tight mt-0.5">{(stats.total_movies + stats.total_tv).toLocaleString()}</p>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-card p-4 shadow-sm flex items-start gap-3">
+          <div className="mt-0.5 text-muted-foreground"><Clock className="w-5 h-5" /></div>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">마지막 실행</p>
+            <p className="text-2xl font-semibold tabular-nums tracking-tight mt-0.5">{stats.last_run_at ? formatDateTime(stats.last_run_at) : "-"}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{stats.last_run_status ? SYNC_STATUS_LABEL[stats.last_run_status] ?? stats.last_run_status : "-"}</p>
+          </div>
+        </div>
+      </div>
 
-        {(["", "movie", "series"] as const).map((t) => (
+      {/* 7일 바 차트 */}
+      <BarChart data={stats.last_7d_daily} />
+
+      {/* 동기화 로그 테이블 */}
+      <div>
+        <h3 className="text-sm font-medium mb-3">동기화 로그</h3>
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 border-b">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">소스</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">상태</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">시작</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground">페이지</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground">신규</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">갱신</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">오류</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">동기화 이력이 없습니다.</td>
+                </tr>
+              ) : (
+                logs.map((log) => (
+                  <tr key={log.id} className="border-t hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-medium">{SOURCE_LABEL[log.source] ?? log.source}</td>
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-1.5">
+                        {statusIcon(log.status)}
+                        <span className="text-xs">{SYNC_STATUS_LABEL[log.status] ?? log.status}</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">{formatDateTime(log.started_at)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{log.pages_fetched.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium text-green-600 dark:text-green-400">+{log.items_inserted.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-muted-foreground hidden lg:table-cell">{log.items_updated.toLocaleString()}</td>
+                    <td className={`px-4 py-3 text-right tabular-nums hidden lg:table-cell ${log.errors > 0 ? "text-red-500" : "text-muted-foreground"}`}>{log.errors}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 검색 / 필터 */}
+      <div>
+        <h3 className="text-sm font-medium mb-3">매핑 콘텐츠 탐색</h3>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applySearch()}
+              placeholder="제목 검색..."
+              className="w-full pl-9 pr-8 py-2 text-sm rounded-md border bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {search && (
+              <button
+                onClick={clearSearch}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {(["", "movie", "series"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => { setTypeFilter(t); setPage(1) }}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-md border transition-colors ${
+                typeFilter === t
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background hover:bg-muted border-border"
+              }`}
+            >
+              {t === "" && "전체"}
+              {t === "movie" && <><Film className="w-3.5 h-3.5" />영화</>}
+              {t === "series" && <><Tv className="w-3.5 h-3.5" />시리즈</>}
+            </button>
+          ))}
+
           <button
-            key={t}
-            onClick={() => { setTypeFilter(t); setPage(1) }}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-md border transition-colors ${
-              typeFilter === t
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background hover:bg-muted border-border"
-            }`}
+            onClick={applySearch}
+            className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            {t === "" && "전체"}
-            {t === "movie" && <><Film className="w-3.5 h-3.5" />영화</>}
-            {t === "series" && <><Tv className="w-3.5 h-3.5" />시리즈</>}
+            검색
           </button>
-        ))}
-
-        <button
-          onClick={applySearch}
-          className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          검색
-        </button>
+        </div>
       </div>
 
       {/* 목록 테이블 */}

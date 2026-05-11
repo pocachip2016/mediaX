@@ -134,9 +134,9 @@ export default function SourcesDashboard() {
         kobisApi.getStats(),
         kmdbApi.getStats(),
       ])
-      setTmdb(t)
-      setKobis(k)
-      setKmdb(m)
+      if (t.total_movies + t.total_tv > 0) setTmdb(t)
+      if (k.total_synced > 0) setKobis(k)
+      if (m.total_synced > 0) setKmdb(m)
     } catch {
       // Mock 유지
     } finally {

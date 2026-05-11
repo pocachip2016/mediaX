@@ -56,8 +56,10 @@ export default function KmdbPage() {
         kmdbApi.getStats(),
         kmdbApi.search({ title: title || undefined, size: 20 }),
       ])
-      setStats(s)
-      setItems(i.items)
+      if (s.total_synced > 0) {
+        setStats(s)
+        setItems(i.items)
+      }
     } catch {
       // Mock 유지
     } finally {
