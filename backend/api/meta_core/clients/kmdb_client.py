@@ -10,32 +10,49 @@ KmdbApiKeyMissing 을 raise 함 — 호출부에서 skip 처리 필요.
 """
 
 import logging
+import time
 from typing import Any
 
 import httpx
 
+from shared.quota_manager import QuotaManager
+
 logger = logging.getLogger(__name__)
 
 _BASE = "http://api.kmdb.or.kr/openapi-data2/wisenut/search_api/search_json2.jsp"
+_MIN_INTERVAL = 1.0  # 1 req/sec
+
+_quota = QuotaManager()
 
 
 class KmdbApiKeyMissing(Exception):
     """KMDB_API_KEY 미설정 시 raise"""
 
 
+class KmdbDailyLimitExceeded(Exception):
+    """KMDB daily quota (500/day) 초과 시 raise"""
+
+
 class KmdbClient:
     def __init__(self, api_key: str, timeout: float = 15.0):
         self._api_key = api_key
         self._timeout = timeout
+        self._last_call = 0.0
 
     def _get(self, params: dict) -> dict:
         if not self._api_key:
             raise KmdbApiKeyMissing("KMDB_API_KEY is not set")
+        if not _quota.is_allowed("kmdb", 500):
+            raise KmdbDailyLimitExceeded("KMDB daily limit (500) exceeded")
+        elapsed = time.monotonic() - self._last_call
+        if elapsed < _MIN_INTERVAL:
+            time.sleep(_MIN_INTERVAL - elapsed)
         full_params = {"ServiceKey": self._api_key, "collection": "kmdb_public2",
                        "result": "json", **params}
         try:
             resp = httpx.get(_BASE, params=full_params, timeout=self._timeout)
             resp.raise_for_status()
+            self._last_call = time.monotonic()
             return resp.json()
         except httpx.HTTPError as exc:
             logger.warning("[kmdb] HTTP error: %s", exc)

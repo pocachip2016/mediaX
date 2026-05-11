@@ -288,9 +288,45 @@ print('  ✓ import + beat 4개 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  quota-adr-step1)
+    echo "=== quota-adr-step1: QuotaManager + tests ==="
+    python3 -c "from shared.quota_manager import QuotaManager; QuotaManager().is_allowed; print('  ✓ import OK')"
+    python3 -m pytest tests/shared/test_quota_manager.py -q
+    echo "=== PASS ==="
+    ;;
+
+  quota-adr-step2)
+    echo "=== quota-adr-step2: KOBIS migration ==="
+    python3 -c "
+import ast, pathlib
+src = pathlib.Path('workers/tasks/metadata.py').read_text()
+tree = ast.parse(src)
+fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == '_kobis_rate_allowed')
+src_fn = ast.unparse(fn)
+assert 'QuotaManager' in src_fn or 'is_allowed' in src_fn, 'QuotaManager not used'
+assert 'utcnow' not in src_fn, 'utcnow still present (UTC bug)'
+assert 'r.incr' not in src_fn, 'direct Redis call still present'
+print('  ✓ KOBIS migrated cleanly')
+"
+    echo "=== PASS ==="
+    ;;
+
+  quota-adr-step3)
+    echo "=== quota-adr-step3: KMDB rate limit + quota ==="
+    python3 -c "
+from api.meta_core.clients.kmdb_client import KmdbClient, KmdbDailyLimitExceeded
+import inspect
+src = inspect.getsource(KmdbClient)
+assert '_MIN_INTERVAL' in src, 'rate limit missing'
+assert 'QuotaManager' in src or 'is_allowed' in src, 'quota check missing'
+print('  ✓ KMDB rate limit + quota wired')
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3"
     exit 1
     ;;
 esac
