@@ -552,9 +552,27 @@ print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  ui-impl-1)
+    echo "=== ui-impl-1: sidebar + content list ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DOCS="$CMS/apps/web/config/docs.ts"
+    PAGE="$CMS/apps/web/app/(main)/programming/contents/page.tsx"
+    grep -q "메타데이터 (레거시)" "$DOCS" || { echo "  ✗ '메타데이터 (레거시)' 라벨 미반영"; exit 1; }
+    grep -q "콘텐츠 목록" "$DOCS" || { echo "  ✗ '콘텐츠 목록' 메뉴 항목 없음"; exit 1; }
+    echo "  ✓ docs.ts: 레거시 라벨 + 콘텐츠 목록 항목 OK"
+    grep -q "UI_GROUPS" "$PAGE" || { echo "  ✗ UI 4 그룹 칩(UI_GROUPS) 미구현"; exit 1; }
+    grep -q "selectedIds" "$PAGE" || { echo "  ✗ 다중선택(selectedIds) 미구현"; exit 1; }
+    grep -q "sticky top" "$PAGE" || { echo "  ✗ sticky 액션 바(sticky top) 미구현"; exit 1; }
+    grep -q "EnrichmentBadge" "$PAGE" || { echo "  ✗ EnrichmentBadge 미구현"; exit 1; }
+    echo "  ✓ contents/page.tsx: UI 그룹 + 다중선택 + sticky bar + Enrichment 배지 OK"
+    cd "$CMS" && npx tsc --noEmit -p apps/web/tsconfig.json
+    echo "  ✓ apps/web typecheck PASS"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1"
     exit 1
     ;;
 esac

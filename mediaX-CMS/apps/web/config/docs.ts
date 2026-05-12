@@ -26,7 +26,7 @@ export const docsNav: NavSection[] = [
     base: "/programming",
     items: [
       {
-        title: "메타데이터",
+        title: "메타데이터 (레거시)",
         href: "/programming/metadata",
         items: [
           { title: "검토 대기풀", href: "/programming/metadata/staging", label: "NEW" },
@@ -47,7 +47,9 @@ export const docsNav: NavSection[] = [
       {
         title: "콘텐츠 관리",
         href: "/programming/contents",
-        items: [],
+        items: [
+          { title: "콘텐츠 목록", href: "/programming/contents", label: "NEW" },
+        ],
       },
       {
         title: "편성 스케줄",
