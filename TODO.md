@@ -5,7 +5,7 @@
 
 ## Now (진행 중, 1~3개)
 <!-- 지금 당장 작업 중인 것 -->
-- [ ] dev-ui-implementation — UI consolidation 프로토타입 → 실제 페이지 (메뉴 구조 반영 + API 연결)
+- [ ] dev-ui-implementation — UI consolidation 프로토타입 → 실제 페이지 (plan 작성 완료, Step 0 대기)
 - [ ] dev-api-consolidation — 18개 신규 엔드포인트 구현 (bulk/*, enrich, job status 등)
 
 ## Next (이번 마일스톤 — Dam 연동)

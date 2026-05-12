@@ -1,0 +1,31 @@
+{
+  "project": "mediaX",
+  "phase": "dev-ui-implementation",
+  "description": "dev-ui-consolidation 의 프로토타입 4개(list/detail/add/bulk)를 production 경로(/programming/contents/*) 로 이식. 사이드바 메뉴 재구성 + 5개 신규 화면 (목록/상세/추가모달/Bulk/처리현황). mock 우선, API 연결은 dev-api-consolidation 에서.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "sidebar-and-content-list",
+      "status": "pending",
+      "description": "config/docs.ts 메뉴 재구성 ('콘텐츠 관리' 그룹 추가 + 기존 '메타데이터' → '메타데이터 (레거시)' 라벨 변경). (main)/programming/contents/page.tsx 를 list 프로토타입(status 칩·다중선택·sticky 액션 바)으로 교체. mock 우선."
+    },
+    {
+      "step": 1,
+      "name": "content-detail-tabs",
+      "status": "pending",
+      "description": "(main)/programming/contents/[id]/page.tsx 에 5탭(글자/이미지/영상/외부소스/AI이력) + 필드×3소스 카드 패턴 + 상태 배지/품질점수 헤더 이식. mock 우선."
+    },
+    {
+      "step": 2,
+      "name": "add-and-bulk-modals",
+      "status": "pending",
+      "description": "packages/ui 에 shadcn Dialog 설치. AddContentModal(3탭) + BulkActionModal(3단계) 컴포넌트 생성 후 contents/page.tsx 의 '+ 콘텐츠 추가' 버튼과 sticky 액션 바에 연결."
+    },
+    {
+      "step": 3,
+      "name": "pipeline-and-cleanup",
+      "status": "pending",
+      "description": "(main)/programming/contents/pipeline/page.tsx 신규 (기존 monitoring/pipeline 이전). docs.ts 에서 '메타데이터 (레거시)' 그룹 제거, '처리 현황' 항목 추가. metadata/* 11개 + (prototypes)/* 4개 + monitoring/pipeline 삭제. npm run build 통과."
+    }
+  ]
+}
