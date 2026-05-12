@@ -570,9 +570,27 @@ print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  ui-impl-2)
+    echo "=== ui-impl-2: content detail 5탭 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL_PAGE="$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    [ -f "$DETAIL_PAGE" ] || { echo "  ✗ [id]/page.tsx 파일 없음"; exit 1; }
+    grep -q "type TabName = \"text\" | \"image\" | \"video\" | \"sources\" | \"ai\"" "$DETAIL_PAGE" || { echo "  ✗ 5탭 구조 미정의"; exit 1; }
+    grep -q "metadataApi.getContent" "$DETAIL_PAGE" || { echo "  ✗ metadataApi.getContent 호출 없음"; exit 1; }
+    grep -q "activeTab === \"text\"" "$DETAIL_PAGE" || { echo "  ✗ text 탭 내용 미구현"; exit 1; }
+    grep -q "activeTab === \"image\"" "$DETAIL_PAGE" || { echo "  ✗ image 탭 내용 미구현"; exit 1; }
+    grep -q "activeTab === \"video\"" "$DETAIL_PAGE" || { echo "  ✗ video 탭 내용 미구현"; exit 1; }
+    grep -q "activeTab === \"sources\"" "$DETAIL_PAGE" || { echo "  ✗ sources 탭 내용 미구현"; exit 1; }
+    grep -q "activeTab === \"ai\"" "$DETAIL_PAGE" || { echo "  ✗ ai 탭 내용 미구현"; exit 1; }
+    echo "  ✓ [id]/page.tsx: 5탭 구조 + 탭 내용 OK"
+    cd "$CMS" && npx tsc --noEmit -p apps/web/tsconfig.json
+    echo "  ✓ apps/web typecheck PASS"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2"
     exit 1
     ;;
 esac

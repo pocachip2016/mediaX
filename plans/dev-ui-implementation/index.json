@@ -14,8 +14,10 @@
     {
       "step": 1,
       "name": "content-detail-tabs",
-      "status": "pending",
-      "description": "(main)/programming/contents/[id]/page.tsx 에 5탭(글자/이미지/영상/외부소스/AI이력) + 필드×3소스 카드 패턴 + 상태 배지/품질점수 헤더 이식. mock 우선."
+      "status": "completed",
+      "description": "(main)/programming/contents/[id]/page.tsx 에 5탭(글자/이미지/영상/외부소스/AI이력) + 필드×3소스 카드 패턴 + 상태 배지/품질점수 헤더 이식. mock 우선.",
+      "summary": "5탭(글자/이미지/영상/외부소스/AI이력) 레이아웃 + 헤더(제목/상태배지/품질점수/액션버튼) 이식. 프로토타입 mock UI 그대로 사용, metadataApi.getContent() 데이터 통합. 모달 기능은 Step 2 예정.",
+      "completed_at": "2026-05-13T10:30:00+09:00"
     },
     {
       "step": 2,
