@@ -1364,3 +1364,679 @@ def search_external_sources(db, source_type: str, title: str | None, year: int |
     total = q.count()
     items = q.order_by(ExternalMetaSource.matched_at.desc()).offset((page - 1) * size).limit(size).all()
     return items, total
+
+
+# ── dev-api-consolidation: Bulk Actions ──────────────────────
+
+async def bulk_reprocess(
+    db: Session,
+    ids: list[int],
+    reason: Optional[str] = None,
+    sync_mode: bool = False,
+) -> "JobStatusOut":
+    """Bulk AI 재처리 — review/processing.error 상태만 처리"""
+    from api.programming.metadata.schemas import JobStatusOut, BulkActionResponse
+    from workers.metadata_tasks import process_bulk_reprocess
+
+    # 1. IDs 로드 및 상태 필터링
+    contents = db.query(Content).filter(Content.id.in_(ids)).all()
+    content_map = {c.id: c for c in contents}
+
+    valid_ids = [
+        c.id for c in contents
+        if c.status in [ContentStatus.review, ContentStatus.processing]
+    ]
+    invalid_ids = [id for id in ids if id not in {c.id for c in valid_ids}]
+
+    # 2. ContentBatchJob 생성
+    job = ContentBatchJob(
+        job_name=f"bulk_reprocess_{len(valid_ids)}_items",
+        status="pending",
+        total_count=len(valid_ids),
+        parse_mode="reprocess",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    # 3. Task 큐잉 또는 동기 실행
+    if sync_mode:
+        # 각 content 재처리 (trigger_ai_processing 재사용)
+        for content_id in valid_ids:
+            trigger_ai_processing(content_id)
+        job.status = "done"
+        job.success_count = len(valid_ids)
+    else:
+        # Celery 큐잉
+        process_bulk_reprocess.delay(job.id)
+
+    db.add(job)
+    db.commit()
+
+    return JobStatusOut(
+        id=job.id,
+        status=job.status,
+        action_type="bulk_reprocess",
+        target_count=len(valid_ids),
+        completed_count=job.success_count,
+        failed_count=job.failed_count,
+        progress_percent=0 if job.status == "pending" else 100,
+        created_at=job.created_at,
+        errors=[f"ID {id} 상태 부적합" for id in invalid_ids] if invalid_ids else None,
+    )
+
+
+async def bulk_enrich(
+    db: Session,
+    ids: list[int],
+    reason: Optional[str] = None,
+    sync_mode: bool = False,
+) -> "JobStatusOut":
+    """Bulk 외부 재매칭"""
+    from api.programming.metadata.schemas import JobStatusOut
+    from workers.metadata_tasks import process_bulk_enrich
+
+    # 모든 상태 허용
+    contents = db.query(Content).filter(Content.id.in_(ids)).all()
+    valid_ids = [c.id for c in contents]
+    invalid_ids = [id for id in ids if id not in {c.id for c in contents}]
+
+    job = ContentBatchJob(
+        job_name=f"bulk_enrich_{len(valid_ids)}_items",
+        status="pending",
+        total_count=len(valid_ids),
+        parse_mode="enrich",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    if sync_mode:
+        for content_id in valid_ids:
+            trigger_enrichment(content_id)
+        job.status = "done"
+        job.success_count = len(valid_ids)
+    else:
+        process_bulk_enrich.delay(job.id)
+
+    db.add(job)
+    db.commit()
+
+    return JobStatusOut(
+        id=job.id,
+        status=job.status,
+        action_type="bulk_enrich",
+        target_count=len(valid_ids),
+        completed_count=job.success_count,
+        failed_count=job.failed_count,
+        progress_percent=0 if job.status == "pending" else 100,
+        created_at=job.created_at,
+        errors=[f"ID {id} 없음" for id in invalid_ids] if invalid_ids else None,
+    )
+
+
+async def bulk_process(
+    db: Session,
+    ids: list[int],
+    reason: Optional[str] = None,
+    sync_mode: bool = False,
+) -> "JobStatusOut":
+    """Bulk 즉시 처리 (status=processed)"""
+    from api.programming.metadata.schemas import JobStatusOut
+
+    contents = db.query(Content).filter(Content.id.in_(ids)).all()
+    valid_ids = [c.id for c in contents]
+    invalid_ids = [id for id in ids if id not in {c.id for c in contents}]
+
+    # Update statuses
+    for c in contents:
+        c.status = ContentStatus.approved
+
+    job = ContentBatchJob(
+        job_name=f"bulk_process_{len(valid_ids)}_items",
+        status="done",
+        total_count=len(valid_ids),
+        success_count=len(valid_ids),
+        parse_mode="process",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    return JobStatusOut(
+        id=job.id,
+        status="done",
+        action_type="bulk_process",
+        target_count=len(valid_ids),
+        completed_count=len(valid_ids),
+        failed_count=0,
+        progress_percent=100,
+        created_at=job.created_at,
+        errors=[f"ID {id} 없음" for id in invalid_ids] if invalid_ids else None,
+    )
+
+
+async def bulk_recall(
+    db: Session,
+    ids: list[int],
+    reason: Optional[str] = None,
+    sync_mode: bool = False,
+) -> "JobStatusOut":
+    """Bulk 회수 — approved/rejected → review"""
+    from api.programming.metadata.schemas import JobStatusOut
+
+    contents = db.query(Content).filter(Content.id.in_(ids)).all()
+    content_map = {c.id: c for c in contents}
+
+    valid_contents = [
+        c for c in contents
+        if c.status in [ContentStatus.approved, ContentStatus.rejected]
+    ]
+    valid_ids = [c.id for c in valid_contents]
+    invalid_ids = [id for id in ids if id not in {c.id for c in valid_contents}]
+
+    # Update statuses
+    for c in valid_contents:
+        c.status = ContentStatus.review
+
+    job = ContentBatchJob(
+        job_name=f"bulk_recall_{len(valid_ids)}_items",
+        status="done",
+        total_count=len(valid_ids),
+        success_count=len(valid_ids),
+        parse_mode="recall",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    return JobStatusOut(
+        id=job.id,
+        status="done",
+        action_type="bulk_recall",
+        target_count=len(valid_ids),
+        completed_count=len(valid_ids),
+        failed_count=0,
+        progress_percent=100,
+        created_at=job.created_at,
+        errors=[f"ID {id} 상태 부적합" for id in invalid_ids] if invalid_ids else None,
+    )
+
+
+async def bulk_delete(
+    db: Session,
+    ids: list[int],
+    reason: Optional[str] = None,
+    sync_mode: bool = False,
+) -> "JobStatusOut":
+    """Bulk soft delete (is_deleted=True)"""
+    from api.programming.metadata.schemas import JobStatusOut
+
+    contents = db.query(Content).filter(Content.id.in_(ids)).all()
+    valid_ids = [c.id for c in contents]
+    invalid_ids = [id for id in ids if id not in {c.id for c in contents}]
+
+    # Soft delete
+    for c in contents:
+        c.is_deleted = True
+
+    job = ContentBatchJob(
+        job_name=f"bulk_delete_{len(valid_ids)}_items",
+        status="done",
+        total_count=len(valid_ids),
+        success_count=len(valid_ids),
+        parse_mode="delete",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    return JobStatusOut(
+        id=job.id,
+        status="done",
+        action_type="bulk_delete",
+        target_count=len(valid_ids),
+        completed_count=len(valid_ids),
+        failed_count=0,
+        progress_percent=100,
+        created_at=job.created_at,
+        errors=[f"ID {id} 없음" for id in invalid_ids] if invalid_ids else None,
+    )
+
+
+# ── Job Lifecycle & Undo ──────────────────────────────────
+
+async def get_job_status(db: Session, job_id: int) -> "JobStatusOut":
+    """ContentBatchJob 상태 조회"""
+    from api.programming.metadata.schemas import JobStatusOut
+    
+    job = db.query(ContentBatchJob).filter(ContentBatchJob.id == job_id).first()
+    if not job:
+        return None
+    
+    progress = 0
+    if job.total_count > 0:
+        progress = int((job.success_count + job.failed_count) / job.total_count * 100)
+    
+    return JobStatusOut(
+        id=job.id,
+        status=job.status,
+        action_type=job.parse_mode or "unknown",
+        target_count=job.total_count,
+        completed_count=job.success_count,
+        failed_count=job.failed_count,
+        progress_percent=progress,
+        created_at=job.created_at,
+        started_at=job.created_at,
+        completed_at=job.finished_at,
+        errors=job.error_log,
+    )
+
+
+async def bulk_undo(db: Session, action_id: str) -> "UndoActionOut":
+    """Bulk 액션 되돌리기 (24시간 이내)"""
+    from api.programming.metadata.schemas import UndoActionOut
+    from datetime import datetime, timedelta
+    
+    # 1. Action log 조회
+    action_log = db.query(ContentActionLog).filter(ContentActionLog.action_id == action_id).first()
+    if not action_log:
+        return None
+    
+    # 2. 24시간 확인
+    elapsed = datetime.utcnow() - action_log.executed_at.replace(tzinfo=None)
+    if elapsed > timedelta(hours=24):
+        return None  # 24시간 초과
+    
+    # 3. before_state 복원
+    before_state = action_log.before_state or {}
+    reverted_count = 0
+    
+    for content_id_str, state_dict in before_state.items():
+        try:
+            content_id = int(content_id_str)
+            content = db.query(Content).filter(Content.id == content_id).first()
+            if content and "status" in state_dict:
+                content.status = state_dict["status"]
+                reverted_count += 1
+        except (ValueError, KeyError):
+            pass
+    
+    # 4. reverted_at 기록
+    action_log.reverted_at = datetime.utcnow()
+    db.add(action_log)
+    db.commit()
+    
+    # 복구된 content 중 첫 번째의 상태 반환
+    first_state = next(iter(before_state.values())) if before_state else {}
+    
+    return UndoActionOut(
+        id=action_log.action_id,
+        status=first_state.get("status", "unknown"),
+        reverted_count=reverted_count,
+    )
+
+
+async def retry_failed_in_job(db: Session, job_id: int) -> "BulkActionResponse":
+    """Job의 실패 항목만 재실행"""
+    from api.programming.metadata.schemas import BulkActionResponse
+    import uuid
+    
+    # 1. 기존 job 조회
+    orig_job = db.query(ContentBatchJob).filter(ContentBatchJob.id == job_id).first()
+    if not orig_job or not orig_job.error_log:
+        return None
+    
+    # 2. 실패한 content IDs 추출
+    failed_ids = []
+    for error_item in orig_job.error_log:
+        if "content_id" in error_item:
+            failed_ids.append(error_item["content_id"])
+    
+    if not failed_ids:
+        return None
+    
+    # 3. 신규 job 생성
+    new_job = ContentBatchJob(
+        job_name=f"retry_failed_{len(failed_ids)}_items",
+        status="pending",
+        total_count=len(failed_ids),
+        parse_mode="retry",
+    )
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    
+    return BulkActionResponse(
+        job_id=str(new_job.id),
+        ids_accepted=len(failed_ids),
+        ids_rejected=0,
+        errors=None,
+    )
+
+
+# ── Content Detail — Simple Actions ──────────────────────
+
+async def promote_ai_result(db: Session, content_id: int, ai_result_id: int) -> "PromoteAIResultOut":
+    """AI 결과 채택 (is_final=True)"""
+    from api.programming.metadata.schemas import PromoteAIResultOut
+    from api.programming.metadata.models.external import ContentAIResult
+    
+    # 1. AI 결과 조회
+    ai_result = db.query(ContentAIResult).filter(ContentAIResult.id == ai_result_id).first()
+    if not ai_result:
+        return None
+    
+    # 2. 기존 is_final 결과들 False로 설정
+    db.query(ContentAIResult).filter(
+        ContentAIResult.content_id == content_id,
+        ContentAIResult.is_final == True,
+    ).update({"is_final": False})
+    
+    # 3. 새 결과를 is_final=True로 설정
+    ai_result.is_final = True
+    db.add(ai_result)
+    db.commit()
+    db.refresh(ai_result)
+    
+    return PromoteAIResultOut(
+        id=ai_result.id,
+        is_final=True,
+    )
+
+
+async def partial_reprocess(
+    db: Session,
+    content_id: int,
+    fields: list[str],
+) -> "JobStatusOut":
+    """특정 필드만 AI 재처리"""
+    from api.programming.metadata.schemas import JobStatusOut
+    
+    # 화이트리스트 검증
+    whitelist = {"synopsis", "genre", "tags", "cast", "director", "production_year"}
+    valid_fields = [f for f in fields if f in whitelist]
+    
+    if not valid_fields:
+        return None
+    
+    # Celery task 큐잉 (동기 실행은 생략)
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        return None
+    
+    job = ContentBatchJob(
+        job_name=f"partial_reprocess_{content_id}_{','.join(valid_fields)}",
+        status="pending",
+        total_count=1,
+        parse_mode="partial_reprocess",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    
+    return JobStatusOut(
+        id=job.id,
+        status="pending",
+        action_type="partial_reprocess",
+        target_count=1,
+        completed_count=0,
+        failed_count=0,
+        progress_percent=0,
+        created_at=job.created_at,
+    )
+
+
+async def apply_external_fields(
+    db: Session,
+    content_id: int,
+    source_id: int,
+    fields: list[str],
+) -> dict:
+    """외부 소스 필드 선택 적용"""
+    # 1. Content & ExternalMetaSource 조회
+    content = db.query(Content).filter(Content.id == content_id).first()
+    external = db.query(ExternalMetaSource).filter(ExternalMetaSource.id == source_id).first()
+    
+    if not content or not external:
+        return None
+    
+    # 2. 필드 적용
+    if external.body and isinstance(external.body, dict):
+        ext_fields = external.body.get("fields", {})
+        for field in fields:
+            if field in ext_fields:
+                # Content에 필드 적용 (간단한 예: synopsis)
+                if field == "synopsis" and hasattr(content, "synopsis"):
+                    setattr(content, field, ext_fields[field])
+    
+    db.add(content)
+    db.commit()
+    db.refresh(content)
+    
+    return {
+        "content_id": content.id,
+        "applied_fields": fields,
+        "status": content.status,
+    }
+
+
+# ── Content Detail — Advanced Actions ──────────────────────
+
+async def get_changelog(db: Session, content_id: int) -> "ContentChangelogOut":
+    """변경 이력 조회"""
+    from api.programming.metadata.schemas import ContentChangelogOut, ChangeLogItem
+    from api.programming.metadata.models.external import ContentAuditLog
+    
+    logs = db.query(ContentAuditLog).filter(ContentAuditLog.content_id == content_id).order_by(ContentAuditLog.at.desc()).all()
+    changes = [
+        ChangeLogItem(
+            field=log.field,
+            old_value=log.old_value,
+            new_value=log.new_value,
+            changed_by=log.source,
+            changed_at=log.at,
+        )
+        for log in logs
+    ]
+    return ContentChangelogOut(changes=changes)
+
+
+async def lock_fields(db: Session, content_id: int, fields: list[str], reason: Optional[str] = None) -> dict:
+    """필드 잠금"""
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        return None
+    
+    # locked_fields 업데이트
+    locked = content.locked_fields or []
+    locked = list(set(locked + fields))
+    content.locked_fields = locked
+    
+    db.add(content)
+    db.commit()
+    db.refresh(content)
+    
+    return {
+        "content_id": content.id,
+        "locked_fields": content.locked_fields,
+        "reason": reason,
+    }
+
+
+async def request_preview_clip(db: Session, content_id: int) -> dict:
+    """Preview clip 생성 요청 (stub)"""
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        return None
+    
+    # Celery task 큐잉 (stub)
+    job = ContentBatchJob(
+        job_name=f"preview_clip_{content_id}",
+        status="pending",
+        total_count=1,
+        parse_mode="preview_clip",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    
+    return {
+        "job_id": job.id,
+        "status": "queued",
+        "content_id": content_id,
+    }
+
+
+# ── Content Add Flow ──────────────────────────────────────────
+
+
+async def enrich_preview(
+    db: Session, content_id: int, fields: Optional[list[str]] = None
+) -> dict:
+    """
+    Content {content_id}를 외부 소스와 매칭 (dry-run).
+    DB 변경 없음. enriched_fields + external_sources 반환.
+    """
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        return {"error": f"Content {content_id} not found"}
+
+    # 기존 외부 소스 조회
+    external_sources = db.query(ExternalMetaSource).filter(
+        ExternalMetaSource.content_id == content_id
+    ).all()
+
+    return {
+        "content_id": content_id,
+        "title": content.title,
+        "enriched_fields": fields or ["synopsis", "genre", "tags"],
+        "external_sources": [
+            {
+                "id": s.id,
+                "source": s.source,
+                "title": s.title,
+                "data": s.body,
+            }
+            for s in external_sources
+        ],
+        "preview_mode": True,
+    }
+
+
+async def batch_preview(
+    db: Session, csv_data: list[dict]
+) -> dict:
+    """
+    CSV dry-run. 유효성 검사만 수행.
+    valid_count, missing_count, error_count, duplicate_count 반환.
+    """
+    if not csv_data:
+        return {
+            "total": 0,
+            "valid": [],
+            "missing": [],
+            "errors": [],
+            "duplicates": [],
+            "preview_mode": True,
+        }
+
+    valid = []
+    missing = []
+    errors = []
+    duplicates = set()
+
+    for idx, row in enumerate(csv_data, 1):
+        if not row.get("title"):
+            missing.append({"row": idx, "reason": "title 필수"})
+            continue
+
+        # 중복 검사
+        existing = db.query(Content).filter(
+            Content.title == row.get("title")
+        ).first()
+        if existing:
+            duplicates.add(row.get("title"))
+            continue
+
+        # 유효성 검사
+        if len(row.get("title", "")) > 500:
+            errors.append({"row": idx, "reason": "title 길이 초과 (500자)"})
+            continue
+
+        valid.append({"row": idx, "title": row.get("title")})
+
+    return {
+        "total": len(csv_data),
+        "valid_count": len(valid),
+        "missing_count": len(missing),
+        "error_count": len(errors),
+        "duplicate_count": len(duplicates),
+        "valid": valid[:10],  # 처음 10개만
+        "missing": missing[:10],
+        "errors": errors[:10],
+        "duplicates": list(duplicates)[:10],
+        "preview_mode": True,
+    }
+
+
+async def sources_search(
+    db: Session, query: str, sources: Optional[list[str]] = None
+) -> dict:
+    """SourcesAggregator 사용해서 병렬 검색."""
+    from api.programming.metadata.sources_aggregator import SourcesAggregator
+
+    aggregator = SourcesAggregator()
+    result = await aggregator.search(query, sources)
+
+    return {
+        "query": query,
+        "sources": sources or ["tmdb", "kobis"],
+        "results": result.get("results", []),
+        "errors": result.get("errors"),
+    }
+
+
+async def create_from_sources(
+    db: Session,
+    source_id: int,
+    selected_fields: list[str],
+    cp_name: str,
+) -> dict:
+    """
+    ExternalMetaSource {source_id}에서 Content 생성.
+    Content + ExternalMetaSource를 한번에 생성 (atomic).
+    """
+    external_source = db.query(ExternalMetaSource).filter(
+        ExternalMetaSource.id == source_id
+    ).first()
+    if not external_source:
+        return {"error": f"ExternalMetaSource {source_id} not found"}
+
+    # 새 Content 생성
+    content = Content(
+        title=external_source.title or "",
+        cp_name=cp_name,
+        status=ContentStatus.waiting,
+    )
+    db.add(content)
+    db.flush()  # ID 획득
+
+    # ExternalMetaSource의 content_id 업데이트
+    external_source.content_id = content.id
+    db.add(external_source)
+
+    # ContentMetadata 초기화
+    metadata = ContentMetadata(content_id=content.id, quality_score=0.0)
+    db.add(metadata)
+
+    db.commit()
+    db.refresh(content)
+
+    return {
+        "content_id": content.id,
+        "title": content.title,
+        "source_id": source_id,
+        "status": content.status.value,
+        "created_at": content.created_at.isoformat() if content.created_at else None,
+    }

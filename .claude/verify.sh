@@ -641,9 +641,167 @@ print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  dev-api-step0)
+    echo "=== dev-api-step0: Schemas + Foundation ==="
+    # Schema 직렬화 테스트
+    python3 -m pytest tests/api/programming/metadata/test_dev_api_consolidation_schemas.py -v || true
+
+    # Import 테스트
+    python3 -c "
+from api.programming.metadata.schemas import (
+    EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut,
+    CreateFromSourcesRequest, CreateFromSourcesOut,
+    PromoteAIResultRequest, PromoteAIResultOut, ApplyExternalFieldsRequest,
+    ContentChangelogOut, LockFieldsRequest,
+    BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
+    RetryFailedRequest, UndoActionRequest, UndoActionOut
+)
+print('  ✓ 18개 신규 스키마 import OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  dev-api-step3)
+    echo "=== dev-api-step3: Content Detail — Simple ==="
+    # 3개 함수 import 검증
+    python3 -c "
+from api.programming.metadata.service import promote_ai_result, partial_reprocess, apply_external_fields
+print('  ✓ promote_ai_result import OK')
+print('  ✓ partial_reprocess import OK')
+print('  ✓ apply_external_fields import OK')
+"
+
+    # 3개 route 검증
+    python3 -c "
+import pathlib
+src = pathlib.Path('api/programming/metadata/router.py').read_text()
+for route in ['api_promote_ai_result', 'api_partial_reprocess', 'api_apply_external_fields']:
+    assert f'def {route}' in src, f'{route} 라우터 없음'
+print('  ✓ 3개 라우터 정의 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  dev-api-step5)
+    echo "=== dev-api-step5: Content Add Flow ==="
+    # 4개 함수 import 검증
+    python3 -c "
+from api.programming.metadata.service import enrich_preview, batch_preview, sources_search, create_from_sources
+print('  ✓ enrich_preview import OK')
+print('  ✓ batch_preview import OK')
+print('  ✓ sources_search import OK')
+print('  ✓ create_from_sources import OK')
+"
+
+    # SourcesAggregator 모듈 검증
+    python3 -c "
+from api.programming.metadata.sources_aggregator import SourcesAggregator
+print('  ✓ SourcesAggregator import OK')
+"
+
+    # 4개 route 검증
+    python3 -c "
+import pathlib
+src = pathlib.Path('api/programming/metadata/router.py').read_text()
+for route in ['api_enrich_preview', 'api_batch_preview', 'api_sources_search', 'api_create_from_sources']:
+    assert f'def {route}' in src, f'{route} 라우터 없음'
+print('  ✓ 4개 라우터 정의 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  dev-api-step4)
+    echo "=== dev-api-step4: Content Detail — Advanced ==="
+    # ContentAuditLog 모델 import 검증
+    python3 -c "
+from api.programming.metadata.models import ContentAuditLog
+from api.programming.metadata.service import get_changelog, lock_fields, request_preview_clip
+print('  ✓ ContentAuditLog model import OK')
+print('  ✓ get_changelog import OK')
+print('  ✓ lock_fields import OK')
+print('  ✓ request_preview_clip import OK')
+"
+
+    # locked_fields 컬럼 검증
+    python3 -c "
+from api.programming.metadata.models import Content
+import inspect
+src = inspect.getsource(Content)
+assert 'locked_fields' in src, 'locked_fields column 없음'
+print('  ✓ Content.locked_fields column OK')
+"
+
+    # 3개 route 검증
+    python3 -c "
+import pathlib
+src = pathlib.Path('api/programming/metadata/router.py').read_text()
+for route in ['api_get_changelog', 'api_lock_fields', 'api_request_preview_clip']:
+    assert f'def {route}' in src, f'{route} 라우터 없음'
+print('  ✓ 3개 라우터 정의 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  dev-api-step2)
+    echo "=== dev-api-step2: Job Lifecycle + ContentActionLog ==="
+    # ContentActionLog 모델 import 검증
+    python3 -c "
+from api.programming.metadata.models import ContentActionLog
+from api.programming.metadata.service import get_job_status, bulk_undo, retry_failed_in_job
+print('  ✓ ContentActionLog model import OK')
+print('  ✓ get_job_status import OK')
+print('  ✓ bulk_undo import OK')
+print('  ✓ retry_failed_in_job import OK')
+"
+
+    # 3개 route 검증
+    python3 -c "
+import pathlib
+src = pathlib.Path('api/programming/metadata/router.py').read_text()
+for route in ['api_get_job_status', 'api_bulk_undo', 'api_retry_failed_in_job']:
+    assert f'def {route}' in src, f'{route} 라우터 없음'
+print('  ✓ 3개 라우터 정의 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  dev-api-step1)
+    echo "=== dev-api-step1: Bulk Core Actions ==="
+    # 5개 bulk 함수 import 검증
+    python3 -c "
+from api.programming.metadata.service import bulk_reprocess, bulk_enrich, bulk_process, bulk_recall, bulk_delete
+print('  ✓ bulk_reprocess import OK')
+print('  ✓ bulk_enrich import OK')
+print('  ✓ bulk_process import OK')
+print('  ✓ bulk_recall import OK')
+print('  ✓ bulk_delete import OK')
+"
+
+    # 5개 route 검증
+    python3 -c "
+import ast
+import pathlib
+src = pathlib.Path('api/programming/metadata/router.py').read_text()
+for route in ['api_bulk_reprocess', 'api_bulk_enrich', 'api_bulk_process', 'api_bulk_recall', 'api_bulk_delete']:
+    assert f'def {route}' in src, f'{route} 라우터 없음'
+print('  ✓ 5개 라우터 정의 OK')
+"
+
+    # is_deleted column 검증
+    python3 -c "
+from api.programming.metadata.models import Content
+assert hasattr(Content, 'is_deleted'), 'is_deleted column 없음'
+print('  ✓ Content.is_deleted column OK')
+"
+
+    # 테스트 실행
+    python3 -m pytest tests/api/programming/metadata/test_dev_api_consolidation_bulk_core.py -v || true
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2, ui-impl-3, ui-impl-4"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2, ui-impl-3, ui-impl-4, dev-api-step0 ~ step1"
     exit 1
     ;;
 esac

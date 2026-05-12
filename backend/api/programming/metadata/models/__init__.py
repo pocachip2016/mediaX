@@ -11,6 +11,8 @@ from api.programming.metadata.models.content import (
     ContentMetadata,
     CpEmailLog,
     ContentBatchJob,
+    ContentActionLog,
+    ContentAuditLog,
     ContentType,
     ContentStatus,
     MetaSource,
@@ -58,7 +60,7 @@ from api.programming.metadata.models.tmdb_cache import (
 
 __all__ = [
     # content
-    "Content", "ContentMetadata", "CpEmailLog", "ContentBatchJob",
+    "Content", "ContentMetadata", "CpEmailLog", "ContentBatchJob", "ContentActionLog", "ContentAuditLog",
     "ContentType", "ContentStatus", "MetaSource",
     # taxonomy
     "GenreCode", "TagCode", "ContentGenre", "ContentTag", "TagType",

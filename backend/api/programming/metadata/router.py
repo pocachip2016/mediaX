@@ -59,6 +59,11 @@ from api.programming.metadata.schemas import (
     PaginatedTmdbItems,
     TmdbCacheStats, TmdbSyncLogItem, PaginatedSyncLog, TmdbCacheRecentItem,
     ExternalSourceStats, PaginatedExternalItems,
+    BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
+    UndoActionRequest, UndoActionOut,
+    PromoteAIResultOut, ApplyExternalFieldsRequest,
+    ContentChangelogOut, LockFieldsRequest,
+    EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
 )
 from api.programming.metadata.models import CpEmailLog
 
@@ -578,3 +583,160 @@ def search_kmdb(
 ):
     items, total = service.search_external_sources(db, "kmdb", title=title, year=None, page=page, size=size)
     return PaginatedExternalItems(items=items, total=total, page=page, size=size)
+
+
+# ── dev-api-consolidation: Bulk Actions ──────────────────────
+
+@router.post("/bulk/reprocess", response_model=BulkActionResponse, status_code=202, summary="Bulk AI 재처리")
+async def api_bulk_reprocess(
+    req: BulkActionConsolidatedRequest,
+    db: Session = Depends(get_db),
+):
+    import os
+    sync_mode = os.environ.get("BULK_SYNC_MODE", "false").lower() == "true"
+    return await service.bulk_reprocess(db, req.ids, req.reason, sync_mode)
+
+
+@router.post("/bulk/enrich", response_model=BulkActionResponse, status_code=202, summary="Bulk 외부 재매칭")
+async def api_bulk_enrich(
+    req: BulkActionConsolidatedRequest,
+    db: Session = Depends(get_db),
+):
+    import os
+    sync_mode = os.environ.get("BULK_SYNC_MODE", "false").lower() == "true"
+    return await service.bulk_enrich(db, req.ids, req.reason, sync_mode)
+
+
+@router.post("/bulk/process", response_model=BulkActionResponse, status_code=202, summary="Bulk 즉시 처리")
+async def api_bulk_process(
+    req: BulkActionConsolidatedRequest,
+    db: Session = Depends(get_db),
+):
+    import os
+    sync_mode = os.environ.get("BULK_SYNC_MODE", "false").lower() == "true"
+    return await service.bulk_process(db, req.ids, req.reason, sync_mode)
+
+
+@router.post("/bulk/recall", response_model=BulkActionResponse, status_code=202, summary="Bulk 회수")
+async def api_bulk_recall(
+    req: BulkActionConsolidatedRequest,
+    db: Session = Depends(get_db),
+):
+    import os
+    sync_mode = os.environ.get("BULK_SYNC_MODE", "false").lower() == "true"
+    return await service.bulk_recall(db, req.ids, req.reason, sync_mode)
+
+
+@router.delete("/bulk", response_model=BulkActionResponse, status_code=202, summary="Bulk soft delete")
+async def api_bulk_delete(
+    req: BulkActionConsolidatedRequest,
+    db: Session = Depends(get_db),
+):
+    import os
+    sync_mode = os.environ.get("BULK_SYNC_MODE", "false").lower() == "true"
+    return await service.bulk_delete(db, req.ids, req.reason, sync_mode)
+
+
+@router.get("/contents/jobs/{job_id}", response_model=JobStatusOut, summary="Job 상태 조회")
+async def api_get_job_status(job_id: int, db: Session = Depends(get_db)):
+    return await service.get_job_status(db, job_id)
+
+
+@router.post("/bulk/undo", response_model=UndoActionOut, summary="Bulk 액션 되돌리기")
+async def api_bulk_undo(req: UndoActionRequest, db: Session = Depends(get_db)):
+    return await service.bulk_undo(db, req.action_id)
+
+
+@router.post("/contents/jobs/{job_id}/retry-failed", response_model=BulkActionResponse, status_code=202, summary="실패 항목 재실행")
+async def api_retry_failed_in_job(job_id: int, db: Session = Depends(get_db)):
+    return await service.retry_failed_in_job(db, job_id)
+
+
+@router.post("/contents/{content_id}/ai-results/{result_id}/promote", response_model=PromoteAIResultOut, summary="AI 결과 채택")
+async def api_promote_ai_result(content_id: int, result_id: int, db: Session = Depends(get_db)):
+    return await service.promote_ai_result(db, content_id, result_id)
+
+
+@router.post("/contents/{content_id}/process", response_model=JobStatusOut, status_code=202, summary="부분 필드 재처리")
+async def api_partial_reprocess(
+    content_id: int,
+    fields: str = Query(""),
+    db: Session = Depends(get_db),
+):
+    field_list = [f.strip() for f in fields.split(",") if f.strip()]
+    return await service.partial_reprocess(db, content_id, field_list)
+
+
+@router.post("/contents/{content_id}/external/{source_id}/apply-fields", summary="외부 필드 적용")
+async def api_apply_external_fields(
+    content_id: int,
+    source_id: int,
+    req: ApplyExternalFieldsRequest,
+    db: Session = Depends(get_db),
+):
+    return await service.apply_external_fields(db, content_id, source_id, req.fields)
+
+
+@router.get("/contents/{content_id}/changelog", response_model=ContentChangelogOut, summary="변경 이력 조회")
+async def api_get_changelog(
+    content_id: int,
+    db: Session = Depends(get_db),
+):
+    return await service.get_changelog(db, content_id)
+
+
+@router.post("/contents/{content_id}/lock", summary="필드 잠금")
+async def api_lock_fields(
+    content_id: int,
+    req: LockFieldsRequest,
+    db: Session = Depends(get_db),
+):
+    return await service.lock_fields(db, content_id, req.fields, req.reason)
+
+
+@router.post("/contents/{content_id}/preview-clip", status_code=202, summary="Preview clip 생성 요청")
+async def api_request_preview_clip(
+    content_id: int,
+    db: Session = Depends(get_db),
+):
+    return await service.request_preview_clip(db, content_id)
+
+
+@router.post("/contents/{content_id}/enrich", response_model=EnrichPreviewOut, summary="Enrich 미리보기")
+async def api_enrich_preview(
+    content_id: int,
+    preview: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    if preview:
+        return await service.enrich_preview(db, content_id)
+    return {"error": "preview=true 필수"}
+
+
+@router.post("/upload/batch", response_model=BatchPreviewOut, summary="CSV dry-run")
+async def api_batch_preview(
+    csv_data: list[dict],
+    preview: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    if preview:
+        return await service.batch_preview(db, csv_data)
+    return {"error": "preview=true 필수", "total": 0, "valid_count": 0, "missing_count": 0, "error_count": 0, "duplicate_count": 0}
+
+
+@router.get("/sources/search", response_model=SourceSearchOut, summary="소스 통합 검색")
+async def api_sources_search(
+    q: str = Query(...),
+    sources: str = Query("tmdb,kobis"),
+    db: Session = Depends(get_db),
+):
+    source_list = [s.strip() for s in sources.split(",")]
+    return await service.sources_search(db, q, source_list)
+
+
+@router.post("/contents/from_sources", response_model=CreateFromSourcesOut, summary="소스에서 콘텐츠 생성")
+async def api_create_from_sources(
+    req: CreateFromSourcesRequest,
+    db: Session = Depends(get_db),
+):
+    return await service.create_from_sources(db, req.source_id, req.selected_fields, req.cp_name)
