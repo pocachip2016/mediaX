@@ -30,8 +30,10 @@
     {
       "step": 3,
       "name": "pipeline-and-cleanup",
-      "status": "pending",
-      "description": "(main)/programming/contents/pipeline/page.tsx 신규 (기존 monitoring/pipeline 이전). docs.ts 에서 '메타데이터 (레거시)' 그룹 제거, '처리 현황' 항목 추가. metadata/* 11개 + (prototypes)/* 4개 + monitoring/pipeline 삭제. npm run build 통과."
+      "status": "completed",
+      "description": "(main)/programming/contents/pipeline/page.tsx 신규 (기존 monitoring/pipeline 이전). docs.ts 에서 '메타데이터 (레거시)' 그룹 제거, '처리 현황' 항목 추가. metadata/* 11개 + (prototypes)/* 4개 + monitoring/pipeline 삭제. npm run build 통과.",
+      "summary": "pipeline 페이지 이전 (monitoring → programming/contents). docs.ts: 메타데이터 레거시 그룹 삭제, 처리 현황 메뉴 추가. metadata/* + monitoring/pipeline + prototypes/* 11개+4개 페이지 삭제. npm build 통과.",
+      "completed_at": "2026-05-13T11:15:00+09:00"
     }
   ]
 }

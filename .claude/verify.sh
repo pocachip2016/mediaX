@@ -617,9 +617,33 @@ print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  ui-impl-4)
+    echo "=== ui-impl-4: Pipeline page + cleanup (remove legacy) ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    PIPELINE="$CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    DOCS="$CMS/apps/web/config/docs.ts"
+
+    [ -f "$PIPELINE" ] || { echo "  ✗ pipeline/page.tsx 없음"; exit 1; }
+    grep -q "MOCK_PIPELINE" "$PIPELINE" || { echo "  ✗ pipeline 페이지 미구현"; exit 1; }
+    echo "  ✓ pipeline/page.tsx 존재 + KPI 카드 OK"
+
+    ! grep -q "메타데이터 (레거시)" "$DOCS" || { echo "  ✗ docs.ts에 '메타데이터 (레거시)' 여전히 존재"; exit 1; }
+    grep -q "처리 현황" "$DOCS" || { echo "  ✗ docs.ts에 '처리 현황' 항목 미추가"; exit 1; }
+    echo "  ✓ docs.ts: 메타데이터 레거시 삭제 + 처리 현황 추가 OK"
+
+    [ ! -d "$CMS/apps/web/app/(main)/programming/metadata" ] || { echo "  ✗ metadata 디렉토리 미삭제"; exit 1; }
+    [ ! -d "$CMS/apps/web/app/(main)/monitoring/pipeline" ] || { echo "  ✗ monitoring/pipeline 디렉토리 미삭제"; exit 1; }
+    [ ! -d "$CMS/apps/web/app/(prototypes)" ] || { echo "  ✗ prototypes 디렉토리 미삭제"; exit 1; }
+    echo "  ✓ 레거시 디렉토리 삭제 OK"
+
+    cd "$CMS" && npm run build > /tmp/build.log 2>&1 || { echo "  ✗ npm run build failed:"; tail -20 /tmp/build.log; exit 1; }
+    echo "  ✓ npm run build PASS"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2, ui-impl-3"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2, ui-impl-3, ui-impl-4"
     exit 1
     ;;
 esac
