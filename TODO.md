@@ -5,6 +5,8 @@
 
 ## Now (진행 중, 1~3개)
 <!-- 지금 당장 작업 중인 것 -->
+- [ ] dev-ui-implementation — UI consolidation 프로토타입 → 실제 페이지 (메뉴 구조 반영 + API 연결)
+- [ ] dev-api-consolidation — 18개 신규 엔드포인트 구현 (bulk/*, enrich, job status 등)
 
 ## Next (이번 마일스톤 — Dam 연동)
 - [ ] Dam dev-asset-content-mapping M.1 — mediaX backend 재시작 후 /verify M.1 실행, 이후 M.2(CLIP 매핑) 착수
@@ -20,6 +22,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-ui-consolidation — 8-step design + 4 prototypes 완료 (UI 구조 재설계, 5탭 상세, Bulk 액션, AI enrichment flow) (2026-05-13)
+- [x] dev-watcha-sampling steps 4-5 — Real data rebuild + poster download (483 items, 241 with intentional omissions) (2026-05-13)
 - [x] chore: fix external source cache display (mock fallback for empty data) + TMDB menu consolidation (2026-05-12)
 - [x] dev-meta-intelligence — Phase C 완료 (SEED 발굴 파이프라인: discovery×4소스, dedup, promote, 검수 API×8, Beat×4, 모니터링 3API, 테스트 91개) (2026-05-10)
 - [x] dev-meta-intelligence — Phase B MVP1 완료 (gap→enrich→strategy→aggregator→resolution API→검수 백엔드, 테스트 104개) (2026-05-09)
