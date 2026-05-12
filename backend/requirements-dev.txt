@@ -1,0 +1,3 @@
+# Dev-only dependencies — do NOT add to requirements.txt
+playwright>=1.44.0
+pytest-playwright>=0.5.0

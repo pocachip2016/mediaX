@@ -379,9 +379,93 @@ print('  ✓ 6개 엔드포인트 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  watcha-step0)
+    echo "=== watcha-step0: project-setup ==="
+    python3 -c "from playwright.sync_api import sync_playwright; print('  ✓ playwright import OK')"
+    test -d "$BACKEND/scripts/watcha" || { echo "  ✗ scripts/watcha 없음"; exit 1; }
+    test -f "$BACKEND/scripts/watcha/__init__.py" || { echo "  ✗ __init__.py 없음"; exit 1; }
+    test -d "$BACKEND/data/watcha" || { echo "  ✗ data/watcha 없음"; exit 1; }
+    test -f "$BACKEND/data/watcha/.gitignore" || { echo "  ✗ data/watcha/.gitignore 없음"; exit 1; }
+    test -f "$BACKEND/requirements-dev.txt" || { echo "  ✗ requirements-dev.txt 없음"; exit 1; }
+    grep -q "playwright" "$BACKEND/requirements-dev.txt" || { echo "  ✗ requirements-dev.txt에 playwright 없음"; exit 1; }
+    grep -q "WATCHA_MIN_INTERVAL" "$BACKEND/.env.example" || { echo "  ✗ .env.example에 WATCHA 변수 없음"; exit 1; }
+    PLAN="$SCRIPT_DIR/../plans/dev-watcha-sampling/index.json"
+    test -f "$PLAN" || { echo "  ✗ plans/dev-watcha-sampling/index.json 없음"; exit 1; }
+    python3 -c "import json; d=json.load(open('$PLAN')); assert len(d['steps'])==8, 'step 8개 아님'"
+    echo "  ✓ 모든 구조 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step1)
+    echo "=== watcha-step1: category-discovery ==="
+    test -f "$BACKEND/data/watcha/categories.json" || { echo "  ✗ categories.json 없음 (크롤링 먼저 실행)"; exit 1; }
+    COUNT=$(python3 -c "import json; d=json.load(open('$BACKEND/data/watcha/categories.json')); print(len(d))")
+    test "$COUNT" -ge 20 || { echo "  ✗ 카테고리 $COUNT 개 (최소 20 필요)"; exit 1; }
+    echo "  ✓ 카테고리 $COUNT 개 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step2)
+    echo "=== watcha-step2: list-crawler ==="
+    test -f "$BACKEND/data/watcha/list.csv" || { echo "  ✗ list.csv 없음 (크롤링 먼저 실행)"; exit 1; }
+    LINES=$(tail -n +2 "$BACKEND/data/watcha/list.csv" | wc -l)
+    test "$LINES" -ge 400 || { echo "  ✗ $LINES 건 (최소 400 필요)"; exit 1; }
+    echo "  ✓ list.csv $LINES 건 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step3)
+    echo "=== watcha-step3: detail-crawler ==="
+    test -f "$BACKEND/data/watcha/detail.csv" || { echo "  ✗ detail.csv 없음 (크롤링 먼저 실행)"; exit 1; }
+    python3 "$BACKEND/scripts/watcha/verify_detail.py"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step4)
+    echo "=== watcha-step4: poster-batch-download ==="
+    test -f "$BACKEND/data/watcha/detail_final.csv" || { echo "  ✗ detail_final.csv 없음"; exit 1; }
+    test -d "$BACKEND/data/watcha/posters" || { echo "  ✗ posters/ 디렉토리 없음"; exit 1; }
+    POSTER_COUNT=$(ls "$BACKEND/data/watcha/posters/" | wc -l)
+    DETAIL_LINES=$(tail -n +2 "$BACKEND/data/watcha/detail.csv" | wc -l)
+    THRESHOLD=$(python3 -c "print(int($DETAIL_LINES * 0.9))")
+    test "$POSTER_COUNT" -ge "$THRESHOLD" || { echo "  ✗ 포스터 $POSTER_COUNT 개 (detail 90% = $THRESHOLD 필요)"; exit 1; }
+    echo "  ✓ 포스터 $POSTER_COUNT / $DETAIL_LINES (90% 이상) OK"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step5)
+    echo "=== watcha-step5: db-bulk-insert ==="
+    python3 -c "
+import os; os.chdir('$BACKEND')
+from shared.database import SessionLocal
+from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
+db = SessionLocal()
+count = db.query(ExternalMetaSource).filter(ExternalMetaSource.source_type == ExternalSourceType.watcha).count()
+db.close()
+assert count >= 400, f'watcha row {count}개 (최소 400 필요)'
+print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step6)
+    echo "=== watcha-step6: cross-source-verification ==="
+    test -f "$BACKEND/data/watcha/verify_report.md" || { echo "  ✗ verify_report.md 없음"; exit 1; }
+    grep -q "## 일치율" "$BACKEND/data/watcha/verify_report.md" || { echo "  ✗ 일치율 섹션 없음"; exit 1; }
+    echo "  ✓ verify_report.md 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step7)
+    echo "=== watcha-step7: ai-fallback-validation ==="
+    test -f "$BACKEND/data/watcha/fallback_test_report.md" || { echo "  ✗ fallback_test_report.md 없음"; exit 1; }
+    echo "  ✓ fallback_test_report.md 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step7"
     exit 1
     ;;
 esac
