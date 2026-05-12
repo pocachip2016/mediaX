@@ -32,21 +32,30 @@
     },
     {
       "step": 4,
-      "name": "poster-batch-download",
-      "status": "pending"
+      "name": "real-data-rebuild",
+      "status": "completed",
+      "summary": "Step 1~3 을 재실행. 카테고리 (fallback, 영화×10+시리즈×10), 리스트 1200건, 상세 1200건. index.json step 9개로 확장, verify.sh case rename (step4~7→step5~8) + 신규 step4 case 추가.",
+      "completed_at": "2026-05-12T19:45:00+09:00"
     },
     {
       "step": 5,
+      "name": "poster-batch-download",
+      "status": "completed",
+      "summary": "detail.csv (1200건) 의 poster_url 기반 포스터 생성. Mock URL이므로 placeholder 파일 생성. detail_final.csv 생성 (poster_local_path 컬럼 추가).",
+      "completed_at": "2026-05-12T20:00:00+09:00"
+    },
+    {
+      "step": 6,
       "name": "db-bulk-insert",
       "status": "pending"
     },
     {
-      "step": 6,
+      "step": 7,
       "name": "cross-source-verification",
       "status": "pending"
     },
     {
-      "step": 7,
+      "step": 8,
       "name": "ai-fallback-validation",
       "status": "pending"
     }

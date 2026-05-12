@@ -391,7 +391,7 @@ print('  ✓ 6개 엔드포인트 확인 OK')
     grep -q "WATCHA_MIN_INTERVAL" "$BACKEND/.env.example" || { echo "  ✗ .env.example에 WATCHA 변수 없음"; exit 1; }
     PLAN="$SCRIPT_DIR/../plans/dev-watcha-sampling/index.json"
     test -f "$PLAN" || { echo "  ✗ plans/dev-watcha-sampling/index.json 없음"; exit 1; }
-    python3 -c "import json; d=json.load(open('$PLAN')); assert len(d['steps'])==8, 'step 8개 아님'"
+    python3 -c "import json; d=json.load(open('$PLAN')); assert len(d['steps'])==9, 'step 9개 아님'"
     echo "  ✓ 모든 구조 확인 OK"
     echo "=== PASS ==="
     ;;
@@ -422,7 +422,24 @@ print('  ✓ 6개 엔드포인트 확인 OK')
     ;;
 
   watcha-step4)
-    echo "=== watcha-step4: poster-batch-download ==="
+    echo "=== watcha-step4: real-data-rebuild ==="
+    test -d "$BACKEND/data/watcha/_mock_backup" || { echo "  ✗ _mock_backup 디렉토리 없음"; exit 1; }
+    test -f "$BACKEND/data/watcha/categories.json" || { echo "  ✗ categories.json 없음"; exit 1; }
+    CAT_COUNT=$(python3 -c "import json; d=json.load(open('$BACKEND/data/watcha/categories.json')); print(len(d))")
+    test "$CAT_COUNT" -ge 20 || { echo "  ✗ 카테고리 $CAT_COUNT 개 (최소 20 필요)"; exit 1; }
+    test -f "$BACKEND/data/watcha/list.csv" || { echo "  ✗ list.csv 없음"; exit 1; }
+    LIST_COUNT=$(tail -n +2 "$BACKEND/data/watcha/list.csv" | wc -l)
+    test "$LIST_COUNT" -ge 400 || { echo "  ✗ list.csv $LIST_COUNT 건 (최소 400 필요)"; exit 1; }
+    test -f "$BACKEND/data/watcha/detail.csv" || { echo "  ✗ detail.csv 없음"; exit 1; }
+    python3 "$BACKEND/scripts/watcha/verify_detail.py" || { echo "  ✗ verify_detail.py 실패"; exit 1; }
+    STEP_COUNT=$(python3 -c "import json; d=json.load(open('$BACKEND/../plans/dev-watcha-sampling/index.json')); print(len(d['steps']))")
+    test "$STEP_COUNT" -eq 9 || { echo "  ✗ index.json step 갯수 $STEP_COUNT (9 필요)"; exit 1; }
+    echo "  ✓ real-data-rebuild 확인 OK (카테고리 $CAT_COUNT, list $LIST_COUNT, step 9개)"
+    echo "=== PASS ==="
+    ;;
+
+  watcha-step5)
+    echo "=== watcha-step5: poster-batch-download ==="
     test -f "$BACKEND/data/watcha/detail_final.csv" || { echo "  ✗ detail_final.csv 없음"; exit 1; }
     test -d "$BACKEND/data/watcha/posters" || { echo "  ✗ posters/ 디렉토리 없음"; exit 1; }
     POSTER_COUNT=$(ls "$BACKEND/data/watcha/posters/" | wc -l)
@@ -433,8 +450,8 @@ print('  ✓ 6개 엔드포인트 확인 OK')
     echo "=== PASS ==="
     ;;
 
-  watcha-step5)
-    echo "=== watcha-step5: db-bulk-insert ==="
+  watcha-step6)
+    echo "=== watcha-step6: db-bulk-insert ==="
     python3 -c "
 import os; os.chdir('$BACKEND')
 from shared.database import SessionLocal
@@ -448,24 +465,96 @@ print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
     echo "=== PASS ==="
     ;;
 
-  watcha-step6)
-    echo "=== watcha-step6: cross-source-verification ==="
+  watcha-step7)
+    echo "=== watcha-step7: cross-source-verification ==="
     test -f "$BACKEND/data/watcha/verify_report.md" || { echo "  ✗ verify_report.md 없음"; exit 1; }
     grep -q "## 일치율" "$BACKEND/data/watcha/verify_report.md" || { echo "  ✗ 일치율 섹션 없음"; exit 1; }
     echo "  ✓ verify_report.md 확인 OK"
     echo "=== PASS ==="
     ;;
 
-  watcha-step7)
-    echo "=== watcha-step7: ai-fallback-validation ==="
+  watcha-step8)
+    echo "=== watcha-step8: ai-fallback-validation ==="
     test -f "$BACKEND/data/watcha/fallback_test_report.md" || { echo "  ✗ fallback_test_report.md 없음"; exit 1; }
     echo "  ✓ fallback_test_report.md 확인 OK"
     echo "=== PASS ==="
     ;;
 
+  ui-consolidation-step0)
+    echo "=== ui-consolidation-step0: page-inventory-analysis ==="
+    test -f "$SCRIPT_DIR/../docs/dev/ui-consolidation/01_current_inventory.md" \
+      || { echo "  ✗ 01_current_inventory.md 없음"; exit 1; }
+    echo "  ✓ 01_current_inventory.md 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-consolidation-step1)
+    echo "=== ui-consolidation-step1: menu-structure-redesign ==="
+    test -f "$SCRIPT_DIR/../docs/dev/ui-consolidation/02_menu_lifecycle.md" \
+      || { echo "  ✗ 02_menu_lifecycle.md 없음"; exit 1; }
+    echo "  ✓ 02_menu_lifecycle.md 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-consolidation-step2)
+    echo "=== ui-consolidation-step2: content-add-flow ==="
+    test -f "$SCRIPT_DIR/../docs/dev/ui-consolidation/03_content_add.md" \
+      || { echo "  ✗ 03_content_add.md 없음"; exit 1; }
+    echo "  ✓ 03_content_add.md 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-consolidation-step3)
+    echo "=== ui-consolidation-step3: content-detail-tabs ==="
+    DOC="$SCRIPT_DIR/../docs/dev/ui-consolidation/04_content_detail.md"
+    test -f "$DOC" || { echo "  ✗ 04_content_detail.md 없음"; exit 1; }
+    # 5개 탭 + 핵심 패턴 섹션 헤더 존재 확인
+    grep -q "탭 #1 — 글자" "$DOC" || { echo "  ✗ 글자 탭 섹션 없음"; exit 1; }
+    grep -q "탭 #2 — 이미지" "$DOC" || { echo "  ✗ 이미지 탭 섹션 없음"; exit 1; }
+    grep -q "탭 #3 — 영상" "$DOC" || { echo "  ✗ 영상 탭 섹션 없음"; exit 1; }
+    grep -q "탭 #4 — 외부 소스" "$DOC" || { echo "  ✗ 외부 소스 탭 섹션 없음"; exit 1; }
+    grep -q "탭 #5 — AI 이력" "$DOC" || { echo "  ✗ AI 이력 탭 섹션 없음"; exit 1; }
+    echo "  ✓ 04_content_detail.md + 5개 탭 섹션 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-consolidation-step4)
+    echo "=== ui-consolidation-step4: bulk-action-ux ==="
+    test -f "$SCRIPT_DIR/../docs/dev/ui-consolidation/05_bulk_action.md" \
+      || { echo "  ✗ 05_bulk_action.md 없음"; exit 1; }
+    echo "  ✓ 05_bulk_action.md 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-consolidation-step5)
+    echo "=== ui-consolidation-step5: ai-enrichment-flow ==="
+    test -f "$SCRIPT_DIR/../docs/dev/ui-consolidation/06_ai_enrichment.md" \
+      || { echo "  ✗ 06_ai_enrichment.md 없음"; exit 1; }
+    echo "  ✓ 06_ai_enrichment.md 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-consolidation-step6)
+    echo "=== ui-consolidation-step6: prototype-list-detail ==="
+    PROTO_DIR="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(prototypes)"
+    test -d "$PROTO_DIR/list" || { echo "  ✗ prototypes/list 디렉토리 없음"; exit 1; }
+    test -d "$PROTO_DIR/detail" || { echo "  ✗ prototypes/detail 디렉토리 없음"; exit 1; }
+    echo "  ✓ prototype list + detail 디렉토리 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-consolidation-step7)
+    echo "=== ui-consolidation-step7: prototype-add-bulk ==="
+    PROTO_DIR="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(prototypes)"
+    test -d "$PROTO_DIR/add" || { echo "  ✗ prototypes/add 디렉토리 없음"; exit 1; }
+    test -d "$PROTO_DIR/bulk" || { echo "  ✗ prototypes/bulk 디렉토리 없음"; exit 1; }
+    echo "  ✓ prototype add + bulk 디렉토리 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step7"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7"
     exit 1
     ;;
 esac
