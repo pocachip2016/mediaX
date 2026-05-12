@@ -22,8 +22,10 @@
     {
       "step": 2,
       "name": "add-and-bulk-modals",
-      "status": "pending",
-      "description": "packages/ui 에 shadcn Dialog 설치. AddContentModal(3탭) + BulkActionModal(3단계) 컴포넌트 생성 후 contents/page.tsx 의 '+ 콘텐츠 추가' 버튼과 sticky 액션 바에 연결."
+      "status": "completed",
+      "description": "packages/ui 에 shadcn Dialog 설치. AddContentModal(3탭) + BulkActionModal(3단계) 컴포넌트 생성 후 contents/page.tsx 의 '+ 콘텐츠 추가' 버튼과 sticky 액션 바에 연결.",
+      "summary": "shadcn Dialog 설치 + AddContentModal(3탭: 단일/CSV/외부검색) + BulkActionModal(3단계: 확인/진행/결과) 컴포넌트 구현. contents/page.tsx 버튼과 모달 연결. mock 처리 + 진행 애니메이션.",
+      "completed_at": "2026-05-13T11:00:00+09:00"
     },
     {
       "step": 3,

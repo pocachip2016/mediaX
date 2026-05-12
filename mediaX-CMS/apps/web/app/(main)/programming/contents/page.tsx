@@ -8,6 +8,8 @@ import {
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { metadataApi, type ContentOut, type ContentStatus, type ContentType } from "@/lib/api"
+import { AddContentModal } from "@/components/contents/AddContentModal"
+import { BulkActionModal, type BulkTarget } from "@/components/contents/BulkActionModal"
 
 // ── 타입 ───────────────────────────────────────────────────
 
@@ -148,6 +150,15 @@ export default function ContentsPage() {
   // 다중 선택
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
+  // 모달
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [bulkModalOpen, setBulkModalOpen] = useState(false)
+  const [bulkAction, setBulkAction] = useState<"approve" | "reject" | "reprocess" | "rematch">("approve")
+  const bulkTargets: BulkTarget[] = Array.from(selectedIds).map(id => {
+    const item = items.find(i => i.id === id)
+    return { id, title: item?.title || "", cp_name: item?.cp_name, status: item?.status }
+  })
+
   // ── 목록 로드 ──
   const fetchList = useCallback(async (f: SearchForm, p: number, s: number) => {
     setLoading(true)
@@ -237,7 +248,7 @@ export default function ContentsPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { alert("[Step 2 예정] 콘텐츠 추가 모달 (단일/CSV/외부검색)") }}
+            onClick={() => setAddModalOpen(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             <Plus className="h-3.5 w-3.5" /> 콘텐츠 추가
@@ -355,11 +366,11 @@ export default function ContentsPage() {
           </div>
           <div className="flex items-center gap-2">
             <BulkBtn icon={<Check className="h-3.5 w-3.5" />} label={`승인 (${selectedIds.size})`} enabled={canApprove} variant="green"
-              onClick={() => alert(`[Step 2 예정] ${selectedIds.size}건 일괄 승인 모달`)} />
+              onClick={() => { setBulkAction("approve"); setBulkModalOpen(true) }} />
             <BulkBtn icon={<X className="h-3.5 w-3.5" />} label={`반려 (${selectedIds.size})`} enabled={canReject} variant="red"
-              onClick={() => alert(`[Step 2 예정] ${selectedIds.size}건 일괄 반려 모달`)} />
+              onClick={() => { setBulkAction("reject"); setBulkModalOpen(true) }} />
             <BulkBtn icon={<RotateCcw className="h-3.5 w-3.5" />} label="AI 재처리" enabled={canRetryAI} variant="orange"
-              onClick={() => alert(`[Step 2 예정] ${selectedIds.size}건 AI 재처리 모달`)} />
+              onClick={() => { setBulkAction("reprocess"); setBulkModalOpen(true) }} />
             <BulkBtn icon={<Link2 className="h-3.5 w-3.5" />} label="외부소스 매칭" enabled={canRematch} variant="violet"
               onClick={() => alert(`[Step 2 예정] ${selectedIds.size}건 외부소스 매칭 모달`)} />
             <button onClick={clearSelection}
@@ -521,6 +532,10 @@ export default function ContentsPage() {
           </div>
         )}
       </div>
+      {/* Modals */}
+      <AddContentModal open={addModalOpen} onOpenChange={setAddModalOpen} />
+      <BulkActionModal open={bulkModalOpen} onOpenChange={setBulkModalOpen} action={bulkAction} targets={bulkTargets} />
+
     </div>
   )
 }

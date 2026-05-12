@@ -588,9 +588,38 @@ print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  ui-impl-3)
+    echo "=== ui-impl-3: Add/Bulk modals (shadcn Dialog) ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DIALOG="$CMS/packages/ui/src/components/dialog.tsx"
+    ADD_MODAL="$CMS/apps/web/components/contents/AddContentModal.tsx"
+    BULK_MODAL="$CMS/apps/web/components/contents/BulkActionModal.tsx"
+    CONTENTS_PAGE="$CMS/apps/web/app/(main)/programming/contents/page.tsx"
+
+    [ -f "$DIALOG" ] || { echo "  ✗ dialog.tsx 미설치"; exit 1; }
+    grep -q "@radix-ui/react-dialog" "$CMS/package.json" || { echo "  ✗ @radix-ui/react-dialog 미설치"; exit 1; }
+    echo "  ✓ shadcn Dialog 설치 OK"
+
+    [ -f "$ADD_MODAL" ] || { echo "  ✗ AddContentModal.tsx 없음"; exit 1; }
+    grep -q "type AddTab = \"single\" | \"csv\" | \"external\"" "$ADD_MODAL" || { echo "  ✗ AddContentModal 3탭 구조 미구현"; exit 1; }
+    echo "  ✓ AddContentModal 컴포넌트 OK"
+
+    [ -f "$BULK_MODAL" ] || { echo "  ✗ BulkActionModal.tsx 없음"; exit 1; }
+    grep -q "type BulkStep = \"confirm\" | \"progress\" | \"result\"" "$BULK_MODAL" || { echo "  ✗ BulkActionModal 3단계 구조 미구현"; exit 1; }
+    echo "  ✓ BulkActionModal 컴포넌트 OK"
+
+    grep -q "setAddModalOpen(true)" "$CONTENTS_PAGE" || { echo "  ✗ contents 페이지에 AddContentModal 연결 미구현"; exit 1; }
+    grep -q "setBulkModalOpen(true)" "$CONTENTS_PAGE" || { echo "  ✗ contents 페이지에 BulkActionModal 연결 미구현"; exit 1; }
+    echo "  ✓ contents/page.tsx 모달 연결 OK"
+
+    cd "$CMS" && npx tsc --noEmit -p apps/web/tsconfig.json
+    echo "  ✓ apps/web typecheck PASS"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2, ui-impl-3"
     exit 1
     ;;
 esac
