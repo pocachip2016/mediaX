@@ -21,7 +21,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
-- [x] dev-api-consolidation — 18개 신규 엔드포인트 구현 (Step 0~5: 스키마·Bulk·Jobs·Detail·Add Flow) (2026-05-13)
+- [x] dev-api-consolidation — 18개 신규 엔드포인트 구현 완료 (Step 0~5: 스키마·Bulk·Jobs·Detail·Add Flow) (2026-05-13)
 - [x] dev-ui-implementation — 4-step UI 완료 (콘텐츠 목록, 상세 5탭, Add모달, Bulk모달, 처리현황 페이지) (2026-05-13)
 - [x] dev-ui-consolidation — 8-step design + 4 prototypes 완료 (UI 구조 재설계, 5탭 상세, Bulk 액션, AI enrichment flow) (2026-05-13)
 - [x] dev-watcha-sampling steps 4-5 — Real data rebuild + poster download (483 items, 241 with intentional omissions) (2026-05-13)

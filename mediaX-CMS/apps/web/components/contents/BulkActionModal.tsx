@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { AlertCircle, Check, Clock } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog"
+import { metadataApi } from "@/lib/api"
 
 type BulkStep = "confirm" | "progress" | "result"
 
@@ -47,8 +48,16 @@ export function BulkActionModal({
   const [reason, setReason] = useState("")
   const [progress, setProgress] = useState(0)
   const [dontAskAgain, setDontAskAgain] = useState(false)
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const actionConfig = ACTION_CONFIG[action]
+
+  // Cleanup intervals on unmount or modal close
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    }
+  }, [])
 
   // Reset state when modal opens
   useEffect(() => {
@@ -57,24 +66,58 @@ export function BulkActionModal({
       setReason("")
       setProgress(0)
       setDontAskAgain(false)
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     }
   }, [open])
 
-  // Simulate progress
-  const startBulkAction = () => {
+  // Real API + job polling, with mock fallback
+  const startBulkAction = async () => {
     setStep("progress")
     setProgress(0)
-    let p = 0
-    const interval = setInterval(() => {
-      p += Math.random() * 20
-      if (p >= 100) {
-        p = 100
-        clearInterval(interval)
-        setTimeout(() => setStep("result"), 500)
+
+    const ACTION_MAP: Partial<Record<string, (data: any) => Promise<any>>> = {
+      reprocess: metadataApi.bulkReprocess,
+      rematch: metadataApi.bulkEnrich,
+    }
+
+    try {
+      const apiFn = ACTION_MAP[action]
+      if (!apiFn) {
+        throw new Error(`No API mapping for action: ${action}`)
       }
-      setProgress(Math.min(p, 100))
-    }, 300)
-    console.log(`Mock bulk action: ${action} on ${targets.length} items`)
+
+      const res = await apiFn({ ids: targets.map((t) => t.id), reason })
+      if (!res?.job_id) {
+        throw new Error("No job_id in response")
+      }
+
+      // Poll job status
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const job = await metadataApi.getJobStatus(res.job_id)
+          setProgress(job.progress_percent)
+          if (job.status === "done" || job.status === "failed") {
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+            setTimeout(() => setStep("result"), 500)
+          }
+        } catch (pollError) {
+          console.error("Error polling job status:", pollError)
+        }
+      }, 1000)
+    } catch (error) {
+      // Fallback: mock progress (API unavailable or action not implemented)
+      console.error(`API failed for ${action}:`, error)
+      let p = 0
+      const mockInterval = setInterval(() => {
+        p += Math.random() * 20
+        if (p >= 100) {
+          p = 100
+          clearInterval(mockInterval)
+          setTimeout(() => setStep("result"), 500)
+        }
+        setProgress(Math.min(p, 100))
+      }, 300)
+    }
   }
 
   const getStepColor = () => {

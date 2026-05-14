@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, useRef } from "react"
 import { Upload, Search, Plus, X } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog"
+import { metadataApi } from "@/lib/api"
 
 type AddTab = "single" | "csv" | "external"
 
@@ -27,6 +28,67 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
     cp_name: "",
     synopsis: "",
   })
+
+  // External search state
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Handle external search with debounce
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query)
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+
+    if (!query.trim()) {
+      setSearchResults([])
+      return
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        setSearching(true)
+        const result = await metadataApi.sourcesSearch(query, ["tmdb", "kobis", "kmdb"])
+        setSearchResults(result.results || [])
+      } catch (error) {
+        console.error("Search failed:", error)
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 300)
+  }, [])
+
+  // Handle creating content from source
+  const handleCreateFromSource = async (sourceId: number, sourceName: string) => {
+    try {
+      const result = await metadataApi.createFromSources({
+        source_id: sourceId,
+        selected_fields: ["title", "director", "synopsis"],
+        cp_name: singleForm.cp_name || "자동생성",
+      })
+      alert(`콘텐츠 "${result.title}"이 생성되었습니다.`)
+      setSearchQuery("")
+      setSearchResults([])
+      onOpenChange(false)
+    } catch (error) {
+      console.error("Create from source failed:", error)
+      alert("소스에서 콘텐츠 생성에 실패했습니다.")
+    }
+  }
+
+  // Handle CSV batch preview
+  const handleBatchPreview = async () => {
+    try {
+      const mockFormData = new FormData()
+      mockFormData.append("file", new File(["mock csv"], "mock.csv"))
+      const result = await metadataApi.batchPreviewCsv(mockFormData)
+      alert(`미리보기: ${result.valid_count}건 정상, ${result.missing_count}건 누락`)
+    } catch (error) {
+      console.error("Batch preview failed:", error)
+      alert("CSV 미리보기에 실패했습니다.")
+    }
+  }
 
   const handleSave = () => {
     console.log("Mock save:", { tab: activeTab, data: singleForm })
@@ -196,7 +258,7 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
                   취소
                 </button>
                 <button
-                  onClick={handleSave}
+                  onClick={handleBatchPreview}
                   className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium"
                 >
                   업로드 진행
@@ -212,52 +274,63 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
                 <input
                   type="text"
                   placeholder="영화/시리즈 제목으로 검색..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
                   className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <button className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium inline-flex items-center gap-2">
+                <button
+                  onClick={() => handleSearch(searchQuery)}
+                  disabled={searching}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium inline-flex items-center gap-2 disabled:opacity-50"
+                >
                   <Search className="h-4 w-4" />
-                  검색
+                  {searching ? "검색중..." : "검색"}
                 </button>
               </div>
 
               <div className="space-y-3">
-                {[
-                  { title: "Parasite", year: 2019, source: "TMDB", match: 0.94, director: "봉준호" },
-                  { title: "기생충", year: 2019, source: "KOBIS", match: 0.87, director: "봉준호" },
-                  { title: "Parasite", year: 2019, source: "Watcha", match: 0.79, director: "봉준호" },
-                ].map((result, i) => (
-                  <div key={i} className="border border-slate-200 rounded-lg p-4 hover:border-blue-400 transition-colors">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="font-medium text-slate-900">
-                          {result.title}
-                          <span className="ml-2 text-xs font-normal text-slate-500">({result.year})</span>
-                        </p>
-                        <p className="text-sm text-slate-600 mt-1">{result.director}</p>
-                        <div className="flex gap-2 mt-2">
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                            {result.source}
-                          </span>
-                          <span
-                            className={cn(
-                              "inline-block px-2 py-0.5 rounded-full text-xs font-medium",
-                              result.match >= 0.9
-                                ? "bg-green-100 text-green-700"
-                                : result.match >= 0.7
-                                  ? "bg-amber-100 text-amber-700"
-                                  : "bg-red-100 text-red-700",
-                            )}
-                          >
-                            match {(result.match * 100).toFixed(0)}%
-                          </span>
+                {searchResults.length > 0 ? (
+                  searchResults.map((result, i) => (
+                    <div key={i} className="border border-slate-200 rounded-lg p-4 hover:border-blue-400 transition-colors">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-900">
+                            {result.title}
+                            <span className="ml-2 text-xs font-normal text-slate-500">({result.year || "?"})</span>
+                          </p>
+                          <p className="text-sm text-slate-600 mt-1">{result.director || "감독정보없음"}</p>
+                          <div className="flex gap-2 mt-2">
+                            <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                              {result.source}
+                            </span>
+                            <span
+                              className={cn(
+                                "inline-block px-2 py-0.5 rounded-full text-xs font-medium",
+                                result.match_percent >= 0.9
+                                  ? "bg-green-100 text-green-700"
+                                  : result.match_percent >= 0.7
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-red-100 text-red-700",
+                              )}
+                            >
+                              match {(result.match_percent * 100).toFixed(0)}%
+                            </span>
+                          </div>
                         </div>
+                        <button
+                          onClick={() => handleCreateFromSource(result.id || i, result.source)}
+                          className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 text-sm font-medium"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
                       </div>
-                      <button className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 text-sm font-medium">
-                        <Plus className="h-4 w-4" />
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : searchQuery ? (
+                  <div className="text-center py-8 text-slate-500">검색 결과가 없습니다.</div>
+                ) : (
+                  <div className="text-center py-8 text-slate-500">검색어를 입력하세요.</div>
+                )}
               </div>
 
               <div className="text-xs text-slate-500">

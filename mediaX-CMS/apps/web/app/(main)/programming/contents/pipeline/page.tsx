@@ -159,7 +159,7 @@ export default function PipelineMonitoringPage() {
   const handleRetry = async (item: FailedItem) => {
     setRetrying((prev) => new Set(prev).add(item.id))
     try {
-      await metadataApi.triggerEnrich(item.id)
+      await metadataApi.retryFailedJob(item.id)
       setTimeout(() => {
         setRetrying((prev) => { const n = new Set(prev); n.delete(item.id); return n })
       }, 2000)

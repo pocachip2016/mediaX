@@ -49,6 +49,7 @@ export default function ContentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabName>("text")
   const [selectedSynopsis, setSelectedSynopsis] = useState<"cp" | "ai" | "tmdb" | "manual">("ai")
+  const [changelog, setChangelog] = useState<any>(null)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -64,12 +65,84 @@ export default function ContentDetailPage() {
     fetchContent()
   }, [contentId])
 
+  // Load changelog when ai tab becomes active
+  useEffect(() => {
+    if (activeTab === "ai") {
+      handleLoadChangelog()
+    }
+  }, [activeTab])
+
   if (loading) {
     return <div className="p-6 text-center text-slate-600">로드 중...</div>
   }
 
   if (!content) {
     return <div className="p-6 text-center text-slate-600">콘텐츠를 찾을 수 없습니다.</div>
+  }
+
+  // Handler for partialReprocess (AI 재처리)
+  const handlePartialReprocess = async () => {
+    try {
+      await metadataApi.partialReprocess(contentId)
+      alert("AI 재처리 요청이 전송되었습니다.")
+    } catch (error) {
+      console.error("AI 재처리 실패:", error)
+      alert("AI 재처리에 실패했습니다.")
+    }
+  }
+
+  // Handler for applyExternalFields (필드별 가져오기)
+  const handleApplyExternalFields = async (sourceId: number) => {
+    try {
+      await metadataApi.applyExternalFields(contentId, sourceId, ["title", "director"])
+      alert("필드가 적용되었습니다.")
+    } catch (error) {
+      console.error("필드 적용 실패:", error)
+      alert("필드 적용에 실패했습니다.")
+    }
+  }
+
+  // Handler for promoteAIResult (채택)
+  const handlePromoteAIResult = async (resultId: number) => {
+    try {
+      await metadataApi.promoteAIResult(contentId, resultId)
+      alert("AI 결과가 채택되었습니다.")
+    } catch (error) {
+      console.error("AI 결과 채택 실패:", error)
+      alert("AI 결과 채택에 실패했습니다.")
+    }
+  }
+
+  // Handler for getChangelog (변경 이력 조회)
+  const handleLoadChangelog = async () => {
+    try {
+      const data = await metadataApi.getChangelog(contentId)
+      setChangelog(data)
+    } catch (error) {
+      console.error("변경 이력 조회 실패:", error)
+    }
+  }
+
+  // Handler for lockFields (필드 잠금)
+  const handleLockFields = async () => {
+    try {
+      await metadataApi.lockFields(contentId, ["title", "director"], "품질 검증 완료")
+      alert("필드가 잠금 처리되었습니다.")
+    } catch (error) {
+      console.error("필드 잠금 실패:", error)
+      alert("필드 잠금에 실패했습니다.")
+    }
+  }
+
+  // Handler for requestPreviewClip (Preview clip 요청)
+  const handleRequestPreviewClip = async () => {
+    try {
+      await metadataApi.requestPreviewClip(contentId)
+      alert("Preview clip 생성이 요청되었습니다.")
+    } catch (error) {
+      console.error("Preview clip 요청 실패:", error)
+      alert("Preview clip 요청에 실패했습니다.")
+    }
   }
 
   const mockQualityScore = 82
@@ -125,13 +198,20 @@ export default function ContentDetailPage() {
             <X className="h-4 w-4" />
             반려
           </button>
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
+          <button onClick={handlePartialReprocess} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
             <RotateCcw className="h-4 w-4" />
             AI 재처리
           </button>
           <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 text-sm">
             <Eye className="h-4 w-4" />
             외부 재매칭
+          </button>
+          <button onClick={handleLockFields} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+            🔒 잠금
+          </button>
+          <button onClick={handleRequestPreviewClip} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+            <Film className="h-4 w-4" />
+            Preview clip
           </button>
         </div>
       </div>
@@ -333,7 +413,7 @@ export default function ContentDetailPage() {
                   </div>
                 </div>
                 <p className="text-sm text-slate-600 mb-3">title: Parasite</p>
-                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium" onClick={() => alert("필드별 가져오기 (모달은 Step 2에서)")}>
+                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium" onClick={() => handleApplyExternalFields(1)}>
                   📋 필드별 가져오기
                 </button>
               </div>
@@ -346,7 +426,7 @@ export default function ContentDetailPage() {
                   </div>
                 </div>
                 <p className="text-sm text-slate-600 mb-3">영화명: 기생충, 감독: 봉준호</p>
-                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium" onClick={() => alert("필드별 가져오기 (모달은 Step 2에서)")}>
+                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium" onClick={() => handleApplyExternalFields(2)}>
                   📋 필드별 가져오기
                 </button>
               </div>
@@ -359,7 +439,7 @@ export default function ContentDetailPage() {
                   </div>
                 </div>
                 <p className="text-sm text-yellow-700">⚠ 낮은 신뢰도 — 등급/연도 불일치 가능. 검수 권장.</p>
-                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-2" onClick={() => alert("필드별 가져오기 (모달은 Step 2에서)")}>
+                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-2" onClick={() => handleApplyExternalFields(3)}>
                   📋 필드별 가져오기
                 </button>
               </div>
@@ -399,7 +479,7 @@ export default function ContentDetailPage() {
                               ● 현재 채택
                             </span>
                           ) : (
-                            <button className="text-blue-600 hover:text-blue-700 text-xs font-medium">채택</button>
+                            <button onClick={() => handlePromoteAIResult(row.id || i)} className="text-blue-600 hover:text-blue-700 text-xs font-medium">채택</button>
                           )}
                         </td>
                       </tr>
