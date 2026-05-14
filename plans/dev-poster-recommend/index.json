@@ -31,19 +31,25 @@
       "step": "2.1",
       "name": "frontend-api-client",
       "description": "lib/api.ts 에 posterRecommendApi + 타입 3개 추가",
-      "status": "pending"
+      "status": "completed",
+      "summary": "posterRecommendApi(recommend/getCandidates/selectPrimary) + 타입 3개(PosterCandidateOut·PosterRecommendResponse·PosterSelectRequest) api.ts에 추가",
+      "completed_at": "2026-05-15T00:30:00+09:00"
     },
     {
       "step": "2.2",
       "name": "frontend-image-tab-ui",
       "description": "Image 탭 poster 섹션 인라인 확장 (추천 받기 버튼 + 이걸로 버튼 + primary 배지)",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Image 탭 poster 섹션 — TMDB 추천 받기 버튼 + 후보 그리드(primary 배지 + 이걸로 버튼) 인라인 확장",
+      "completed_at": "2026-05-15T00:45:00+09:00"
     },
     {
       "step": "3.1",
       "name": "e2e-verify-and-docs",
       "description": "실데이터 e2e 확인 + TODO.md Done 이동 + CLAUDE.md 현황 갱신",
-      "status": "pending"
+      "status": "completed",
+      "summary": "CLAUDE.md 포스터 추천 현황 갱신 + TODO.md dev-poster-recommend Done 이동",
+      "completed_at": "2026-05-15T01:00:00+09:00"
     }
   ]
 }

@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
-import { metadataApi, imageMetaApi, type ContentOut, type ImageMetaOut, resolvePosterUrl } from "@/lib/api"
+import { metadataApi, imageMetaApi, posterRecommendApi, type ContentOut, type ImageMetaOut, type PosterCandidateOut, resolvePosterUrl } from "@/lib/api"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
@@ -54,6 +54,9 @@ export default function ContentDetailPage() {
   const [changelog, setChangelog] = useState<any>(null)
   const [damAssets, setDamAssets] = useState<any>(null)
   const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
+  const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
+  const [posterRecommending, setPosterRecommending] = useState(false)
+  const [posterSelecting, setPosterSelecting] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -76,10 +79,11 @@ export default function ContentDetailPage() {
     }
   }, [activeTab])
 
-  // Load image meta when image tab becomes active
+  // Load image meta + poster candidates when image tab becomes active
   useEffect(() => {
     if (activeTab === "image") {
       imageMetaApi.get(contentId).then(setImageMeta).catch(() => setImageMeta(null))
+      posterRecommendApi.getCandidates(contentId).then(setPosterCandidates).catch(() => setPosterCandidates(null))
     }
   }, [activeTab, contentId])
 
@@ -364,6 +368,87 @@ export default function ContentDetailPage() {
                 <div className="space-y-6">
                   {(["poster", "thumbnail", "stillcut", "banner", "logo"] as const).map((type) => {
                     const typeImages = imageMeta.images.filter((img) => img.image_type === type)
+
+                    if (type === "poster") {
+                      const displayImages = posterCandidates ?? typeImages.map((img) => ({
+                        id: img.id, url: img.url, source: img.source ?? "", is_primary: false,
+                        width: img.width, height: img.height,
+                      }))
+                      return (
+                        <div key="poster">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-xs font-semibold text-slate-500 uppercase">poster</h4>
+                            <button
+                              onClick={async () => {
+                                setPosterRecommending(true)
+                                try {
+                                  await posterRecommendApi.recommend(contentId)
+                                  const updated = await posterRecommendApi.getCandidates(contentId)
+                                  setPosterCandidates(updated)
+                                } finally {
+                                  setPosterRecommending(false)
+                                }
+                              }}
+                              disabled={posterRecommending}
+                              className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                              {posterRecommending ? "조회 중…" : "TMDB 추천 받기"}
+                            </button>
+                          </div>
+                          {displayImages.length === 0 ? (
+                            <div className="border border-dashed border-slate-200 rounded-lg aspect-[3/4] w-24 flex items-center justify-center">
+                              <Film className="h-6 w-6 text-slate-300" />
+                            </div>
+                          ) : (
+                            <div className="flex gap-3 flex-wrap">
+                              {displayImages.map((img) => {
+                                const src = resolvePosterUrl(img.url)
+                                return (
+                                  <div key={img.id} className={cn(
+                                    "relative border rounded-lg overflow-hidden transition-colors w-24",
+                                    img.is_primary ? "border-blue-400 ring-1 ring-blue-300" : "border-slate-200 hover:border-blue-300",
+                                  )}>
+                                    <div className="aspect-[3/4] bg-slate-100 flex items-center justify-center">
+                                      {src ? (
+                                        <Image src={src} alt="poster" width={96} height={128} unoptimized className="object-cover w-full h-full" />
+                                      ) : (
+                                        <Film className="h-6 w-6 text-slate-300" />
+                                      )}
+                                    </div>
+                                    {img.is_primary && (
+                                      <div className="absolute top-1 left-1 bg-blue-500 text-white text-[10px] font-bold px-1 py-0.5 rounded leading-tight">
+                                        primary
+                                      </div>
+                                    )}
+                                    <div className="p-1.5 space-y-1">
+                                      <div className="text-xs text-slate-600 truncate font-medium">{img.source ?? "—"}</div>
+                                      {!img.is_primary && posterCandidates && (
+                                        <button
+                                          onClick={async () => {
+                                            setPosterSelecting(img.id)
+                                            try {
+                                              const updated = await posterRecommendApi.selectPrimary(contentId, img.id)
+                                              setPosterCandidates(updated)
+                                            } finally {
+                                              setPosterSelecting(null)
+                                            }
+                                          }}
+                                          disabled={posterSelecting === img.id}
+                                          className="w-full text-[10px] px-1 py-0.5 bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-600 rounded transition-colors disabled:opacity-50"
+                                        >
+                                          {posterSelecting === img.id ? "…" : "이걸로"}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+
                     return (
                       <div key={type}>
                         <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">{type}</h4>
