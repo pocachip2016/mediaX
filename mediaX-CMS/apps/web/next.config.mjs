@@ -8,6 +8,12 @@ const nextConfig = {
         hostname: "image.tmdb.org",
         pathname: "/t/p/**",
       },
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "8000",
+        pathname: "/static/**",
+      },
     ],
   },
 }

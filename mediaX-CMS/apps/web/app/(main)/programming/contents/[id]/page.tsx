@@ -7,7 +7,8 @@ import {
   ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { metadataApi, type ContentOut } from "@/lib/api"
+import Image from "next/image"
+import { metadataApi, imageMetaApi, type ContentOut, type ImageMetaOut, resolvePosterUrl } from "@/lib/api"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
@@ -52,6 +53,7 @@ export default function ContentDetailPage() {
   const [selectedSynopsis, setSelectedSynopsis] = useState<"cp" | "ai" | "tmdb" | "manual">("ai")
   const [changelog, setChangelog] = useState<any>(null)
   const [damAssets, setDamAssets] = useState<any>(null)
+  const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -73,6 +75,13 @@ export default function ContentDetailPage() {
       handleLoadChangelog()
     }
   }, [activeTab])
+
+  // Load image meta when image tab becomes active
+  useEffect(() => {
+    if (activeTab === "image") {
+      imageMetaApi.get(contentId).then(setImageMeta).catch(() => setImageMeta(null))
+    }
+  }, [activeTab, contentId])
 
   // Load dam assets when assets tab becomes active
   useEffect(() => {
@@ -339,29 +348,55 @@ export default function ContentDetailPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-slate-900">이미지</h3>
-                <button className="px-3 py-2 rounded-lg bg-blue-100 text-blue-700 text-sm font-medium hover:bg-blue-200">
-                  + 이미지 업로드
-                </button>
               </div>
-              <div className="grid grid-cols-5 gap-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="border border-slate-200 rounded-lg overflow-hidden hover:border-blue-400 transition-colors">
-                    <div className="aspect-[3/4] bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center">
-                      <Film className="h-8 w-8 text-slate-400" />
+              {!imageMeta ? (
+                <div className="grid grid-cols-5 gap-4">
+                  {(["poster", "thumbnail", "stillcut", "banner", "logo"] as const).map((type) => (
+                    <div key={type} className="border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="aspect-[3/4] bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center animate-pulse">
+                        <Film className="h-8 w-8 text-slate-300" />
+                      </div>
+                      <div className="p-2 text-xs text-slate-400">{type}</div>
                     </div>
-                    <div className="p-2 text-xs text-slate-600">
-                      {i === 1 ? "⭐ 대표" : `포스터 ${i}`}
-                      <div className="text-xs text-slate-500 mt-1">{i === 1 ? "CP" : "TMDB"}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="text-sm text-slate-600 mt-4">
-                검수 진행: 5/5 완료
-                <button className="ml-4 px-3 py-1 rounded-lg bg-green-100 text-green-700 text-sm font-medium hover:bg-green-200">
-                  ✓ 이미지 메타 완료
-                </button>
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {(["poster", "thumbnail", "stillcut", "banner", "logo"] as const).map((type) => {
+                    const typeImages = imageMeta.images.filter((img) => img.image_type === type)
+                    return (
+                      <div key={type}>
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">{type}</h4>
+                        {typeImages.length === 0 ? (
+                          <div className="border border-dashed border-slate-200 rounded-lg aspect-[3/4] w-24 flex items-center justify-center">
+                            <Film className="h-6 w-6 text-slate-300" />
+                          </div>
+                        ) : (
+                          <div className="flex gap-3 flex-wrap">
+                            {typeImages.map((img) => {
+                              const src = resolvePosterUrl(img.url)
+                              return (
+                                <div key={img.id} className="border border-slate-200 rounded-lg overflow-hidden hover:border-blue-400 transition-colors w-24">
+                                  <div className="aspect-[3/4] bg-slate-100 flex items-center justify-center">
+                                    {src ? (
+                                      <Image src={src} alt={type} width={96} height={128} unoptimized className="object-cover w-full h-full" />
+                                    ) : (
+                                      <Film className="h-6 w-6 text-slate-300" />
+                                    )}
+                                  </div>
+                                  <div className="p-1.5 text-xs text-slate-600 truncate">
+                                    <span className="font-medium">{img.source ?? "—"}</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -521,7 +556,7 @@ export default function ContentDetailPage() {
                               ● 현재 채택
                             </span>
                           ) : (
-                            <button onClick={() => handlePromoteAIResult(row.id || i)} className="text-blue-600 hover:text-blue-700 text-xs font-medium">채택</button>
+                            <button onClick={() => handlePromoteAIResult(i)} className="text-blue-600 hover:text-blue-700 text-xs font-medium">채택</button>
                           )}
                         </td>
                       </tr>

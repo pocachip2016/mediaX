@@ -7,7 +7,8 @@ import {
   Film, Tv, Layers, Play, Check, RotateCcw, Link2, Plus,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { metadataApi, type ContentOut, type ContentStatus, type ContentType } from "@/lib/api"
+import Image from "next/image"
+import { metadataApi, type ContentOut, type ContentStatus, type ContentType, resolvePosterUrl } from "@/lib/api"
 import { AddContentModal } from "@/components/contents/AddContentModal"
 import { BulkActionModal, type BulkTarget } from "@/components/contents/BulkActionModal"
 
@@ -26,18 +27,18 @@ type ContentRow = ContentOut & { enrichment?: Enrichment }
 // ── Mock 데이터 (백엔드 폴백) ──────────────────────────────
 
 const MOCK_CONTENTS: ContentRow[] = [
-  { id: 1, title: "기생충", original_title: "Parasite", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2019, runtime_minutes: 132, country: "KR", created_at: "2026-04-01T09:00:00", quality_score: 96,
+  { id: 1, title: "기생충", original_title: "Parasite", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2019, runtime_minutes: 132, country: "KR", created_at: "2026-04-01T09:00:00", quality_score: 96, poster_url: null,
     enrichment: { ai_fields: 0, sources: ["TMDB"], confidence: "high" } },
-  { id: 2, title: "오징어 게임 시즌2", original_title: "Squid Game S2", content_type: "series", status: "staging", cp_name: "넷플릭스", production_year: 2024, runtime_minutes: null, country: "KR", created_at: "2026-04-02T10:00:00", quality_score: 88,
+  { id: 2, title: "오징어 게임 시즌2", original_title: "Squid Game S2", content_type: "series", status: "staging", cp_name: "넷플릭스", production_year: 2024, runtime_minutes: null, country: "KR", created_at: "2026-04-02T10:00:00", quality_score: 88, poster_url: null,
     enrichment: { ai_fields: 3, sources: ["TMDB", "AI"], confidence: "high" } },
-  { id: 3, title: "서울의 봄", original_title: null, content_type: "movie", status: "approved", cp_name: "플러스엠", production_year: 2023, runtime_minutes: 141, country: "KR", created_at: "2026-04-03T11:00:00", quality_score: 91,
+  { id: 3, title: "서울의 봄", original_title: null, content_type: "movie", status: "approved", cp_name: "플러스엠", production_year: 2023, runtime_minutes: 141, country: "KR", created_at: "2026-04-03T11:00:00", quality_score: 91, poster_url: null,
     enrichment: { ai_fields: 1, sources: ["TMDB", "KOBIS"], confidence: "high" } },
-  { id: 4, title: "범죄도시4", original_title: null, content_type: "movie", status: "review", cp_name: "에이비오엔터테인먼트", production_year: 2024, runtime_minutes: 109, country: "KR", created_at: "2026-04-04T12:00:00", quality_score: 74,
+  { id: 4, title: "범죄도시4", original_title: null, content_type: "movie", status: "review", cp_name: "에이비오엔터테인먼트", production_year: 2024, runtime_minutes: 109, country: "KR", created_at: "2026-04-04T12:00:00", quality_score: 74, poster_url: null,
     enrichment: { ai_fields: 5, sources: ["AI"], confidence: "medium" } },
-  { id: 5, title: "무빙", original_title: "Moving", content_type: "series", status: "approved", cp_name: "Disney+", production_year: 2023, runtime_minutes: null, country: "KR", created_at: "2026-04-05T13:00:00", quality_score: 93,
+  { id: 5, title: "무빙", original_title: "Moving", content_type: "series", status: "approved", cp_name: "Disney+", production_year: 2023, runtime_minutes: null, country: "KR", created_at: "2026-04-05T13:00:00", quality_score: 93, poster_url: null,
     enrichment: { ai_fields: 0, sources: ["TMDB"], confidence: "high" } },
-  { id: 6, title: "외계+인 2부", original_title: null, content_type: "movie", status: "waiting", cp_name: "CJ ENM", production_year: 2024, runtime_minutes: 122, country: "KR", created_at: "2026-04-06T14:00:00", quality_score: null },
-  { id: 7, title: "헤어질 결심", original_title: "Decision to Leave", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2022, runtime_minutes: 138, country: "KR", created_at: "2026-04-07T15:00:00", quality_score: 95,
+  { id: 6, title: "외계+인 2부", original_title: null, content_type: "movie", status: "waiting", cp_name: "CJ ENM", production_year: 2024, runtime_minutes: 122, country: "KR", created_at: "2026-04-06T14:00:00", quality_score: null, poster_url: null },
+  { id: 7, title: "헤어질 결심", original_title: "Decision to Leave", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2022, runtime_minutes: 138, country: "KR", created_at: "2026-04-07T15:00:00", quality_score: 95, poster_url: null,
     enrichment: { ai_fields: 0, sources: ["TMDB", "KOBIS"], confidence: "high" } },
 ]
 
@@ -420,6 +421,7 @@ export default function ContentsPage() {
                     className="h-4 w-4 cursor-pointer"
                   />
                 </th>
+                <th className="px-2 py-3 w-10" />
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">콘텐츠명</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-24">유형</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-32">CP사</th>
@@ -432,11 +434,11 @@ export default function ContentsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} className="text-center py-16 text-muted-foreground text-sm">
+                <tr><td colSpan={10} className="text-center py-16 text-muted-foreground text-sm">
                   <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" /> 불러오는 중...
                 </td></tr>
               ) : filteredItems.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-16 text-muted-foreground text-sm">
+                <tr><td colSpan={10} className="text-center py-16 text-muted-foreground text-sm">
                   표시할 콘텐츠가 없습니다.
                 </td></tr>
               ) : (
@@ -458,6 +460,23 @@ export default function ContentsPage() {
                           onChange={() => toggleRow(item.id)}
                           className="h-4 w-4 cursor-pointer"
                         />
+                      </td>
+                      <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                        {resolvePosterUrl(item.poster_url) ? (
+                          <Image
+                            src={resolvePosterUrl(item.poster_url)!}
+                            alt={item.title}
+                            width={36}
+                            height={52}
+                            unoptimized
+                            className="rounded object-cover"
+                            style={{ width: 36, height: 52 }}
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center rounded bg-muted" style={{ width: 36, height: 52 }}>
+                            <Film className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-medium truncate max-w-[240px]">{item.title}</div>

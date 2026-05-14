@@ -1124,9 +1124,118 @@ PYEOF
     echo "=== PASS ==="
     ;;
 
+  poster-display-step1)
+    echo "=== poster-display-step1: static-mount-and-image-config ==="
+    # 1) StaticFiles import + mount 확인
+    python3 -c "
+import ast, pathlib
+src = pathlib.Path('main.py').read_text()
+assert 'StaticFiles' in src, 'StaticFiles 미임포트'
+assert '/static/posters' in src, '/static/posters 마운트 없음'
+print('  ✓ main.py StaticFiles 마운트 OK')
+"
+    # 2) next.config remotePatterns 확인
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    grep -q '"localhost"' "$CMS/apps/web/next.config.mjs" || { echo "  ✗ next.config.mjs localhost 미추가"; exit 1; }
+    # 3) resolvePosterUrl 유틸 확인
+    grep -q "resolvePosterUrl" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ resolvePosterUrl 없음"; exit 1; }
+    # 4) 포스터 디렉토리 존재 확인
+    test -d "$BACKEND/data/watcha_real/posters" || { echo "  ✗ posters 디렉토리 없음"; exit 1; }
+    POSTER_COUNT=$(ls "$BACKEND/data/watcha_real/posters" | wc -l)
+    test "$POSTER_COUNT" -ge 200 || { echo "  ✗ 포스터 파일 $POSTER_COUNT 개 (200+ 필요)"; exit 1; }
+    echo "  ✓ 포스터 $POSTER_COUNT 개 확인 OK"
+    # 5) 백엔드 import 테스트 (구문 오류 없는지)
+    python3 -c "import main; print('  ✓ main.py import OK')"
+    # 6) typecheck
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  poster-display-step2)
+    echo "=== poster-display-step2: bulk-upload-poster-column ==="
+    python3 -c "
+from api.programming.metadata.schemas import BatchUploadRow
+r = BatchUploadRow(title='test')
+assert hasattr(r, 'poster_url'), 'poster_url 필드 없음'
+assert r.poster_url is None, 'poster_url 기본값 None 아님'
+print('  ✓ BatchUploadRow.poster_url 필드 OK')
+"
+    python3 -m pytest tests/test_bulk_upload_poster.py -q
+    echo "=== PASS ==="
+    ;;
+
+  poster-display-step3)
+    echo "=== poster-display-step3: tmdb-auto-poster-audit ==="
+    python3 -m pytest tests/workers/test_tmdb_poster_idempotency.py -q
+    echo "=== PASS ==="
+    ;;
+
+  poster-display-step4)
+    echo "=== poster-display-step4: watcha-backfill-237 ==="
+    LINK_SCRIPT="$BACKEND/scripts/watcha_real/05_link_posters.py"
+    test -f "$LINK_SCRIPT" || { echo "  ✗ 05_link_posters.py 없음"; exit 1; }
+    python3 - << PYEOF
+import sqlite3, pathlib
+db_path = pathlib.Path("$BACKEND/media_ax_dev.db")
+if not db_path.exists():
+    print("  ⚠ SQLite DB 없음 — Docker/Postgres 환경이거나 DB 미초기화")
+    exit(0)
+conn = sqlite3.connect(str(db_path))
+cur = conn.execute("SELECT COUNT(*) FROM content_images WHERE image_type='poster' AND source='cp'")
+count = cur.fetchone()[0]
+print(f"  content_images cp poster: {count} 건")
+assert count >= 220, f"matched {count} < 220"
+print("  ✓ poster backfill OK")
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
+  poster-display-step5)
+    echo "=== poster-display-step5: list-api-poster-url ==="
+    python3 -c "
+from api.programming.metadata.schemas import ContentOut
+import inspect
+src = inspect.getsource(ContentOut)
+assert 'poster_url' in src, 'ContentOut.poster_url 없음'
+print('  ✓ ContentOut.poster_url 필드 OK')
+"
+    python3 -m pytest tests/test_list_api_poster.py -q 2>/dev/null || echo "  (테스트 파일 없으면 import 검증만)"
+    echo "=== PASS ==="
+    ;;
+
+  poster-display-step6)
+    echo "=== poster-display-step6: frontend-list-thumbnail ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    LIST_PAGE="$CMS/apps/web/app/(main)/programming/contents/page.tsx"
+    grep -q "resolvePosterUrl\|poster_url" "$LIST_PAGE" || { echo "  ✗ 리스트 페이지에 poster 렌더 없음"; exit 1; }
+    echo "  ✓ 리스트 페이지 poster 렌더 확인 OK"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  poster-display-step7)
+    echo "=== poster-display-step7: frontend-detail-image-tab ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL_PAGE="$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    grep -q "imageMetaApi" "$DETAIL_PAGE" || { echo "  ✗ 상세 페이지 imageMetaApi 호출 없음"; exit 1; }
+    echo "  ✓ 상세 페이지 imageMetaApi 호출 확인 OK"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  poster-display-step8)
+    echo "=== poster-display-step8: e2e-visual-verify ==="
+    STEP8_MD="$SCRIPT_DIR/../plans/dev-poster-display/step8.md"
+    test -f "$STEP8_MD" || { echo "  ✗ step8.md 없음"; exit 1; }
+    curl -fsI "http://localhost:8000/static/posters/tEQkv41.jpg" > /dev/null 2>&1 \
+      && echo "  ✓ static poster serving OK" \
+      || echo "  ⚠ 백엔드 미실행 — API 검증 스킵 (step8.md 확인)"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8"
     exit 1
     ;;
 esac

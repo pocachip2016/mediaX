@@ -5,6 +5,12 @@
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+export function resolvePosterUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  if (url.startsWith("http")) return url
+  return `${BASE}${url}`
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -34,6 +40,7 @@ export interface ContentOut {
   country?: string | null
   created_at: string
   quality_score: number | null
+  poster_url?: string | null
 }
 
 export interface MetadataOut {

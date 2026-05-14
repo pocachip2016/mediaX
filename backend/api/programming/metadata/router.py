@@ -96,12 +96,12 @@ def list_contents(
         page=page,
         size=size,
     )
-    # quality_score를 ContentOut에 주입
     result = []
     for c in items:
         out = ContentOut.model_validate(c)
         if c.metadata_record:
             out.quality_score = c.metadata_record.quality_score
+        out.poster_url = service._primary_poster_url(c)
         result.append(out)
     return PaginatedContents(items=result, total=total, page=page, size=size)
 
@@ -280,6 +280,7 @@ async def batch_upload(
                     ),
                     "cp_name": row.get("cp_name") or row.get("CP사") or cp_name,
                     "cp_synopsis": row.get("synopsis") or row.get("시놉시스") or "",
+                    "poster_url": row.get("poster_url") or row.get("포스터URL") or None,
                 })
         else:
             # Excel 지원 — openpyxl 없으면 에러 메시지 반환
@@ -302,6 +303,7 @@ async def batch_upload(
                         "content_type": _normalize_content_type(_get(["content_type", "타입"]) or "movie"),
                         "cp_name": _get(["cp_name", "CP사"]) or cp_name,
                         "cp_synopsis": _get(["synopsis", "시놉시스"]),
+                        "poster_url": _get(["poster_url", "포스터URL"]) or None,
                     })
             except ImportError:
                 raise HTTPException(

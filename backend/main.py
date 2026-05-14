@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.meta_core.router import router as meta_core_router
 from api.programming.router import router as programming_router
@@ -39,6 +41,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_POSTERS_DIR = Path(__file__).parent / "data" / "watcha_real" / "posters"
+_POSTERS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static/posters", StaticFiles(directory=str(_POSTERS_DIR)), name="posters")
 
 app.include_router(meta_core_router,   prefix="/api/meta-core",   tags=["Meta-Core (canonical)"])
 app.include_router(programming_router, prefix="/api/programming", tags=["편성 기획 AX"])

@@ -587,24 +587,36 @@ async def _tmdb_search_and_save(content, db, api_key: str) -> dict | None:
                     matched_at=datetime.utcnow(),
                 ))
 
-            # 포스터 이미지 저장
+            # 포스터 이미지 저장 — service.add_content_image() 와 동일 규약 (멱등 + is_primary)
+            # commit 분리: 워커 트랜잭션 원자성을 위해 헬퍼 대신 인라인 처리
             poster_path = detail.get("poster_path")
             if poster_path:
-                existing_img = (
+                poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}"
+                duplicate = (
                     db.query(ContentImage)
                     .filter(
                         ContentImage.content_id == content.id,
                         ContentImage.image_type == ImageType.poster,
+                        ContentImage.url == poster_url,
                     )
                     .first()
                 )
-                if not existing_img:
+                if not duplicate:
+                    has_same_type = (
+                        db.query(ContentImage)
+                        .filter(
+                            ContentImage.content_id == content.id,
+                            ContentImage.image_type == ImageType.poster,
+                        )
+                        .first()
+                    )
                     db.add(ContentImage(
                         content_id=content.id,
                         image_type=ImageType.poster,
-                        url=f"https://image.tmdb.org/t/p/w500{poster_path}",
+                        url=poster_url,
                         source="tmdb",
                         width=500,
+                        is_primary=(has_same_type is None),
                     ))
 
             # 출연진/감독 저장

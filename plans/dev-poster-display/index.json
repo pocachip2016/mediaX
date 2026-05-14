@@ -1,0 +1,63 @@
+{
+  "project": "mediaX",
+  "phase": "dev-poster-display",
+  "description": "포스터 이미지 lifecycle Phase 1 — 리스트/상세 썸네일 표시, Watcha 237건 backfill, Bulk upload poster_url 컬럼, TMDB 자동 포스터 적재 감사",
+  "steps": [
+    {
+      "step": 1,
+      "name": "static-mount-and-image-config",
+      "status": "completed",
+      "summary": "StaticFiles /static/posters 마운트, next.config remotePatterns localhost:8000 추가, resolvePosterUrl 유틸, 기존 TS 오류(row.id) 수정",
+      "completed_at": "2026-05-14T17:30:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "bulk-upload-poster-column",
+      "status": "completed",
+      "summary": "BatchUploadRow poster_url 옵션 컬럼, CSV/Excel 파싱, process_batch_rows ContentImage 자동 생성, add_content_image 멱등성+is_primary 로직, UI 컬럼 안내, 테스트 4개",
+      "completed_at": "2026-05-14T17:50:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "tmdb-auto-poster-audit",
+      "status": "completed",
+      "summary": "TMDB 워커 포스터 적재 idempotency 및 is_primary 로직 강화",
+      "completed_at": "2026-05-14T18:10:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "watcha-backfill-237",
+      "status": "completed",
+      "summary": "Watcha 237건 포스터 link_report 생성 및 ContentImage 연결",
+      "completed_at": "2026-05-14T18:25:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "list-api-poster-url",
+      "status": "completed",
+      "summary": "list-api poster_url 필드 노출 및 selectinload N+1 회피",
+      "completed_at": "2026-05-14T18:35:00+09:00"
+    },
+    {
+      "step": 6,
+      "name": "frontend-list-thumbnail",
+      "status": "completed",
+      "summary": "리스트 페이지 썸네일 컬럼 추가 및 typecheck 통과",
+      "completed_at": "2026-05-14T18:50:00+09:00"
+    },
+    {
+      "step": 7,
+      "name": "frontend-detail-image-tab",
+      "status": "completed",
+      "summary": "상세 페이지 Image 탭 mock 제거 및 실제 API 연동",
+      "completed_at": "2026-05-14T19:05:00+09:00"
+    },
+    {
+      "step": 8,
+      "name": "e2e-visual-verify",
+      "status": "completed",
+      "summary": "API 검증 완료 및 step8.md에 결과 기록",
+      "completed_at": "2026-05-14T19:20:00+09:00"
+    }
+  ]
+}

@@ -35,6 +35,7 @@ class ContentOut(BaseModel):
     runtime_minutes: Optional[int]
     created_at: datetime
     quality_score: Optional[float] = None
+    poster_url: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -196,6 +197,7 @@ class BatchUploadRow(BaseModel):
     cp_name: Optional[str] = None
     episode_count: Optional[int] = None
     cp_synopsis: Optional[str] = None
+    poster_url: Optional[str] = None
     parse_status: str = "ok"   # ok | warning | error
     parse_message: Optional[str] = None
 

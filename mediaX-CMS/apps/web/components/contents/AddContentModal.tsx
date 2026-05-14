@@ -255,6 +255,18 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
                 </span>
               </label>
 
+              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
+                <p className="font-semibold mb-1">CSV 컬럼 (헤더명 또는 한글 대체명)</p>
+                <ul className="space-y-0.5">
+                  <li><span className="font-mono bg-white px-1 rounded">title</span> / 제목 <span className="text-red-500">*필수</span></li>
+                  <li><span className="font-mono bg-white px-1 rounded">production_year</span> / 제작연도</li>
+                  <li><span className="font-mono bg-white px-1 rounded">content_type</span> / 타입 (movie/series/season/episode)</li>
+                  <li><span className="font-mono bg-white px-1 rounded">cp_name</span> / CP사</li>
+                  <li><span className="font-mono bg-white px-1 rounded">synopsis</span> / 시놉시스</li>
+                  <li><span className="font-mono bg-white px-1 rounded">poster_url</span> / 포스터URL — 포스터 이미지 URL (선택)</li>
+                </ul>
+              </div>
+
               <div className="flex gap-2 justify-end pt-4 border-t border-slate-200">
                 <button
                   onClick={() => onOpenChange(false)}

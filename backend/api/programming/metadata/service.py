@@ -15,7 +15,7 @@ from datetime import datetime, date, timedelta
 from typing import Optional
 
 from sqlalchemy import func, case
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from api.programming.metadata.models import (
     Content, ContentMetadata, CpEmailLog, ContentBatchJob,
@@ -52,6 +52,15 @@ def get_content(db: Session, content_id: int) -> Optional[Content]:
     )
 
 
+def _primary_poster_url(content: Content) -> Optional[str]:
+    from api.programming.metadata.models import ImageType
+    posters = [img for img in content.images if img.image_type == ImageType.poster]
+    if not posters:
+        return None
+    primary = next((p for p in posters if p.is_primary), None)
+    return (primary or min(posters, key=lambda p: p.created_at)).url
+
+
 def list_contents(
     db: Session,
     status: Optional[ContentStatus] = None,
@@ -62,7 +71,10 @@ def list_contents(
     page: int = 1,
     size: int = 20,
 ) -> tuple[list[Content], int]:
-    q = db.query(Content).options(joinedload(Content.metadata_record))
+    q = db.query(Content).options(
+        joinedload(Content.metadata_record),
+        selectinload(Content.images),
+    )
     if status:
         q = q.filter(Content.status == status)
     if cp_name:
@@ -434,6 +446,9 @@ def process_batch_rows(
             )
             db.add(meta)
             db.flush()
+            poster_url = row.get("poster_url")
+            if poster_url:
+                add_content_image(db, content.id, "poster", poster_url, source="cp")
             process_content_metadata.delay(content.id)
             success += 1
         except Exception as exc:
@@ -961,6 +976,20 @@ def add_content_image(
     except ValueError:
         raise ValueError(f"유효하지 않은 이미지 타입: {image_type}")
 
+    # 동일 (content_id, image_type, url) 이미 존재하면 skip (멱등)
+    existing = db.query(ContentImage).filter(
+        ContentImage.content_id == content_id,
+        ContentImage.image_type == img_type,
+        ContentImage.url == url,
+    ).first()
+    if existing:
+        return get_image_meta(db, content_id)
+
+    # 동일 타입의 기존 이미지가 없으면 is_primary=True
+    has_same_type = db.query(ContentImage).filter(
+        ContentImage.content_id == content_id,
+        ContentImage.image_type == img_type,
+    ).first()
     img = ContentImage(
         content_id=content_id,
         image_type=img_type,
@@ -968,6 +997,7 @@ def add_content_image(
         width=width,
         height=height,
         source=source,
+        is_primary=(has_same_type is None),
     )
     db.add(img)
     db.commit()
