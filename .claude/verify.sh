@@ -887,9 +887,30 @@ print('  ✓ Content.is_deleted column OK')
     echo "=== PASS ==="
     ;;
 
+  M.1)
+    echo "=== M.1: backend-sqlite-restore ==="
+    # 1. health endpoint 확인
+    http_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
+    [[ "$http_code" == "200" ]] || { echo "  ✗ /health 미응답 (HTTP $http_code)"; exit 1; }
+    echo "  ✓ /health OK"
+
+    # 2. /contents/since 엔드포인트 확인 + 데이터 존재
+    resp=$(curl -s "http://localhost:8000/api/meta-core/contents/since?ts=0&limit=1" 2>/dev/null || echo "{}")
+    total=$(echo "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin).get('total', -1))" 2>/dev/null || echo "-1")
+    [[ "$total" -gt 0 ]] || { echo "  ✗ /contents/since total=$total (데이터 없음)"; exit 1; }
+    echo "  ✓ /contents/since total=$total OK"
+
+    # 3. items 배열 확인
+    items=$(echo "$resp" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('items', [])))" 2>/dev/null || echo "0")
+    [[ "$items" -gt 0 ]] || { echo "  ✗ /contents/since items 비어있음"; exit 1; }
+    echo "  ✓ /contents/since items=$items OK"
+
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, M.1"
     exit 1
     ;;
 esac
