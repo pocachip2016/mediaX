@@ -1,0 +1,49 @@
+{
+  "project": "mediaX",
+  "phase": "dev-api-consolidation",
+  "description": "18개 신규 엔드포인트 구현 — Content Add, Detail, Bulk Actions",
+  "steps": [
+    {
+      "step": 0,
+      "name": "schemas-foundation",
+      "status": "completed",
+      "summary": "15개 Pydantic 스키마 (EnrichPreview*, BatchPreview, SourceSearch, CreateFromSources, PromoteAI*, ApplyExternal*, ContentChangelog, LockFields, BulkAction*, JobStatus, UndoAction*) 추가 + 19개 테스트 통과",
+      "completed_at": "2026-05-13T06:45:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "bulk-core-actions",
+      "status": "completed",
+      "summary": "5개 bulk 함수 (reprocess/enrich/process/recall/delete) + 5개 라우터 + is_deleted column 추가. 상태 검증 + ContentBatchJob 생성 구현. 9개 테스트 통과",
+      "completed_at": "2026-05-13T07:15:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "job-lifecycle",
+      "status": "completed",
+      "summary": "ContentActionLog 모델 추가 + 3개 함수 (get_job_status/bulk_undo/retry_failed) + 3개 라우터 구현. 24시간 undo, before_state 복원 로직 완성",
+      "completed_at": "2026-05-13T07:25:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "detail-simple",
+      "status": "completed",
+      "summary": "3개 함수 (promote_ai_result/partial_reprocess/apply_external_fields) + 3개 라우터 구현. is_final 토글, 필드 화이트리스트 검증",
+      "completed_at": "2026-05-13T07:35:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "detail-advanced",
+      "status": "completed",
+      "summary": "ContentAuditLog 모델 추가 + locked_fields 컬럼 추가 + 3개 함수 (get_changelog/lock_fields/request_preview_clip) + 3개 라우터 구현. 필드별 변경 감시 + 필드 잠금 + preview-clip stub 완성",
+      "completed_at": "2026-05-13T07:45:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "add-flow",
+      "status": "completed",
+      "summary": "SourcesAggregator 모듈 + 4개 함수 (enrich_preview/batch_preview/sources_search/create_from_sources) + 4개 라우터 구현. 병렬 외부 API 검색 + dry-run 미리보기 + 소스 기반 콘텐츠 생성 완성",
+      "completed_at": "2026-05-13T08:00:00+09:00"
+    }
+  ]
+}

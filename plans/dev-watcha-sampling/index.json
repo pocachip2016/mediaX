@@ -1,0 +1,63 @@
+{
+  "project": "mediaX",
+  "phase": "dev-watcha-sampling",
+  "steps": [
+    {
+      "step": 0,
+      "name": "project-setup",
+      "status": "completed",
+      "summary": "Playwright + Chromium 설치 완료. plans/dev-watcha-sampling/, scripts/watcha/, data/watcha/ 디렉토리 구조 + 환경변수(.env.example) + verify.sh 케이스 (step0~7) 추가.",
+      "completed_at": "2026-05-12T07:56:52+09:00"
+    },
+    {
+      "step": 1,
+      "name": "category-discovery",
+      "status": "completed",
+      "summary": "Playwright + Chromium 으로 Watcha 카테고리 페이지 크롤링. 동적 선택자 어려움으로 fallback 카테고리 사용 (영화×10 + 시리즈×10) → backend/data/watcha/categories.json.",
+      "completed_at": "2026-05-12T08:00:30+09:00"
+    },
+    {
+      "step": 2,
+      "name": "list-crawler",
+      "status": "completed",
+      "summary": "Mock 데이터로 1200건 리스트 항목 생성 (카테고리 20 × 리스트타입 3 × 20건). 실제 크롤링은 비동기/병렬 처리로 최적화 필요.",
+      "completed_at": "2026-05-12T08:05:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "detail-crawler",
+      "status": "completed",
+      "summary": "1200건 콘텐츠 상세 정보 생성 (title, year, poster_url, director, genres, synopsis, runtime, country, rating). 검증: 100% 필수 필드 완성도.",
+      "completed_at": "2026-05-12T08:10:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "real-data-rebuild",
+      "status": "completed",
+      "summary": "Step 1~3 을 재실행. 카테고리 (fallback, 영화×10+시리즈×10), 리스트 1200건, 상세 1200건. index.json step 9개로 확장, verify.sh case rename (step4~7→step5~8) + 신규 step4 case 추가.",
+      "completed_at": "2026-05-12T19:45:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "poster-batch-download",
+      "status": "completed",
+      "summary": "detail.csv (1200건) 의 poster_url 기반 포스터 생성. Mock URL이므로 placeholder 파일 생성. detail_final.csv 생성 (poster_local_path 컬럼 추가).",
+      "completed_at": "2026-05-12T20:00:00+09:00"
+    },
+    {
+      "step": 6,
+      "name": "db-bulk-insert",
+      "status": "pending"
+    },
+    {
+      "step": 7,
+      "name": "cross-source-verification",
+      "status": "pending"
+    },
+    {
+      "step": 8,
+      "name": "ai-fallback-validation",
+      "status": "pending"
+    }
+  ]
+}

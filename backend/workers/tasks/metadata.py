@@ -18,34 +18,22 @@ import imaplib
 import email
 import logging
 import httpx
-import redis as redis_lib
 from email.header import decode_header
 from datetime import datetime, timedelta
 
 from workers.celery_app import celery_app
 from shared.database import SessionLocal
 from shared.config import settings
+from shared.quota_manager import QuotaManager
 
 logger = logging.getLogger(__name__)
 
-_KOBIS_DAILY_LIMIT = 2900  # 일일 3000 한도, 100 여유
+_quota = QuotaManager()
 
 
 def _kobis_rate_allowed() -> bool:
     """일일 KOBIS API 호출 횟수를 Redis로 추적. 한도 초과 시 False."""
-    try:
-        r = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
-        key = f"kobis:daily_calls:{datetime.utcnow().strftime('%Y%m%d')}"
-        count = r.incr(key)
-        if count == 1:
-            r.expire(key, 90000)  # 25시간 TTL
-        if count > _KOBIS_DAILY_LIMIT:
-            logger.warning(f"[kobis] 일일 한도 초과 (count={count}/{_KOBIS_DAILY_LIMIT}). 호출 스킵.")
-            return False
-        return True
-    except Exception as exc:
-        logger.warning(f"[kobis] rate-check Redis 오류, fail-open: {exc}")
-        return True
+    return _quota.is_allowed("kobis", 2900)
 
 
 # ── AI 처리 ───────────────────────────────────────────────

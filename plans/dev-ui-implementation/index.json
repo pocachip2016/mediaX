@@ -1,0 +1,39 @@
+{
+  "project": "mediaX",
+  "phase": "dev-ui-implementation",
+  "description": "dev-ui-consolidation 의 프로토타입 4개(list/detail/add/bulk)를 production 경로(/programming/contents/*) 로 이식. 사이드바 메뉴 재구성 + 5개 신규 화면 (목록/상세/추가모달/Bulk/처리현황). mock 우선, API 연결은 dev-api-consolidation 에서.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "sidebar-and-content-list",
+      "status": "completed",
+      "summary": "config/docs.ts: '메타데이터'→'메타데이터 (레거시)' 라벨 + '콘텐츠 관리' 그룹에 '콘텐츠 목록' 추가. contents/page.tsx 전체 재작성(~440줄): UI 4그룹 status 칩(전체/처리중/검수필요/승인됨/반려됨), 3-state 다중선택 체크박스(헤더+행, indeterminate), sticky 액션 바(승인/반려/AI재처리/외부소스매칭 mock), Enrichment 배지, Quality 색상 개선, '+ 콘텐츠 추가' 버튼(mock). metadataApi.listContents() 호출 + MOCK_CONTENTS 폴백 유지. verify.sh 에 ui-impl-1 case 추가 + typecheck 통과.",
+      "completed_at": "2026-05-13T01:50:00+09:00",
+      "description": "config/docs.ts 메뉴 재구성 ('콘텐츠 관리' 그룹 추가 + 기존 '메타데이터' → '메타데이터 (레거시)' 라벨 변경). (main)/programming/contents/page.tsx 를 list 프로토타입(status 칩·다중선택·sticky 액션 바)으로 교체. mock 우선."
+    },
+    {
+      "step": 1,
+      "name": "content-detail-tabs",
+      "status": "completed",
+      "description": "(main)/programming/contents/[id]/page.tsx 에 5탭(글자/이미지/영상/외부소스/AI이력) + 필드×3소스 카드 패턴 + 상태 배지/품질점수 헤더 이식. mock 우선.",
+      "summary": "5탭(글자/이미지/영상/외부소스/AI이력) 레이아웃 + 헤더(제목/상태배지/품질점수/액션버튼) 이식. 프로토타입 mock UI 그대로 사용, metadataApi.getContent() 데이터 통합. 모달 기능은 Step 2 예정.",
+      "completed_at": "2026-05-13T10:30:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "add-and-bulk-modals",
+      "status": "completed",
+      "description": "packages/ui 에 shadcn Dialog 설치. AddContentModal(3탭) + BulkActionModal(3단계) 컴포넌트 생성 후 contents/page.tsx 의 '+ 콘텐츠 추가' 버튼과 sticky 액션 바에 연결.",
+      "summary": "shadcn Dialog 설치 + AddContentModal(3탭: 단일/CSV/외부검색) + BulkActionModal(3단계: 확인/진행/결과) 컴포넌트 구현. contents/page.tsx 버튼과 모달 연결. mock 처리 + 진행 애니메이션.",
+      "completed_at": "2026-05-13T11:00:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "pipeline-and-cleanup",
+      "status": "completed",
+      "description": "(main)/programming/contents/pipeline/page.tsx 신규 (기존 monitoring/pipeline 이전). docs.ts 에서 '메타데이터 (레거시)' 그룹 제거, '처리 현황' 항목 추가. metadata/* 11개 + (prototypes)/* 4개 + monitoring/pipeline 삭제. npm run build 통과.",
+      "summary": "pipeline 페이지 이전 (monitoring → programming/contents). docs.ts: 메타데이터 레거시 그룹 삭제, 처리 현황 메뉴 추가. metadata/* + monitoring/pipeline + prototypes/* 11개+4개 페이지 삭제. npm build 통과.",
+      "completed_at": "2026-05-13T11:15:00+09:00"
+    }
+  ]
+}

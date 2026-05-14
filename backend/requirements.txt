@@ -10,6 +10,7 @@ psycopg2-binary==2.9.9
 # Cache / Queue
 redis==5.0.7
 celery==5.4.0
+celery-redbeat==2.2.0
 
 # Search
 elasticsearch==8.14.0

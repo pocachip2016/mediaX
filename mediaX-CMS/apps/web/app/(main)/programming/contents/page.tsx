@@ -1,55 +1,89 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Search, X, ChevronLeft, ChevronRight, RefreshCw, Film, Tv, Layers, Play } from "lucide-react"
+import {
+  Search, X, ChevronLeft, ChevronRight, RefreshCw,
+  Film, Tv, Layers, Play, Check, RotateCcw, Link2, Plus,
+} from "lucide-react"
+import { cn } from "@workspace/ui/lib/utils"
 import { metadataApi, type ContentOut, type ContentStatus, type ContentType } from "@/lib/api"
+import { AddContentModal } from "@/components/contents/AddContentModal"
+import { BulkActionModal, type BulkTarget } from "@/components/contents/BulkActionModal"
 
-// ── Mock 데이터 ───────────────────────────────────────────
+// ── 타입 ───────────────────────────────────────────────────
 
-const MOCK_CONTENTS: ContentOut[] = [
-  { id: 1, title: "기생충", original_title: "Parasite", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2019, runtime_minutes: 132, country: "KR", created_at: "2026-04-01T09:00:00", quality_score: 96 },
-  { id: 2, title: "오징어 게임 시즌2", original_title: "Squid Game S2", content_type: "series", status: "staging", cp_name: "넷플릭스", production_year: 2024, runtime_minutes: null, country: "KR", created_at: "2026-04-02T10:00:00", quality_score: 88 },
-  { id: 3, title: "서울의 봄", original_title: null, content_type: "movie", status: "approved", cp_name: "플러스엠", production_year: 2023, runtime_minutes: 141, country: "KR", created_at: "2026-04-03T11:00:00", quality_score: 91 },
-  { id: 4, title: "범죄도시4", original_title: null, content_type: "movie", status: "review", cp_name: "에이비오엔터테인먼트", production_year: 2024, runtime_minutes: 109, country: "KR", created_at: "2026-04-04T12:00:00", quality_score: 74 },
-  { id: 5, title: "무빙", original_title: "Moving", content_type: "series", status: "approved", cp_name: "Disney+", production_year: 2023, runtime_minutes: null, country: "KR", created_at: "2026-04-05T13:00:00", quality_score: 93 },
+type UiGroup = "processing" | "review" | "approved" | "rejected"
+
+type Enrichment = {
+  ai_fields: number
+  sources: string[]
+  confidence?: "high" | "medium" | "low"
+}
+
+type ContentRow = ContentOut & { enrichment?: Enrichment }
+
+// ── Mock 데이터 (백엔드 폴백) ──────────────────────────────
+
+const MOCK_CONTENTS: ContentRow[] = [
+  { id: 1, title: "기생충", original_title: "Parasite", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2019, runtime_minutes: 132, country: "KR", created_at: "2026-04-01T09:00:00", quality_score: 96,
+    enrichment: { ai_fields: 0, sources: ["TMDB"], confidence: "high" } },
+  { id: 2, title: "오징어 게임 시즌2", original_title: "Squid Game S2", content_type: "series", status: "staging", cp_name: "넷플릭스", production_year: 2024, runtime_minutes: null, country: "KR", created_at: "2026-04-02T10:00:00", quality_score: 88,
+    enrichment: { ai_fields: 3, sources: ["TMDB", "AI"], confidence: "high" } },
+  { id: 3, title: "서울의 봄", original_title: null, content_type: "movie", status: "approved", cp_name: "플러스엠", production_year: 2023, runtime_minutes: 141, country: "KR", created_at: "2026-04-03T11:00:00", quality_score: 91,
+    enrichment: { ai_fields: 1, sources: ["TMDB", "KOBIS"], confidence: "high" } },
+  { id: 4, title: "범죄도시4", original_title: null, content_type: "movie", status: "review", cp_name: "에이비오엔터테인먼트", production_year: 2024, runtime_minutes: 109, country: "KR", created_at: "2026-04-04T12:00:00", quality_score: 74,
+    enrichment: { ai_fields: 5, sources: ["AI"], confidence: "medium" } },
+  { id: 5, title: "무빙", original_title: "Moving", content_type: "series", status: "approved", cp_name: "Disney+", production_year: 2023, runtime_minutes: null, country: "KR", created_at: "2026-04-05T13:00:00", quality_score: 93,
+    enrichment: { ai_fields: 0, sources: ["TMDB"], confidence: "high" } },
   { id: 6, title: "외계+인 2부", original_title: null, content_type: "movie", status: "waiting", cp_name: "CJ ENM", production_year: 2024, runtime_minutes: 122, country: "KR", created_at: "2026-04-06T14:00:00", quality_score: null },
-  { id: 7, title: "헤어질 결심", original_title: "Decision to Leave", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2022, runtime_minutes: 138, country: "KR", created_at: "2026-04-07T15:00:00", quality_score: 95 },
+  { id: 7, title: "헤어질 결심", original_title: "Decision to Leave", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2022, runtime_minutes: 138, country: "KR", created_at: "2026-04-07T15:00:00", quality_score: 95,
+    enrichment: { ai_fields: 0, sources: ["TMDB", "KOBIS"], confidence: "high" } },
 ]
 
 // ── 상수 ─────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<ContentStatus, string> = {
-  waiting: "대기",
-  processing: "처리중",
-  staging: "검토대기",
-  review: "검수중",
-  approved: "완료",
-  rejected: "반려",
+  waiting: "대기", processing: "처리중", staging: "자동검토",
+  review: "검수", approved: "승인", rejected: "반려",
 }
 
 const STATUS_CLASS: Record<ContentStatus, string> = {
-  waiting:    "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
-  processing: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  staging:    "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
-  review:     "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  approved:   "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  rejected:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  waiting:    "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  processing: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  staging:    "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+  review:     "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  approved:   "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  rejected:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
 }
 
 const TYPE_LABEL: Record<ContentType, string> = {
-  movie: "영화",
-  series: "시리즈",
-  season: "시즌",
-  episode: "에피소드",
+  movie: "영화", series: "시리즈", season: "시즌", episode: "에피소드",
 }
 
 const TYPE_CLASS: Record<ContentType, string> = {
-  movie:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  series:  "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
-  season:  "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
+  movie:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  series:  "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+  season:  "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
   episode: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
 }
+
+const UI_GROUPS: Array<{ key: UiGroup | "all"; label: string }> = [
+  { key: "all",        label: "전체" },
+  { key: "processing", label: "처리중" },
+  { key: "review",     label: "검수필요" },
+  { key: "approved",   label: "승인됨" },
+  { key: "rejected",   label: "반려됨" },
+]
+
+function statusToUiGroup(status: ContentStatus): UiGroup {
+  if (status === "waiting" || status === "processing") return "processing"
+  if (status === "staging" || status === "review") return "review"
+  if (status === "approved") return "approved"
+  return "rejected"
+}
+
+// ── 보조 컴포넌트 ─────────────────────────────────────────
 
 function TypeIcon({ type }: { type: ContentType }) {
   if (type === "movie") return <Film className="h-3.5 w-3.5" />
@@ -61,75 +95,69 @@ function TypeIcon({ type }: { type: ContentType }) {
 function QualityBadge({ score }: { score: number | null }) {
   if (score === null) return <span className="text-muted-foreground text-xs">—</span>
   const cls =
-    score >= 90 ? "text-green-600 font-semibold" :
-    score >= 70 ? "text-amber-600 font-semibold" :
-    "text-red-600 font-semibold"
-  return <span className={`text-xs ${cls}`}>{score.toFixed(0)}</span>
+    score >= 90 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" :
+    score >= 70 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" :
+    "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+  return <span className={cn("px-1.5 py-0.5 rounded text-xs font-semibold", cls)}>{score.toFixed(0)}</span>
+}
+
+function EnrichmentBadge({ enrichment }: { enrichment?: Enrichment }) {
+  if (!enrichment) return <span className="text-muted-foreground text-xs">—</span>
+  const colors =
+    enrichment.confidence === "high"   ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300" :
+    enrichment.confidence === "medium" ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300" :
+                                         "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300"
+  return (
+    <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs", colors)}>
+      ✨ AI{enrichment.ai_fields > 0 ? ` ${enrichment.ai_fields}` : ""}
+      {enrichment.sources.length > 0 && <span>· {enrichment.sources.join("/")}</span>}
+    </span>
+  )
 }
 
 function formatDate(iso: string) {
   return iso.slice(0, 10)
 }
 
-// ── 검색 폼 상태 ──────────────────────────────────────────
+// ── 검색 폼 ──────────────────────────────────────────────
 
 interface SearchForm {
   title: string
   content_type: ContentType | ""
-  status: ContentStatus | ""
   cp_name: string
   production_year: string
 }
 
-const EMPTY_FORM: SearchForm = {
-  title: "",
-  content_type: "",
-  status: "",
-  cp_name: "",
-  production_year: "",
-}
+const EMPTY_FORM: SearchForm = { title: "", content_type: "", cp_name: "", production_year: "" }
 
 // ── 메인 페이지 ───────────────────────────────────────────
 
 export default function ContentsPage() {
   const router = useRouter()
 
-  // 통계
-  const [stats, setStats] = useState({ total: 0, approved: 0, review: 0, waiting: 0 })
-
-  // 검색 폼
+  // 검색 폼 (UI 그룹과 별도 — 그룹은 client-side 필터)
   const [form, setForm] = useState<SearchForm>(EMPTY_FORM)
   const [appliedForm, setAppliedForm] = useState<SearchForm>(EMPTY_FORM)
+  const [uiGroup, setUiGroup] = useState<UiGroup | "all">("all")
 
   // 목록
-  const [items, setItems] = useState<ContentOut[]>(MOCK_CONTENTS)
+  const [items, setItems] = useState<ContentRow[]>(MOCK_CONTENTS)
   const [total, setTotal] = useState(MOCK_CONTENTS.length)
   const [page, setPage] = useState(1)
   const [size, setSize] = useState(20)
   const [loading, setLoading] = useState(false)
 
-  // ── 통계 로드 ──
-  const fetchStats = useCallback(async () => {
-    try {
-      const dash = await metadataApi.getDashboard()
-      // dashboard에서 status별 집계는 없으므로 전체 목록으로 계산
-      const all = await metadataApi.listContents({ size: 1 })
-      const [approvedRes, reviewRes, waitingRes] = await Promise.all([
-        metadataApi.listContents({ status: "approved", size: 1 }),
-        metadataApi.listContents({ status: "review", size: 1 }),
-        metadataApi.listContents({ status: "waiting", size: 1 }),
-      ])
-      setStats({
-        total: all.total,
-        approved: approvedRes.total,
-        review: reviewRes.total,
-        waiting: waitingRes.total,
-      })
-    } catch {
-      // Mock 통계 유지
-      setStats({ total: MOCK_CONTENTS.length, approved: 3, review: 1, waiting: 1 })
-    }
-  }, [])
+  // 다중 선택
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+
+  // 모달
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [bulkModalOpen, setBulkModalOpen] = useState(false)
+  const [bulkAction, setBulkAction] = useState<"approve" | "reject" | "reprocess" | "rematch">("approve")
+  const bulkTargets: BulkTarget[] = Array.from(selectedIds).map(id => {
+    const item = items.find(i => i.id === id)
+    return { id, title: item?.title || "", cp_name: item?.cp_name, status: item?.status }
+  })
 
   // ── 목록 로드 ──
   const fetchList = useCallback(async (f: SearchForm, p: number, s: number) => {
@@ -138,7 +166,6 @@ export default function ContentsPage() {
       const res = await metadataApi.listContents({
         title: f.title || undefined,
         content_type: (f.content_type || undefined) as ContentType | undefined,
-        status: (f.status || undefined) as ContentStatus | undefined,
         cp_name: f.cp_name || undefined,
         production_year: f.production_year ? Number(f.production_year) : undefined,
         page: p,
@@ -154,52 +181,113 @@ export default function ContentsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchStats()
-  }, [fetchStats])
+  useEffect(() => { fetchList(appliedForm, page, size) }, [appliedForm, page, size, fetchList])
 
-  useEffect(() => {
-    fetchList(appliedForm, page, size)
-  }, [appliedForm, page, size, fetchList])
+  // ── UI 그룹 필터 (client-side) ──
+  const filteredItems = useMemo(() => {
+    if (uiGroup === "all") return items
+    return items.filter((it) => statusToUiGroup(it.status) === uiGroup)
+  }, [items, uiGroup])
 
-  const handleSearch = () => {
-    setPage(1)
-    setAppliedForm({ ...form })
+  // 그룹별 카운트 (현재 페이지 기준)
+  const groupCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: items.length, processing: 0, review: 0, approved: 0, rejected: 0 }
+    items.forEach((it) => { counts[statusToUiGroup(it.status)] = (counts[statusToUiGroup(it.status)] ?? 0) + 1 })
+    return counts
+  }, [items])
+
+  // ── 선택 ──
+  const allSelected = filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id))
+  const someSelected = filteredItems.some((it) => selectedIds.has(it.id))
+
+  const toggleAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allSelected) filteredItems.forEach((it) => next.delete(it.id))
+      else filteredItems.forEach((it) => next.add(it.id))
+      return next
+    })
   }
 
-  const handleReset = () => {
-    setForm(EMPTY_FORM)
-    setPage(1)
-    setAppliedForm(EMPTY_FORM)
+  const toggleRow = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
   }
+
+  const clearSelection = () => setSelectedIds(new Set())
+
+  // ── Bulk 액션 가능 여부 ──
+  const selectedItems = useMemo(
+    () => items.filter((it) => selectedIds.has(it.id)),
+    [items, selectedIds]
+  )
+  const canApprove = selectedItems.length > 0 && selectedItems.every((it) => it.status === "staging" || it.status === "review")
+  const canReject  = canApprove
+  const canRetryAI = selectedItems.length > 0 && selectedItems.every((it) => it.status === "review" || it.status === "processing")
+  const canRematch = selectedItems.length > 0
+
+  // ── 검색 핸들러 ──
+  const handleSearch = () => { setPage(1); setAppliedForm({ ...form }); clearSelection() }
+  const handleReset  = () => { setForm(EMPTY_FORM); setPage(1); setAppliedForm(EMPTY_FORM); clearSelection() }
 
   const totalPages = Math.max(1, Math.ceil(total / size))
 
   return (
     <div className="space-y-3">
-      {/* 헤더 + 통계 인라인 */}
+      {/* 헤더 */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
-          <h2 className="text-lg font-semibold tracking-tight shrink-0">콘텐츠 관리</h2>
-          <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground divide-x divide-border">
-            <span className="pl-3">전체 <strong className="text-foreground">{stats.total.toLocaleString()}</strong></span>
-            <span className="pl-3">완료 <strong className="text-green-600">{stats.approved.toLocaleString()}</strong></span>
-            <span className="pl-3">검수대기 <strong className="text-amber-600">{stats.review.toLocaleString()}</strong></span>
-            <span className="pl-3">신규 <strong className="text-foreground">{stats.waiting.toLocaleString()}</strong></span>
-          </div>
+          <h2 className="text-lg font-semibold tracking-tight shrink-0">콘텐츠 목록</h2>
+          <span className="text-xs text-muted-foreground">
+            총 <strong className="text-foreground">{total.toLocaleString()}</strong>건
+          </span>
         </div>
-        <button
-          onClick={() => { fetchStats(); fetchList(appliedForm, page, size) }}
-          className="shrink-0 p-1.5 rounded-lg border border-border hover:bg-accent"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAddModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> 콘텐츠 추가
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchList(appliedForm, page, size)}
+            className="shrink-0 p-1.5 rounded-lg border border-border hover:bg-accent"
+            title="새로고침"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
-      {/* 검색 바 — 한 줄 compact */}
+      {/* Status 칩 (UI 4 그룹) */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {UI_GROUPS.map((g) => (
+          <button
+            key={g.key}
+            onClick={() => { setUiGroup(g.key); clearSelection() }}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border",
+              uiGroup === g.key
+                ? "bg-foreground text-background border-foreground"
+                : "bg-card text-foreground border-border hover:bg-accent",
+            )}
+          >
+            {g.label}
+            <span className={cn("ml-1.5 text-xs", uiGroup === g.key ? "opacity-70" : "text-muted-foreground")}>
+              {groupCounts[g.key] ?? 0}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* 검색 바 */}
       <div className="rounded-xl border border-border bg-card shadow-sm">
         <div className="flex items-center gap-2 px-3 py-2 flex-wrap">
-          {/* 제목 검색 */}
           <div className="relative flex-1 min-w-[140px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
             <input
@@ -211,8 +299,6 @@ export default function ContentsPage() {
               className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
-
-          {/* CP사 */}
           <input
             type="text"
             placeholder="CP사"
@@ -221,8 +307,6 @@ export default function ContentsPage() {
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             className="w-28 px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           />
-
-          {/* 유형 */}
           <select
             value={form.content_type}
             onChange={(e) => setForm((f) => ({ ...f, content_type: e.target.value as ContentType | "" }))}
@@ -234,23 +318,6 @@ export default function ContentsPage() {
             <option value="season">시즌</option>
             <option value="episode">에피소드</option>
           </select>
-
-          {/* 상태 */}
-          <select
-            value={form.status}
-            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as ContentStatus | "" }))}
-            className="w-24 px-2 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-          >
-            <option value="">상태 전체</option>
-            <option value="waiting">대기</option>
-            <option value="processing">처리중</option>
-            <option value="staging">검토대기</option>
-            <option value="review">검수중</option>
-            <option value="approved">완료</option>
-            <option value="rejected">반려</option>
-          </select>
-
-          {/* 연도 */}
           <input
             type="number"
             placeholder="연도"
@@ -261,15 +328,13 @@ export default function ContentsPage() {
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             className="w-20 px-2 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           />
-
-          {/* 검색 / 초기화 */}
           <button
             onClick={handleSearch}
             className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             <Search className="h-3.5 w-3.5" /> 검색
           </button>
-          {(form.title || form.cp_name || form.content_type || form.status || form.production_year) && (
+          {(form.title || form.cp_name || form.content_type || form.production_year) && (
             <button
               onClick={handleReset}
               className="shrink-0 p-1.5 rounded-lg border border-border hover:bg-accent text-muted-foreground transition-colors"
@@ -281,14 +346,51 @@ export default function ContentsPage() {
         </div>
       </div>
 
+      {/* Sticky 액션 바 (선택 시 노출) */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-2 z-30 rounded-xl border border-primary/40 bg-primary/5 backdrop-blur shadow-md px-4 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => { if (el) el.indeterminate = !allSelected && someSelected }}
+              onChange={toggleAll}
+              className="h-4 w-4 cursor-pointer"
+            />
+            <span className="font-medium">
+              {selectedIds.size}개 선택됨
+              {selectedIds.size > filteredItems.length && (
+                <span className="ml-2 text-xs text-muted-foreground">(다른 페이지/그룹 포함)</span>
+              )}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <BulkBtn icon={<Check className="h-3.5 w-3.5" />} label={`승인 (${selectedIds.size})`} enabled={canApprove} variant="green"
+              onClick={() => { setBulkAction("approve"); setBulkModalOpen(true) }} />
+            <BulkBtn icon={<X className="h-3.5 w-3.5" />} label={`반려 (${selectedIds.size})`} enabled={canReject} variant="red"
+              onClick={() => { setBulkAction("reject"); setBulkModalOpen(true) }} />
+            <BulkBtn icon={<RotateCcw className="h-3.5 w-3.5" />} label="AI 재처리" enabled={canRetryAI} variant="orange"
+              onClick={() => { setBulkAction("reprocess"); setBulkModalOpen(true) }} />
+            <BulkBtn icon={<Link2 className="h-3.5 w-3.5" />} label="외부소스 매칭" enabled={canRematch} variant="violet"
+              onClick={() => alert(`[Step 2 예정] ${selectedIds.size}건 외부소스 매칭 모달`)} />
+            <button onClick={clearSelection}
+              className="px-2.5 py-1.5 rounded-lg border border-border text-xs hover:bg-accent">
+              해제
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 목록 테이블 */}
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        {/* 목록 헤더 */}
         <div className="px-5 py-3 border-b border-border flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
-            총 <span className="font-semibold text-foreground">{total.toLocaleString()}</span>건
-            {(appliedForm.title || appliedForm.cp_name || appliedForm.content_type || appliedForm.status || appliedForm.production_year) && (
-              <span className="ml-2 text-xs text-primary">(필터 적용 중)</span>
+            현재 표시 <span className="font-semibold text-foreground">{filteredItems.length.toLocaleString()}</span>건
+            {(appliedForm.title || appliedForm.cp_name || appliedForm.content_type || appliedForm.production_year) && (
+              <span className="ml-2 text-xs text-primary">(검색 적용 중)</span>
+            )}
+            {uiGroup !== "all" && (
+              <span className="ml-2 text-xs text-primary">(그룹: {UI_GROUPS.find((g) => g.key === uiGroup)?.label})</span>
             )}
           </span>
           <div className="flex items-center gap-2">
@@ -305,70 +407,84 @@ export default function ContentsPage() {
           </div>
         </div>
 
-        {/* 테이블 */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-10">#</th>
+                <th className="px-3 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = !allSelected && someSelected }}
+                    onChange={toggleAll}
+                    className="h-4 w-4 cursor-pointer"
+                  />
+                </th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">콘텐츠명</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-24">유형</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-32">CP사</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-16">연도</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-24">상태</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-16">품질</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-32">Enrichment</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground w-24">등록일</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={8} className="text-center py-16 text-muted-foreground text-sm">
-                    <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
-                    불러오는 중...
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="text-center py-16 text-muted-foreground text-sm">
-                    검색 결과가 없습니다.
-                  </td>
-                </tr>
+                <tr><td colSpan={9} className="text-center py-16 text-muted-foreground text-sm">
+                  <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" /> 불러오는 중...
+                </td></tr>
+              ) : filteredItems.length === 0 ? (
+                <tr><td colSpan={9} className="text-center py-16 text-muted-foreground text-sm">
+                  표시할 콘텐츠가 없습니다.
+                </td></tr>
               ) : (
-                items.map((item, idx) => (
-                  <tr
-                    key={item.id}
-                    onClick={() => router.push(`/programming/contents/${item.id}`)}
-                    className="border-b border-border last:border-0 hover:bg-accent/30 cursor-pointer transition-colors"
-                  >
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {(page - 1) * size + idx + 1}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium truncate max-w-[220px]">{item.title}</div>
-                      {item.original_title && (
-                        <div className="text-xs text-muted-foreground truncate max-w-[220px]">{item.original_title}</div>
+                filteredItems.map((item) => {
+                  const selected = selectedIds.has(item.id)
+                  return (
+                    <tr
+                      key={item.id}
+                      onClick={() => router.push(`/programming/contents/${item.id}`)}
+                      className={cn(
+                        "border-b border-border last:border-0 cursor-pointer transition-colors",
+                        selected ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-accent/30",
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${TYPE_CLASS[item.content_type]}`}>
-                        <TypeIcon type={item.content_type} />
-                        {TYPE_LABEL[item.content_type]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm truncate max-w-[120px]">{item.cp_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-sm">{item.production_year ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${STATUS_CLASS[item.status]}`}>
-                        {STATUS_LABEL[item.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <QualityBadge score={item.quality_score} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(item.created_at)}</td>
-                  </tr>
-                ))
+                    >
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleRow(item.id)}
+                          className="h-4 w-4 cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium truncate max-w-[240px]">{item.title}</div>
+                        {item.original_title && (
+                          <div className="text-xs text-muted-foreground truncate max-w-[240px]">{item.original_title}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium", TYPE_CLASS[item.content_type])}>
+                          <TypeIcon type={item.content_type} />
+                          {TYPE_LABEL[item.content_type]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm truncate max-w-[120px]">{item.cp_name ?? "—"}</td>
+                      <td className="px-4 py-3 text-sm">{item.production_year ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium", STATUS_CLASS[item.status])}>
+                          {item.status === "processing" && <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />}
+                          {STATUS_LABEL[item.status]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3"><QualityBadge score={item.quality_score} /></td>
+                      <td className="px-4 py-3"><EnrichmentBadge enrichment={item.enrichment} /></td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(item.created_at)}</td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -377,9 +493,7 @@ export default function ContentsPage() {
         {/* 페이지네이션 */}
         {totalPages > 1 && (
           <div className="px-5 py-3 border-t border-border flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              {page} / {totalPages} 페이지
-            </span>
+            <span className="text-xs text-muted-foreground">{page} / {totalPages} 페이지</span>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -388,27 +502,20 @@ export default function ContentsPage() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              {/* 페이지 번호 (최대 7개) */}
               {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
                 let p: number
-                if (totalPages <= 7) {
-                  p = i + 1
-                } else if (page <= 4) {
-                  p = i + 1
-                } else if (page >= totalPages - 3) {
-                  p = totalPages - 6 + i
-                } else {
-                  p = page - 3 + i
-                }
+                if (totalPages <= 7) p = i + 1
+                else if (page <= 4) p = i + 1
+                else if (page >= totalPages - 3) p = totalPages - 6 + i
+                else p = page - 3 + i
                 return (
                   <button
                     key={p}
                     onClick={() => setPage(p)}
-                    className={`min-w-[32px] h-8 rounded-md text-xs border transition-colors ${
-                      p === page
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "border-border hover:bg-accent"
-                    }`}
+                    className={cn(
+                      "min-w-[32px] h-8 rounded-md text-xs border transition-colors",
+                      p === page ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-accent",
+                    )}
                   >
                     {p}
                   </button>
@@ -425,7 +532,43 @@ export default function ContentsPage() {
           </div>
         )}
       </div>
+      {/* Modals */}
+      <AddContentModal open={addModalOpen} onOpenChange={setAddModalOpen} />
+      <BulkActionModal open={bulkModalOpen} onOpenChange={setBulkModalOpen} action={bulkAction} targets={bulkTargets} />
 
     </div>
+  )
+}
+
+// ── Bulk 액션 버튼 ──────────────────────────────────────
+
+function BulkBtn({
+  icon, label, enabled, variant, onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  enabled: boolean
+  variant: "green" | "red" | "orange" | "violet"
+  onClick: () => void
+}) {
+  const enabledClass = {
+    green:  "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300",
+    red:    "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300",
+    orange: "bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300",
+    violet: "bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300",
+  }[variant]
+
+  return (
+    <button
+      type="button"
+      disabled={!enabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
+        enabled ? `${enabledClass} cursor-pointer` : "bg-muted text-muted-foreground cursor-not-allowed",
+      )}
+    >
+      {icon} {label}
+    </button>
   )
 }

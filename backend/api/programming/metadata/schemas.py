@@ -488,3 +488,183 @@ class TmdbCacheRecentItem(BaseModel):
 
 
 TextMetaOut.model_rebuild()
+
+
+# ── 외부 소스 (KOBIS / KMDB) ──────────────────────────────
+
+class ExternalSourceDailyPoint(BaseModel):
+    date: str
+    count: int
+    errors: int
+
+
+class ExternalSourceStats(BaseModel):
+    total_synced: int
+    last_run_at: Optional[datetime]
+    last_run_status: Optional[str]
+    last_7d_daily: list[ExternalSourceDailyPoint]
+
+
+class ExternalSourceItem(BaseModel):
+    id: int
+    content_id: Optional[int]
+    source_type: str
+    external_id: Optional[str]
+    title_on_source: Optional[str]
+    match_confidence: Optional[float]
+    matched_at: Optional[datetime]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PaginatedExternalItems(BaseModel):
+    items: list[ExternalSourceItem]
+    total: int
+    page: int
+
+
+# ── dev-api-consolidation: 18개 신규 엔드포인트 스키마 ──────────
+
+# Content Add Flow (4개)
+class EnrichPreviewRequest(BaseModel):
+    """외부 매칭 미리보기 요청"""
+    fields: Optional[list[str]] = None
+
+
+class SourceResult(BaseModel):
+    """외부 소스 검색 결과 단일 항목"""
+    title: str
+    year: Optional[int] = None
+    source: str
+    match_percent: float
+    director: Optional[str] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EnrichPreviewOut(BaseModel):
+    """외부 매칭 미리보기 응답"""
+    enriched_fields: dict[str, Any] = Field(default_factory=dict)
+    external_sources: list[ExternalSourceItem] = Field(default_factory=list)
+    errors: Optional[list[str]] = None
+
+
+class BatchPreviewOut(BaseModel):
+    """CSV 배치 dry-run 응답"""
+    valid_count: int
+    missing_count: int
+    error_count: int
+    duplicate_count: int
+    estimated_cost: str
+    estimated_duration_seconds: int
+
+
+class SourceSearchOut(BaseModel):
+    """통합 검색 응답"""
+    results: list[SourceResult] = Field(default_factory=list)
+    errors: Optional[list[str]] = None
+
+
+class CreateFromSourcesRequest(BaseModel):
+    """외부 소스 기반 콘텐츠 생성 요청"""
+    source_id: int
+    selected_fields: list[str]
+    cp_name: str
+
+
+class CreateFromSourcesOut(BaseModel):
+    """외부 소스 기반 콘텐츠 생성 응답"""
+    id: int
+    title: str
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+# Content Detail (6개)
+class PromoteAIResultRequest(BaseModel):
+    """AI 결과 채택 요청"""
+    ai_result_id: int
+
+
+class PromoteAIResultOut(BaseModel):
+    """AI 결과 채택 응답"""
+    id: int
+    is_final: bool
+
+
+class ApplyExternalFieldsRequest(BaseModel):
+    """외부 필드 적용 요청"""
+    source_id: int
+    fields: list[str]
+
+
+class ChangeLogItem(BaseModel):
+    """변경 이력 단일 항목"""
+    field: str
+    old_value: Optional[Any] = None
+    new_value: Optional[Any] = None
+    changed_by: Optional[str] = None
+    changed_at: datetime
+
+
+class ContentChangelogOut(BaseModel):
+    """변경 이력 응답"""
+    changes: list[ChangeLogItem] = Field(default_factory=list)
+
+
+class LockFieldsRequest(BaseModel):
+    """필드 잠금 요청"""
+    fields: list[str]
+    reason: Optional[str] = None
+
+
+# Bulk Actions (8개)
+class BulkActionConsolidatedRequest(BaseModel):
+    """Bulk 액션 요청 (통합)"""
+    ids: list[int]
+    reason: Optional[str] = None
+    filter_query: Optional[dict[str, Any]] = None
+
+
+class BulkActionResponse(BaseModel):
+    """Bulk 액션 응답"""
+    job_id: str
+    ids_accepted: int
+    ids_rejected: int
+    errors: Optional[list[str]] = None
+
+
+class JobStatusOut(BaseModel):
+    """작업 상태 조회 응답"""
+    id: int
+    status: str
+    action_type: str
+    target_count: int
+    completed_count: int
+    failed_count: int
+    progress_percent: int
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    errors: Optional[list[str]] = None
+
+    model_config = {"from_attributes": True}
+
+
+class RetryFailedRequest(BaseModel):
+    """실패 항목 재실행 요청"""
+    pass
+
+
+class UndoActionRequest(BaseModel):
+    """Bulk 액션 되돌리기 요청"""
+    action_id: str
+
+
+class UndoActionOut(BaseModel):
+    """Bulk 액션 되돌리기 응답"""
+    id: int
+    status: str
+    reverted_count: int

@@ -109,7 +109,7 @@ class KmdbDiscoverySource(DiscoverySource):
             return iter([])
 
     def _new_release(self) -> list[DiscoveryResult]:
-        items = self._client.search_recent(days=self._recent_days, collection="kmdb_public2")
+        items = self._client.search_recent(days=self._recent_days)
         return [r for i in items if (r := _item_to_result(i, "movie")) is not None]
 
     def _discover_drama(self) -> list[DiscoveryResult]:
@@ -122,7 +122,7 @@ class KmdbDiscoverySource(DiscoverySource):
 
     def _discover_movie(self) -> list[DiscoveryResult]:
         results = []
-        for item in self._client.iter_collection(collection="kmdb_public2"):
+        for item in self._client.iter_collection():
             r = _item_to_result(item, "movie")
             if r:
                 results.append(r)

@@ -78,6 +78,8 @@ class Content(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    is_deleted = Column(Boolean, default=False, index=True)
+    locked_fields = Column(JSON, default=list)  # List[str] — 잠금 필드 목록
 
     # Relationships
     metadata_record = relationship("ContentMetadata", back_populates="content", uselist=False)
@@ -210,3 +212,29 @@ class ContentBatchJob(Base):
     created_by = Column(String(200))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     finished_at = Column(DateTime(timezone=True))
+
+
+class ContentActionLog(Base):
+    """Bulk 액션 이력 추적 — undo 기능 지원"""
+    __tablename__ = "content_action_logs"
+
+    action_id = Column(String(36), primary_key=True, index=True)  # UUID
+    content_ids = Column(JSON, nullable=False)  # List[int]
+    action_type = Column(String(50), nullable=False)  # bulk_reprocess, bulk_enrich, ...
+    before_state = Column(JSON, nullable=False)  # {id: {status, ...}}
+    executed_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    reverted_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ContentAuditLog(Base):
+    """필드별 변경 감시 로그 — promote/apply-fields/lock 등 필드 변경 시 자동 기록"""
+    __tablename__ = "content_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_id = Column(Integer, ForeignKey("contents.id"), nullable=False, index=True)
+    field = Column(String(100), nullable=False)  # 필드명 (e.g., "synopsis", "genre")
+    old_value = Column(Text, nullable=True)  # 이전 값 (JSON serialized)
+    new_value = Column(Text, nullable=True)  # 새 값 (JSON serialized)
+    source = Column(String(50), nullable=False)  # promote_ai | apply_external | lock | ...
+    actor = Column(String(200), nullable=True)  # 수행자 (사용자명 또는 시스템)
+    at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

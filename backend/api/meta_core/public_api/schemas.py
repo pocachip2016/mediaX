@@ -30,3 +30,19 @@ class DamEventRequest(BaseModel):
     match_method: Optional[str] = None   # clip_similarity | ocr_text | manual | web_search
     confirmed: bool = False
     payload: Optional[dict[str, Any]] = None
+
+
+class DamAssetItem(BaseModel):
+    asset_id: int
+    filename: str
+    folder_path: Optional[str] = None
+    confidence: Optional[float] = None
+    method: Optional[str] = None
+    status: Optional[str] = None
+    thumbnail_url: str
+
+
+class DamAssetsOut(BaseModel):
+    content_id: int
+    assets: list[DamAssetItem]
+    dam_available: bool

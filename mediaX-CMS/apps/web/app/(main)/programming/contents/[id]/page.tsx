@@ -4,535 +4,535 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
-  ArrowLeft, Film, Tv, Layers, Play, RefreshCw, Image as ImageIcon,
-  ChevronRight, CheckCircle, AlertCircle, Clock, XCircle, Loader2,
+  ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown,
 } from "lucide-react"
-import {
-  metadataApi, imageMetaApi,
-  type ContentOut, type ContentStatus, type ContentType,
-  type StagingItem, type ImageMetaOut, type ContentImageOut, type MetadataOut,
-} from "@/lib/api"
+import { cn } from "@workspace/ui/lib/utils"
+import { metadataApi, type ContentOut } from "@/lib/api"
 
-// ── 상수 ──────────────────────────────────────────────────
+type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
-const STATUS_LABEL: Record<ContentStatus, string> = {
-  waiting: "대기", processing: "처리중", staging: "검토대기",
-  review: "검수중", approved: "완료", rejected: "반려",
-}
-const STATUS_CLASS: Record<ContentStatus, string> = {
-  waiting:    "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
-  processing: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  staging:    "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
-  review:     "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  approved:   "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  rejected:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-}
-const TYPE_LABEL: Record<ContentType, string> = {
-  movie: "영화", series: "시리즈", season: "시즌", episode: "에피소드",
-}
-const TYPE_CLASS: Record<ContentType, string> = {
-  movie:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  series:  "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
-  season:  "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
-  episode: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
+  waiting: { label: "대기", emoji: "⏳", color: "bg-slate-100 text-slate-600" },
+  processing: { label: "처리중", emoji: "🔄", color: "bg-blue-100 text-blue-700" },
+  staging: { label: "검토대기", emoji: "📋", color: "bg-violet-100 text-violet-700" },
+  review: { label: "검수", emoji: "🟧", color: "bg-amber-100 text-amber-700" },
+  approved: { label: "승인됨", emoji: "✓", color: "bg-green-100 text-green-700" },
+  rejected: { label: "반려됨", emoji: "✗", color: "bg-red-100 text-red-700" },
 }
 
-const IMAGE_TYPE_LABEL: Record<string, string> = {
-  poster: "포스터", thumbnail: "썸네일", stillcut: "스틸컷", banner: "배너", logo: "로고",
-}
-const IMAGE_ASPECT: Record<string, string> = {
-  poster: "aspect-[2/3]", thumbnail: "aspect-video", stillcut: "aspect-video",
-  banner: "aspect-[16/3]", logo: "aspect-[5/2]",
-}
-
-function TypeIcon({ type }: { type: ContentType }) {
-  if (type === "movie") return <Film className="h-4 w-4" />
-  if (type === "series") return <Tv className="h-4 w-4" />
-  if (type === "season") return <Layers className="h-4 w-4" />
-  return <Play className="h-4 w-4" />
+const TAB_META = {
+  text: { label: "글자", status: "completed" as const },
+  image: { label: "이미지", status: "completed" as const },
+  video: { label: "영상", status: "pending" as const },
+  sources: { label: "외부소스", count: 3 },
+  assets: { label: "에셋" },
+  ai: { label: "AI 이력", count: 8 },
 }
 
-function StatusIcon({ status }: { status: ContentStatus }) {
-  if (status === "approved") return <CheckCircle className="h-3.5 w-3.5" />
-  if (status === "rejected") return <XCircle className="h-3.5 w-3.5" />
-  if (status === "review") return <AlertCircle className="h-3.5 w-3.5" />
-  return <Clock className="h-3.5 w-3.5" />
+function TabStatusBadge({ tab }: { tab: "text" | "image" | "video" }) {
+  const status = TAB_META[tab].status
+  const icon = status === "completed" ? "●" : "○"
+  const color = status === "completed" ? "text-green-600" : "text-gray-400"
+  return <span className={color}>{icon}</span>
 }
 
-// ── 이미지 섹션 ───────────────────────────────────────────
-
-function ImageSection({ imageMeta }: { imageMeta: ImageMetaOut | null }) {
-  const [selectedImg, setSelectedImg] = useState<ContentImageOut | null>(null)
-
-  if (!imageMeta || imageMeta.images.length === 0) {
-    return (
-      <div className="rounded-xl border border-border bg-card p-6 text-center">
-        <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-        <p className="text-sm text-muted-foreground">등록된 이미지가 없습니다.</p>
-      </div>
-    )
-  }
-
-  const poster = imageMeta.images.find((i) => i.image_type === "poster")
-  const others = imageMeta.images.filter((i) => i.image_type !== "poster")
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        {/* 포스터 메인 */}
-        {poster && (
-          <div
-            className="shrink-0 w-28 rounded-xl overflow-hidden border border-border cursor-pointer hover:opacity-90 transition-opacity"
-            onClick={() => setSelectedImg(poster)}
-          >
-            <div className="aspect-[2/3] bg-muted relative">
-              <img
-                src={poster.url}
-                alt={poster.alt_text ?? "포스터"}
-                className="w-full h-full object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-              />
-            </div>
-            <div className="px-2 py-1 text-center text-xs text-muted-foreground border-t border-border">포스터</div>
-          </div>
-        )}
-
-        {/* 나머지 이미지들 */}
-        <div className="flex-1 grid grid-cols-2 gap-2">
-          {others.map((img) => (
-            <div
-              key={img.id}
-              className="rounded-lg overflow-hidden border border-border cursor-pointer hover:opacity-90 transition-opacity"
-              onClick={() => setSelectedImg(img)}
-            >
-              <div className={`${IMAGE_ASPECT[img.image_type] ?? "aspect-video"} bg-muted relative`}>
-                <img
-                  src={img.url}
-                  alt={img.alt_text ?? img.image_type}
-                  className="w-full h-full object-cover"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-                />
-              </div>
-              <div className="px-2 py-1 text-center text-xs text-muted-foreground border-t border-border">
-                {IMAGE_TYPE_LABEL[img.image_type] ?? img.image_type}
-                {img.width && img.height && (
-                  <span className="ml-1 text-muted-foreground/60">{img.width}×{img.height}</span>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {/* 미등록 타입 표시 */}
-          {["poster", "thumbnail", "stillcut", "banner", "logo"]
-            .filter((t) => {
-              const hasKey = `has_${t}` as keyof ImageMetaOut
-              return !imageMeta[hasKey]
-            })
-            .map((t) => (
-              <div key={t} className="rounded-lg border border-dashed border-border overflow-hidden opacity-50">
-                <div className={`${IMAGE_ASPECT[t] ?? "aspect-video"} bg-muted/30 flex items-center justify-center`}>
-                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="px-2 py-1 text-center text-xs text-muted-foreground border-t border-border">
-                  {IMAGE_TYPE_LABEL[t]} <span className="text-muted-foreground/60">미등록</span>
-                </div>
-              </div>
-            ))
-          }
-        </div>
-      </div>
-
-      {/* 이미지 확대 모달 */}
-      {selectedImg && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setSelectedImg(null)}
-        >
-          <div className="max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={selectedImg.url}
-              alt={selectedImg.alt_text ?? selectedImg.image_type}
-              className="w-full rounded-xl object-contain max-h-[80vh]"
-            />
-            <div className="mt-2 text-center text-sm text-white/70">
-              {IMAGE_TYPE_LABEL[selectedImg.image_type] ?? selectedImg.image_type}
-              {selectedImg.width && selectedImg.height && ` · ${selectedImg.width}×${selectedImg.height}px`}
-              {selectedImg.source && ` · ${selectedImg.source}`}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+function TabCountBadge({ tab }: { tab: "sources" | "ai" }) {
+  const count = TAB_META[tab].count
+  return <span className="text-xs font-medium text-slate-500 ml-2">{count}</span>
 }
-
-// ── Summary 헤더 카드 (포스터 + 핵심 메타 한 줄) ──────────
-
-function SummaryCard({
-  content, metadata, imageMeta, onRefresh, loading,
-}: {
-  content: ContentOut
-  metadata: MetadataOut | null
-  imageMeta: ImageMetaOut | null
-  onRefresh: () => void
-  loading: boolean
-}) {
-  const synopsis = metadata?.final_synopsis ?? metadata?.ai_synopsis ?? metadata?.cp_synopsis
-  const genre = metadata?.final_genre ?? metadata?.ai_genre_primary
-  const tags = (metadata?.final_tags ?? metadata?.ai_mood_tags) as string[] | null
-  const poster = imageMeta?.images.find((i) => i.image_type === "poster")
-
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="flex items-start gap-4 p-4">
-        {/* 포스터 썸네일 */}
-        <div className="shrink-0 w-16 rounded-lg overflow-hidden border border-border bg-muted">
-          <div className="aspect-[2/3]">
-            {poster ? (
-              <img
-                src={poster.url}
-                alt="포스터"
-                className="w-full h-full object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="h-5 w-5 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 제목 + 메타 */}
-        <div className="flex-1 min-w-0">
-          {/* 뱃지 + 새로고침 */}
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${TYPE_CLASS[content.content_type]}`}>
-              <TypeIcon type={content.content_type} />
-              {TYPE_LABEL[content.content_type]}
-            </span>
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${STATUS_CLASS[content.status]}`}>
-              <StatusIcon status={content.status} />
-              {STATUS_LABEL[content.status]}
-            </span>
-            <button
-              onClick={onRefresh}
-              className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            </button>
-          </div>
-
-          {/* 제목 */}
-          <h1 className="text-lg font-bold leading-snug truncate">{content.title}</h1>
-          {content.original_title && (
-            <p className="text-xs text-muted-foreground truncate">{content.original_title}</p>
-          )}
-
-          {/* 핵심 메타 — 한 줄 */}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {content.cp_name && <span>{content.cp_name}</span>}
-            {content.production_year && <span>{content.production_year}</span>}
-            {content.country && <span>{content.country}</span>}
-            {content.runtime_minutes && <span>{content.runtime_minutes}분</span>}
-            {metadata?.ai_rating_suggestion && <span>{metadata.ai_rating_suggestion}</span>}
-            {genre && <span className="text-foreground/70">{genre}</span>}
-            {content.quality_score !== null && (
-              <span className={`font-semibold ${content.quality_score >= 90 ? "text-green-600" : content.quality_score >= 70 ? "text-amber-600" : "text-red-600"}`}>
-                품질 {content.quality_score.toFixed(0)}
-              </span>
-            )}
-          </div>
-
-          {/* 태그 */}
-          {tags && tags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {tags.map((tag) => (
-                <span key={tag} className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs">{tag}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 시놉시스 — 접히는 형태 */}
-      {synopsis && (
-        <div className="px-4 pb-3 border-t border-border pt-3">
-          <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">{synopsis}</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── 시즌 목록 (시리즈 전용) ────────────────────────────────
-
-function SeasonList({ seasons }: { seasons: StagingItem[] }) {
-  if (seasons.length === 0) {
-    return (
-      <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-        등록된 시즌이 없습니다.
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="px-5 py-3 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        시즌 목록 ({seasons.length}개)
-      </div>
-      <div className="divide-y divide-border">
-        {seasons.map((s) => {
-          const epCount = s.children.length
-          const approvedCount = s.children.filter((ep) => ep.content.status === "approved").length
-          return (
-            <div key={s.content.id} className="px-5 py-4 flex items-center gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-sm">{s.content.title}</span>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${STATUS_CLASS[s.content.status]}`}>
-                    <StatusIcon status={s.content.status} />
-                    {STATUS_LABEL[s.content.status]}
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                  {epCount > 0 && (
-                    <span>
-                      에피소드 {epCount}화
-                      {epCount > 0 && (
-                        <span className="ml-1">
-                          (완료 <span className="text-green-600 font-medium">{approvedCount}</span>/{epCount})
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  {s.content.quality_score !== null && (
-                    <span>품질 {s.content.quality_score?.toFixed(0)}</span>
-                  )}
-                </div>
-              </div>
-              <Link
-                href={`/programming/contents/${s.content.id}`}
-                className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-accent transition-colors"
-              >
-                상세 보기 <ChevronRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ── 에피소드 목록 (시즌 전용) ──────────────────────────────
-
-function EpisodeList({ episodes }: { episodes: StagingItem[] }) {
-  if (episodes.length === 0) {
-    return (
-      <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-        등록된 에피소드가 없습니다.
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="px-5 py-3 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        에피소드 목록 ({episodes.length}화)
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/30">
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-12">화</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">에피소드 제목</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-20">상영시간</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">상태</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-16">품질</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground w-24">등록일</th>
-            </tr>
-          </thead>
-          <tbody>
-            {episodes.map((ep, idx) => (
-              <tr
-                key={ep.content.id}
-                className="border-b border-border last:border-0 hover:bg-accent/30 cursor-pointer transition-colors"
-              >
-                <td className="px-4 py-2.5 text-xs text-muted-foreground font-medium">
-                  {idx + 1}
-                </td>
-                <td className="px-4 py-2.5">
-                  <Link
-                    href={`/programming/contents/${ep.content.id}`}
-                    className="block"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="font-medium truncate max-w-[260px] hover:text-primary transition-colors">
-                      {ep.content.title}
-                    </div>
-                    {ep.content.original_title && (
-                      <div className="text-xs text-muted-foreground truncate max-w-[260px]">{ep.content.original_title}</div>
-                    )}
-                  </Link>
-                </td>
-                <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                  {ep.content.runtime_minutes ? `${ep.content.runtime_minutes}분` : "—"}
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${STATUS_CLASS[ep.content.status]}`}>
-                    <StatusIcon status={ep.content.status} />
-                    {STATUS_LABEL[ep.content.status]}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5">
-                  {ep.content.quality_score !== null
-                    ? <span className={`text-xs font-semibold ${ep.content.quality_score >= 90 ? "text-green-600" : ep.content.quality_score >= 70 ? "text-amber-600" : "text-red-600"}`}>
-                        {ep.content.quality_score?.toFixed(0)}
-                      </span>
-                    : <span className="text-xs text-muted-foreground">—</span>
-                  }
-                </td>
-                <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                  {ep.content.created_at.slice(0, 10)}
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  <Link
-                    href={`/programming/contents/${ep.content.id}`}
-                    className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-primary transition-colors"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-// ── 메인 페이지 ───────────────────────────────────────────
 
 export default function ContentDetailPage() {
   const params = useParams()
   const router = useRouter()
   const contentId = Number(params.id)
-
-  const [loading, setLoading] = useState(true)
+  
   const [content, setContent] = useState<ContentOut | null>(null)
-  const [metadata, setMetadata] = useState<MetadataOut | null>(null)
-  const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
-  const [hierarchy, setHierarchy] = useState<StagingItem | null>(null)
-  const [error, setError] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<TabName>("text")
+  const [selectedSynopsis, setSelectedSynopsis] = useState<"cp" | "ai" | "tmdb" | "manual">("ai")
+  const [changelog, setChangelog] = useState<any>(null)
+  const [damAssets, setDamAssets] = useState<any>(null)
 
   useEffect(() => {
-    if (!contentId || isNaN(contentId)) return
-    setLoading(true)
-    setError(false)
-
-    Promise.allSettled([
-      metadataApi.getContent(contentId),
-      imageMetaApi.get(contentId),
-      metadataApi.getHierarchy(contentId),
-    ]).then(([contentRes, imageRes, hierarchyRes]) => {
-      if (contentRes.status === "fulfilled") {
-        setContent(contentRes.value)
-        setMetadata(contentRes.value.metadata_record ?? null)
-      } else {
-        setError(true)
+    const fetchContent = async () => {
+      try {
+        const data = await metadataApi.getContent(contentId)
+        setContent(data)
+      } catch (error) {
+        console.error("Failed to fetch content:", error)
+      } finally {
+        setLoading(false)
       }
-      if (imageRes.status === "fulfilled") setImageMeta(imageRes.value)
-      if (hierarchyRes.status === "fulfilled") setHierarchy(hierarchyRes.value)
-    }).finally(() => setLoading(false))
+    }
+    fetchContent()
   }, [contentId])
 
+  // Load changelog when ai tab becomes active
+  useEffect(() => {
+    if (activeTab === "ai") {
+      handleLoadChangelog()
+    }
+  }, [activeTab])
+
+  // Load dam assets when assets tab becomes active
+  useEffect(() => {
+    if (activeTab === "assets") {
+      metadataApi.getDamAssets(contentId)
+        .then(setDamAssets)
+        .catch(() => setDamAssets({ content_id: contentId, assets: [], dam_available: false }))
+    }
+  }, [activeTab, contentId])
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <div className="p-6 text-center text-slate-600">로드 중...</div>
   }
 
-  if (error || !content) {
-    return (
-      <div className="space-y-4">
-        <button onClick={() => router.back()} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> 목록으로
-        </button>
-        <div className="rounded-xl border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20 p-8 text-center">
-          <p className="text-red-600 dark:text-red-400">콘텐츠를 불러올 수 없습니다.</p>
-        </div>
-      </div>
-    )
+  if (!content) {
+    return <div className="p-6 text-center text-slate-600">콘텐츠를 찾을 수 없습니다.</div>
   }
 
-  const isSeries = content.content_type === "series"
-  const isSeason = content.content_type === "season"
-  const seasons = isSeries ? (hierarchy?.children ?? []) : []
-  const episodes = isSeason ? (hierarchy?.children ?? []) : []
-
-  const handleRefresh = () => {
-    setLoading(true)
-    Promise.allSettled([
-      metadataApi.getContent(contentId),
-      imageMetaApi.get(contentId),
-      metadataApi.getHierarchy(contentId),
-    ]).then(([contentRes, imageRes, hierarchyRes]) => {
-      if (contentRes.status === "fulfilled") {
-        setContent(contentRes.value)
-        setMetadata(contentRes.value.metadata_record ?? null)
-      }
-      if (imageRes.status === "fulfilled") setImageMeta(imageRes.value)
-      if (hierarchyRes.status === "fulfilled") setHierarchy(hierarchyRes.value)
-    }).finally(() => setLoading(false))
+  // Handler for partialReprocess (AI 재처리)
+  const handlePartialReprocess = async () => {
+    try {
+      await metadataApi.partialReprocess(contentId)
+      alert("AI 재처리 요청이 전송되었습니다.")
+    } catch (error) {
+      console.error("AI 재처리 실패:", error)
+      alert("AI 재처리에 실패했습니다.")
+    }
   }
+
+  // Handler for applyExternalFields (필드별 가져오기)
+  const handleApplyExternalFields = async (sourceId: number) => {
+    try {
+      await metadataApi.applyExternalFields(contentId, sourceId, ["title", "director"])
+      alert("필드가 적용되었습니다.")
+    } catch (error) {
+      console.error("필드 적용 실패:", error)
+      alert("필드 적용에 실패했습니다.")
+    }
+  }
+
+  // Handler for promoteAIResult (채택)
+  const handlePromoteAIResult = async (resultId: number) => {
+    try {
+      await metadataApi.promoteAIResult(contentId, resultId)
+      alert("AI 결과가 채택되었습니다.")
+    } catch (error) {
+      console.error("AI 결과 채택 실패:", error)
+      alert("AI 결과 채택에 실패했습니다.")
+    }
+  }
+
+  // Handler for getChangelog (변경 이력 조회)
+  const handleLoadChangelog = async () => {
+    try {
+      const data = await metadataApi.getChangelog(contentId)
+      setChangelog(data)
+    } catch (error) {
+      console.error("변경 이력 조회 실패:", error)
+    }
+  }
+
+  // Handler for lockFields (필드 잠금)
+  const handleLockFields = async () => {
+    try {
+      await metadataApi.lockFields(contentId, ["title", "director"], "품질 검증 완료")
+      alert("필드가 잠금 처리되었습니다.")
+    } catch (error) {
+      console.error("필드 잠금 실패:", error)
+      alert("필드 잠금에 실패했습니다.")
+    }
+  }
+
+  // Handler for requestPreviewClip (Preview clip 요청)
+  const handleRequestPreviewClip = async () => {
+    try {
+      await metadataApi.requestPreviewClip(contentId)
+      alert("Preview clip 생성이 요청되었습니다.")
+    } catch (error) {
+      console.error("Preview clip 요청 실패:", error)
+      alert("Preview clip 요청에 실패했습니다.")
+    }
+  }
+
+  const mockQualityScore = 82
+  const statusInfo = (STATUS_BADGE[content.status] ?? STATUS_BADGE.waiting)!
 
   return (
-    <div className="space-y-4">
-      {/* 뒤로가기 */}
-      <button
-        onClick={() => router.back()}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" /> 목록으로
-      </button>
-
-      {/* Summary 카드 (포스터 + 핵심 메타) */}
-      <SummaryCard
-        content={content}
-        metadata={metadata}
-        imageMeta={imageMeta}
-        onRefresh={handleRefresh}
-        loading={loading}
-      />
-
-      {/* 이미지 에셋 (포스터 제외 나머지 타입) — 영화/에피소드만 */}
-      {!isSeries && !isSeason && (
-        <div className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">이미지 에셋</h2>
-          <ImageSection imageMeta={imageMeta} />
+    <div className="min-h-screen bg-slate-50 p-6">
+      {/* Header */}
+      <div className="mb-6 bg-white rounded-lg border border-slate-200 p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-start gap-4">
+            <Link href="/programming/contents" className="text-slate-400 hover:text-slate-600 mt-1">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">{content.title}</h1>
+              {content.original_title && (
+                <p className="text-slate-600 text-sm mt-1">{content.original_title}</p>
+              )}
+              <p className="text-slate-500 text-sm mt-2">
+                {content.content_type === "movie" ? "영화" : content.content_type === "series" ? "시리즈" : content.content_type} ·
+                {content.cp_name ? ` ${content.cp_name} ·` : ""} {content.production_year || ""}
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className={cn("inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium", statusInfo.color)}>
+              {statusInfo.emoji} {statusInfo.label}
+            </div>
+            <p className="text-slate-500 text-xs mt-2">ID: #{content.id}</p>
+          </div>
         </div>
-      )}
 
-      {/* 시리즈 → 시즌 목록 */}
-      {isSeries && (
-        <div className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">시즌 목록</h2>
-          <SeasonList seasons={seasons} />
+        <div className="flex items-center gap-4 mb-4 pb-4 border-b border-slate-200">
+          <div className="flex-1">
+            <p className="text-xs text-slate-500 mb-1">품질 점수</p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+                <div className="bg-amber-500 h-full" style={{ width: `${mockQualityScore}%` }} />
+              </div>
+              <span className="font-bold text-sm text-amber-700">{mockQualityScore}</span>
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* 시즌 → 에피소드 목록 */}
-      {isSeason && (
-        <div className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">에피소드 목록</h2>
-          <EpisodeList episodes={episodes} />
+        {/* Action Buttons */}
+        <div className="flex gap-2">
+          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200 text-sm">
+            <Check className="h-4 w-4" />
+            승인
+          </button>
+          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200 text-sm">
+            <X className="h-4 w-4" />
+            반려
+          </button>
+          <button onClick={handlePartialReprocess} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
+            <RotateCcw className="h-4 w-4" />
+            AI 재처리
+          </button>
+          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 text-sm">
+            <Eye className="h-4 w-4" />
+            외부 재매칭
+          </button>
+          <button onClick={handleLockFields} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+            🔒 잠금
+          </button>
+          <button onClick={handleRequestPreviewClip} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+            <Film className="h-4 w-4" />
+            Preview clip
+          </button>
         </div>
-      )}
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <div className="border-b border-slate-200 flex gap-4 px-6">
+          {(["text", "image", "video", "sources", "assets", "ai"] as TabName[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "px-4 py-3 font-medium border-b-2 transition-colors text-sm flex items-center gap-2",
+                activeTab === tab ? "border-blue-500 text-blue-600" : "border-transparent text-slate-600 hover:text-slate-900",
+              )}
+            >
+              {tab === "text" && <TabStatusBadge tab="text" />}
+              {tab === "image" && <TabStatusBadge tab="image" />}
+              {tab === "video" && <TabStatusBadge tab="video" />}
+              {TAB_META[tab].label}
+              {(tab === "sources" || tab === "ai") && <TabCountBadge tab={tab} />}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-6">
+          {activeTab === "text" && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-semibold text-slate-900 mb-3">시놉시스</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">
+                      <span className="inline-block px-2 py-0.5 rounded bg-slate-200 text-slate-700">[CP]</span>
+                      <span className="ml-2">trust 100</span>
+                    </div>
+                    <p className="text-sm text-slate-500">(없음)</p>
+                    <input type="radio" name="synopsis" disabled className="mt-3" />
+                  </div>
+
+                  <div className={cn("border-2 rounded-lg p-4", selectedSynopsis === "ai" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white")}>
+                    <div className="text-xs font-semibold text-slate-600 mb-2 flex items-center justify-between">
+                      <span>
+                        <span className="inline-block px-2 py-0.5 rounded bg-purple-100 text-purple-700">[AI]</span>
+                        <span className="ml-2">score 89</span>
+                      </span>
+                      <span className="inline-block px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">자동</span>
+                    </div>
+                    <p className="text-sm text-slate-700 mb-3">가난한 가족이 부유한 가족의 집에 침투하면서...</p>
+                    <div className="mt-3">
+                      <input
+                        type="radio"
+                        name="synopsis"
+                        checked={selectedSynopsis === "ai"}
+                        onChange={() => setSelectedSynopsis("ai")}
+                        className="cursor-pointer"
+                      />
+                      <label className="ml-2 text-sm text-slate-700">사용</label>
+                    </div>
+                  </div>
+
+                  <div className={cn("border-2 rounded-lg p-4", selectedSynopsis === "tmdb" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white")}>
+                    <div className="text-xs font-semibold text-slate-600 mb-2">
+                      <span className="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-700">[TMDB]</span>
+                      <span className="ml-2">match .94</span>
+                    </div>
+                    <p className="text-sm text-slate-700 mb-3">A poor family schemes to become employed by a wealthy...</p>
+                    <div className="mt-3">
+                      <input
+                        type="radio"
+                        name="synopsis"
+                        checked={selectedSynopsis === "tmdb"}
+                        onChange={() => setSelectedSynopsis("tmdb")}
+                        className="cursor-pointer"
+                      />
+                      <label className="ml-2 text-sm text-slate-700">사용</label>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">✏ 직접 작성</button>
+                  <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">↻ AI 재생성</button>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-slate-900 mb-3">장르</h3>
+                <div className="flex gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm">
+                    드라마 <span className="text-xs">✓ TMDB·.91</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm">
+                    스릴러 <span className="text-xs">✓ AI·.84</span>
+                  </span>
+                  <button className="px-3 py-1 rounded-full border border-dashed border-slate-300 text-slate-600 text-sm hover:bg-slate-50">
+                    + 추가
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-200 flex gap-2 justify-end">
+                <button className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50">
+                  💾 임시 저장
+                </button>
+                <button className="px-4 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200">
+                  💾 저장 후 글자 메타 완료
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "image" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-slate-900">이미지</h3>
+                <button className="px-3 py-2 rounded-lg bg-blue-100 text-blue-700 text-sm font-medium hover:bg-blue-200">
+                  + 이미지 업로드
+                </button>
+              </div>
+              <div className="grid grid-cols-5 gap-4">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="border border-slate-200 rounded-lg overflow-hidden hover:border-blue-400 transition-colors">
+                    <div className="aspect-[3/4] bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center">
+                      <Film className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <div className="p-2 text-xs text-slate-600">
+                      {i === 1 ? "⭐ 대표" : `포스터 ${i}`}
+                      <div className="text-xs text-slate-500 mt-1">{i === 1 ? "CP" : "TMDB"}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-sm text-slate-600 mt-4">
+                검수 진행: 5/5 완료
+                <button className="ml-4 px-3 py-1 rounded-lg bg-green-100 text-green-700 text-sm font-medium hover:bg-green-200">
+                  ✓ 이미지 메타 완료
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "video" && (
+            <div className="space-y-4">
+              <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                <h3 className="font-semibold text-slate-900 mb-4">영상 파일 정보</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-slate-600">해상도</label>
+                    <select className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg">
+                      <option>4K</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600">포맷</label>
+                    <select className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg">
+                      <option>MP4</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600">비디오 코덱</label>
+                    <select className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg">
+                      <option>H.265</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600">오디오 코덱</label>
+                    <select className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg">
+                      <option>AAC</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600">비트레이트</label>
+                    <input type="number" value="12000" className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600">길이</label>
+                    <input type="text" value="02:12:00" className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-3 flex gap-2 text-sm text-yellow-700">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span>자동 감지: ffprobe 미실행</span>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "sources" && (
+            <div className="space-y-4">
+              <h3 className="font-semibold text-slate-900">매칭된 외부 소스 (3)</h3>
+
+              <div className="border border-slate-200 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <span className="inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-medium text-sm">[TMDB]</span>
+                    <span className="ml-2 text-xs text-slate-600">id: 496243 match .94</span>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-600 mb-3">title: Parasite</p>
+                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium" onClick={() => handleApplyExternalFields(1)}>
+                  📋 필드별 가져오기
+                </button>
+              </div>
+
+              <div className="border border-slate-200 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <span className="inline-block px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium text-sm">[KOBIS]</span>
+                    <span className="ml-2 text-xs text-slate-600">movieCd: 20183782 match .87</span>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-600 mb-3">영화명: 기생충, 감독: 봉준호</p>
+                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium" onClick={() => handleApplyExternalFields(2)}>
+                  📋 필드별 가져오기
+                </button>
+              </div>
+
+              <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <span className="inline-block px-2 py-1 rounded-full bg-yellow-100 text-yellow-700 font-medium text-sm">[Watcha]</span>
+                    <span className="ml-2 text-xs text-yellow-700">id: 12wgQ34 match .79 ⚠</span>
+                  </div>
+                </div>
+                <p className="text-sm text-yellow-700">⚠ 낮은 신뢰도 — 등급/연도 불일치 가능. 검수 권장.</p>
+                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-2" onClick={() => handleApplyExternalFields(3)}>
+                  📋 필드별 가져오기
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "assets" && (
+            <div className="space-y-4">
+              {!damAssets ? (
+                <p className="text-slate-500 text-sm text-center py-8">로딩 중...</p>
+              ) : !damAssets.dam_available ? (
+                <p className="text-amber-600 text-sm text-center py-8">Dam API에 연결할 수 없습니다.</p>
+              ) : damAssets.assets.length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-8">매핑된 에셋이 없습니다.</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-4">
+                  {damAssets.assets.map((asset: any) => (
+                    <div key={asset.asset_id} className="border rounded-lg overflow-hidden">
+                      <img
+                        src={asset.thumbnail_url}
+                        alt={asset.filename}
+                        className="w-full h-32 object-cover bg-slate-100"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                      <div className="p-2">
+                        <p className="text-xs font-medium truncate">{asset.filename}</p>
+                        {asset.confidence != null && (
+                          <p className="text-xs text-slate-500">{(asset.confidence * 100).toFixed(0)}% match</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "ai" && (
+            <div className="space-y-4">
+              <h3 className="font-semibold text-slate-900 mb-4">AI 처리 이력 (8)</h3>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-slate-600">처리 시각</th>
+                      <th className="px-3 py-2 text-left font-semibold text-slate-600">엔진</th>
+                      <th className="px-3 py-2 text-left font-semibold text-slate-600">태스크</th>
+                      <th className="px-3 py-2 text-left font-semibold text-slate-600">점수</th>
+                      <th className="px-3 py-2 text-left font-semibold text-slate-600">액션</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {[
+                      { time: "2026-05-13 14:30", engine: "gemini", task: "synopsis", score: 89, current: true },
+                      { time: "2026-05-13 14:30", engine: "groq", task: "synopsis", score: 82, current: false },
+                      { time: "2026-05-13 14:30", engine: "gemini", task: "genre", score: 91, current: true },
+                      { time: "2026-05-13 14:30", engine: "gemini", task: "tagging", score: 84, current: true },
+                    ].map((row, i) => (
+                      <tr key={i} className={row.current ? "bg-green-50" : "hover:bg-slate-50"}>
+                        <td className="px-3 py-2 text-slate-700">{row.time}</td>
+                        <td className="px-3 py-2 text-slate-700">{row.engine}</td>
+                        <td className="px-3 py-2 text-slate-700">{row.task}</td>
+                        <td className="px-3 py-2 font-medium text-slate-900">{row.score}</td>
+                        <td className="px-3 py-2 text-right">
+                          {row.current ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                              ● 현재 채택
+                            </span>
+                          ) : (
+                            <button onClick={() => handlePromoteAIResult(row.id || i)} className="text-blue-600 hover:text-blue-700 text-xs font-medium">채택</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,0 +1,71 @@
+{
+  "project": "mediaX",
+  "phase": "dev-ui-consolidation",
+  "description": "metadata 관련 11개 페이지를 4개 진입점으로 통합. 콘텐츠 라이프사이클 일관성, Bulk 액션, 외부소스 AI 채움 flow 재설계.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "page-inventory-analysis",
+      "status": "completed",
+      "summary": "16개 페이지(metadata 11 + contents 2 + monitoring/pipeline 1 + sources 4) 매트릭스 + 5개 영역별 중복/누락 분석. 통합안 → 8개로 50% 감소.",
+      "completed_at": "2026-05-13T00:00:00+09:00",
+      "description": "현재 11개 metadata 페이지의 역할/중복/누락 매핑. 콘텐츠 입력/관리/검수/모니터링 영역별 분류. 결과: docs/dev/ui-consolidation/01_current_inventory.md"
+    },
+    {
+      "step": 1,
+      "name": "menu-structure-redesign",
+      "status": "completed",
+      "summary": "신규 사이드바 트리(콘텐츠 관리 통합) + 8 진입점 매핑. 백엔드 6 enum(기존 유지) + UI 4 그룹(처리중/검수필요/승인됨/반려됨) 모델 채택 — failed 별도 enum 안 만들고 processing.error_message 로 표현. 자동/수동/Bulk 전이 정책 + 4개 의문점.",
+      "completed_at": "2026-05-13T00:30:00+09:00",
+      "description": "신규 메뉴 구조 + 콘텐츠 라이프사이클 상태 전이 다이어그램. waiting→processing→staging→review→approved/rejected 흐름 + 각 상태별 자동/수동 전이 기준. 결과: docs/dev/ui-consolidation/02_menu_lifecycle.md"
+    },
+    {
+      "step": 2,
+      "name": "content-add-flow",
+      "status": "completed",
+      "summary": "콘텐츠 목록 우상단 [+ 콘텐츠 추가 ▾] 진입점 통합 + 3탭(단일/CSV/외부검색) 모달. 각 탭의 입력→미리보기→확정 3단계 wireframe ASCII. 출처별 신뢰도 표시 + 필드별 소스 선택. 신규 백엔드 API 4개(통합 검색/외부 매칭 미리보기/CSV dry-run/from_sources) 식별.",
+      "completed_at": "2026-05-13T01:00:00+09:00",
+      "description": "콘텐츠 추가 통합 UX (단일/CSV/외부검색 3탭). 외부 검색 결과 → 매칭 후 등록 흐름. 결과: docs/dev/ui-consolidation/03_content_add.md + wireframe ASCII"
+    },
+    {
+      "step": 3,
+      "name": "content-detail-tabs",
+      "status": "completed",
+      "summary": "5개 탭(글자/이미지/영상/외부소스/AI이력) 세부 wireframe + '필드×3소스 카드' 패턴(CP/AI/외부 라디오 채택). 외부 소스 필드별 가져오기 모달, AI 이력 엔진 비교 막대. 신규 API 6종(promote/부분 process/apply-fields/changelog/lock/preview-clip) 식별 + 5개 의문점.",
+      "completed_at": "2026-05-13T01:30:00+09:00",
+      "description": "콘텐츠 상세 화면의 5개 메타 탭 (글자/이미지/영상/외부소스/AI이력) 세부 설계. 각 탭 내부 필드/액션 버튼/AI 채움 표시 방식. 결과: docs/dev/ui-consolidation/04_content_detail.md"
+    },
+    {
+      "step": 4,
+      "name": "bulk-action-ux",
+      "status": "completed",
+      "summary": "다중 선택(체크박스 3-state + cross-page confirm) + sticky 액션 바. 액션 7종 × status 호환 매트릭스 + 부분 적용 모드. 동기/비동기 분기(임계 100건), Celery 비동기 작업 진행 패널 + 작업 상세 페이지(실패만 재실행). 5초 Undo 카운트다운 + 24h 회수. 신규 API 8종(bulk/* + jobs/*).",
+      "completed_at": "2026-05-13T02:00:00+09:00",
+      "description": "콘텐츠 목록 다중 선택 → Bulk 액션 (승인/반려/AI 재처리/외부소스 매칭) UX. 선택 상태 표시, 필터 연동, 결과 피드백. 결과: docs/dev/ui-consolidation/05_bulk_action.md"
+    },
+    {
+      "step": 5,
+      "name": "ai-enrichment-flow",
+      "status": "completed",
+      "summary": "End-to-end 시퀀스(CSV→parser→gap→external→AI→resolver→classifier→검수→approved). ✨ AI 채움 배지 + 신뢰도 색 + 출처 trail 펼침 + 충돌 해결 라디오 모달(FieldResolution 활용). CSV dry-run 비용/품질 예고, 3단계 진행 패널(parse/external/ai), 배치 결과 enrichment 통계 페이지. watcha 시드 검증 기준 8종. 신규 API 4종(dry-run/stats/provenance/field-resolution).",
+      "completed_at": "2026-05-13T02:30:00+09:00",
+      "description": "CSV 누락 필드 → TMDB/KOBIS 매칭 → AI 자동 채움 → 검수 UI 흐름. 신뢰도/출처 표시, 운영자 승인 액션, 충돌 해결 UX. 결과: docs/dev/ui-consolidation/06_ai_enrichment.md"
+    },
+    {
+      "step": 6,
+      "name": "prototype-list-detail",
+      "status": "completed",
+      "summary": "list/page.tsx: 다중 선택 체크박스(3-state) + sticky 액션 바(승인/반려/AI재처리/외부매칭) + status 필터 칩 + CP/검색 필터 + 품질점수/enrichment 배지. detail/page.tsx: 콘텐츠 헤더(상태/품질) + 5개 탭(글자-3소스 카드/이미지-5그리드/영상-폼/외부소스-3카드/AI이력-표). Tailwind CSS 기반, mock 데이터 포함.",
+      "completed_at": "2026-05-13T03:00:00+09:00",
+      "description": "콘텐츠 목록 + 상세 화면 HTML 프로토타입 (mediaX-CMS/apps/web/app/(prototypes)/list, /detail). Tailwind 기반."
+    },
+    {
+      "step": 7,
+      "name": "prototype-add-bulk",
+      "status": "completed",
+      "summary": "add/page.tsx: 3탭 모달(단일/CSV/외부검색) - 단일:form 필드(제목/원제/년도/유형/CP/시놉시스), CSV:드래그-드롭+dry-run 미리보기(정상/누락/에러/중복+예상비용), 외부:검색+매칭카드(TMDB/KOBIS/Watcha match%). bulk/page.tsx: 3단계(confirm→progress→result) - confirm:대상리스트+사유입력+다시묻지않음, progress:전체/항목별 진행바+상태표시, result:성공/실패분류+되돌리기버튼+다음액션.",
+      "completed_at": "2026-05-13T03:30:00+09:00",
+      "description": "콘텐츠 추가 모달 + Bulk 액션 HTML 프로토타입 (mediaX-CMS/apps/web/app/(prototypes)/add, /bulk)."
+    }
+  ]
+}

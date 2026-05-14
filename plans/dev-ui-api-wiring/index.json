@@ -1,0 +1,36 @@
+{
+  "project": "mediaX",
+  "phase": "dev-ui-api-wiring",
+  "description": "dev-api-consolidation 18개 신규 엔드포인트를 mediaX-CMS UI에 wiring (mock fallback 유지)",
+  "source": "migrated from ~/.claude_acc2/plans/elegant-sprouting-spindle.md (2026-05-13)",
+  "steps": [
+    {
+      "step": 0,
+      "name": "api-types",
+      "status": "completed",
+      "summary": "15개 인터페이스 + 18개 함수 추가 (lib/api.ts), verify 통과",
+      "completed_at": "2026-05-14T05:13:19+09:00"
+    },
+    {
+      "step": 1,
+      "name": "bulk-modal",
+      "status": "completed",
+      "summary": "BulkActionModal startBulkAction() 모의 제거 → 실제 API 호출 + job 폴링 + mock fallback 구현",
+      "completed_at": "2026-05-14T05:15:04+09:00"
+    },
+    {
+      "step": 2,
+      "name": "content-detail",
+      "status": "completed",
+      "summary": "[id]/page.tsx 콘텐츠 상세 페이지: 6개 API 호출 연결 (promoteAIResult, partialReprocess, applyExternalFields×3, getChangelog, lockFields, requestPreviewClip)",
+      "completed_at": "2026-05-14T05:22:45+09:00"
+    },
+    {
+      "step": 3,
+      "name": "add-modal",
+      "status": "completed",
+      "summary": "AddContentModal + pipeline/page API wiring complete (sourcesSearch, createFromSources, batchPreviewCsv, retryFailedJob)",
+      "completed_at": "2026-05-14T14:58:26+09:00"
+    }
+  ]
+}

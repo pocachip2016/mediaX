@@ -1,0 +1,6 @@
+# All Watcha sampling artifacts — not for version control
+*.csv
+*.json
+*.md
+posters/
+raw/

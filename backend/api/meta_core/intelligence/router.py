@@ -26,10 +26,9 @@ from .schemas import (
     PickRequest, MergeRequest, BulkAcceptRequest, ActionResultOut,
     PromoteRequest, PromoteResultOut,
 )
+from .seed_router import router as seed_router
 
 router = APIRouter(tags=["Intelligence"])
-
-from api.meta_core.intelligence.seed_router import router as seed_router  # noqa: E402
 router.include_router(seed_router)
 
 _AUTO_DECISIONS = {"auto_agreement", "auto_quality"}

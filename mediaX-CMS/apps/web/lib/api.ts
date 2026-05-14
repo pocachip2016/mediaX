@@ -148,6 +148,110 @@ export interface BatchJobOut {
   finished_at: string | null
 }
 
+// ── dev-ui-api-wiring 타입 (18개 신규 엔드포인트) ─────────────
+
+// Bulk Actions (5개)
+export interface BulkActionConsolidatedRequest {
+  ids: number[]
+  reason?: string
+  filter_query?: Record<string, unknown>
+}
+
+export interface BulkActionResponse {
+  job_id: string
+  ids_accepted: number
+  ids_rejected: number
+  errors?: string[]
+}
+
+export interface JobStatusOut {
+  id: number
+  status: string
+  action_type: string
+  target_count: number
+  completed_count: number
+  failed_count: number
+  progress_percent: number
+  created_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  errors?: string[]
+}
+
+export interface UndoActionRequest {
+  action_id: string
+}
+
+export interface UndoActionOut {
+  id: number
+  status: string
+  reverted_count: number
+}
+
+// Content Detail (3개 추가 + PromoteAIResultOut)
+export interface PromoteAIResultOut {
+  id: number
+  is_final: boolean
+}
+
+export interface ChangeLogItem {
+  field: string
+  old_value?: unknown
+  new_value?: unknown
+  changed_by?: string
+  changed_at: string
+}
+
+export interface ContentChangelogOut {
+  changes: ChangeLogItem[]
+}
+
+// Content Add Flow (4개)
+export interface EnrichPreviewRequest {
+  fields?: string[]
+}
+
+export interface EnrichPreviewOut {
+  enriched_fields: Record<string, unknown>
+  external_sources: ExternalSourceItem[]
+  errors?: string[]
+}
+
+export interface BatchPreviewOut {
+  valid_count: number
+  missing_count: number
+  error_count: number
+  duplicate_count: number
+  estimated_cost: string
+  estimated_duration_seconds: number
+}
+
+export interface SourceResult {
+  title: string
+  year?: number
+  source: string
+  match_percent: number
+  director?: string
+  metadata: Record<string, unknown>
+}
+
+export interface SourceSearchOut {
+  results: SourceResult[]
+  errors?: string[]
+}
+
+export interface CreateFromSourcesRequest {
+  source_id: number
+  selected_fields: string[]
+  cp_name: string
+}
+
+export interface CreateFromSourcesOut {
+  id: number
+  title: string
+  status: string
+}
+
 // ── API 함수 ──────────────────────────────────────────────
 
 export const metadataApi = {
@@ -256,6 +360,145 @@ export const metadataApi = {
 
   getBatchJob: (jobId: number) =>
     request<BatchJobOut>(`/api/programming/metadata/upload/batch/${jobId}`),
+
+  // ── dev-ui-api-wiring: 18개 신규 함수 ─────────────────────
+
+  // Bulk Actions (5개)
+  bulkReprocess: (data: BulkActionConsolidatedRequest) =>
+    request<BulkActionResponse>("/api/programming/metadata/bulk/reprocess", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  bulkEnrich: (data: BulkActionConsolidatedRequest) =>
+    request<BulkActionResponse>("/api/programming/metadata/bulk/enrich", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  bulkProcess: (data: BulkActionConsolidatedRequest) =>
+    request<BulkActionResponse>("/api/programming/metadata/bulk/process", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  bulkRecall: (data: BulkActionConsolidatedRequest) =>
+    request<BulkActionResponse>("/api/programming/metadata/bulk/recall", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  bulkDelete: (data: BulkActionConsolidatedRequest) =>
+    request<BulkActionResponse>("/api/programming/metadata/bulk", {
+      method: "DELETE",
+      body: JSON.stringify(data),
+    }),
+
+  // Job (3개)
+  getJobStatus: (jobId: string | number) =>
+    request<JobStatusOut>(`/api/programming/metadata/contents/jobs/${jobId}`),
+
+  bulkUndo: (data: UndoActionRequest) =>
+    request<UndoActionOut>("/api/programming/metadata/bulk/undo", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  retryFailedJob: (jobId: string | number) =>
+    request<BulkActionResponse>(
+      `/api/programming/metadata/contents/jobs/${jobId}/retry-failed`,
+      {
+        method: "POST",
+      }
+    ),
+
+  // Content Detail (6개)
+  promoteAIResult: (contentId: number, resultId: number) =>
+    request<PromoteAIResultOut>(
+      `/api/programming/metadata/contents/${contentId}/ai-results/${resultId}/promote`,
+      {
+        method: "POST",
+      }
+    ),
+
+  partialReprocess: (contentId: number, fields?: string[]) =>
+    request<JobStatusOut>(`/api/programming/metadata/contents/${contentId}/process`, {
+      method: "POST",
+      body: JSON.stringify({ fields }),
+    }),
+
+  applyExternalFields: (
+    contentId: number,
+    sourceId: number,
+    fields?: string[]
+  ) =>
+    request<unknown>(
+      `/api/programming/metadata/contents/${contentId}/external/${sourceId}/apply-fields`,
+      {
+        method: "POST",
+        body: JSON.stringify({ fields }),
+      }
+    ),
+
+  getChangelog: (contentId: number) =>
+    request<ContentChangelogOut>(
+      `/api/programming/metadata/contents/${contentId}/changelog`
+    ),
+
+  lockFields: (contentId: number, fields: string[], reason?: string) =>
+    request<unknown>(`/api/programming/metadata/contents/${contentId}/lock`, {
+      method: "POST",
+      body: JSON.stringify({ fields, reason }),
+    }),
+
+  requestPreviewClip: (contentId: number) =>
+    request<unknown>(
+      `/api/programming/metadata/contents/${contentId}/preview-clip`,
+      {
+        method: "POST",
+      }
+    ),
+
+  // Content Add Flow (4개)
+  enrichPreview: (contentId: number, data: EnrichPreviewRequest) =>
+    request<EnrichPreviewOut>(`/api/programming/metadata/contents/${contentId}/enrich`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  batchPreviewCsv: (formData: FormData) => {
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+    return fetch(`${BASE_URL}/api/programming/metadata/upload/batch?dry_run=true`, {
+      method: "POST",
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const detail = await res.text()
+        throw new Error(`API upload/batch (dry_run) → ${res.status}: ${detail}`)
+      }
+      return res.json() as Promise<BatchPreviewOut>
+    })
+  },
+
+  sourcesSearch: (query: string, sources?: string[]) => {
+    const params = new URLSearchParams()
+    params.append("query", query)
+    if (sources?.length) {
+      params.append("sources", sources.join(","))
+    }
+    return request<SourceSearchOut>(
+      `/api/programming/metadata/sources/search?${params.toString()}`
+    )
+  },
+
+  createFromSources: (data: CreateFromSourcesRequest) =>
+    request<CreateFromSourcesOut>("/api/programming/metadata/contents/from_sources", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getDamAssets: (contentId: number) =>
+    request<DamAssetsOut>(`/api/meta-core/contents/${contentId}/dam-assets`),
 }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
@@ -589,3 +832,78 @@ export const tmdbCacheApi = {
     return request<TmdbCacheRecentItem[]>(`/api/programming/metadata/tmdb-cache/recent?${q}`)
   },
 }
+
+// ── 외부 소스 (KOBIS / KMDB) ──────────────────────────────
+
+export interface ExternalSourceDailyPoint {
+  date: string
+  count: number
+  errors: number
+}
+
+export interface ExternalSourceStats {
+  total_synced: number
+  last_run_at: string | null
+  last_run_status: string | null
+  last_7d_daily: ExternalSourceDailyPoint[]
+}
+
+export interface ExternalSourceItem {
+  id: number
+  content_id: number | null
+  source_type: string
+  external_id: string | null
+  title_on_source: string | null
+  match_confidence: number | null
+  matched_at: string | null
+  created_at: string
+}
+
+export interface PaginatedExternalItems {
+  items: ExternalSourceItem[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface DamAssetItem {
+  asset_id: number
+  filename: string
+  folder_path?: string
+  confidence?: number
+  method?: string
+  status?: string
+  thumbnail_url: string
+}
+
+export interface DamAssetsOut {
+  content_id: number
+  assets: DamAssetItem[]
+  dam_available: boolean
+}
+
+function makeExternalApi(source: "kobis" | "kmdb") {
+  const base = `/api/programming/metadata/${source}`
+  return {
+    getStats: () => request<ExternalSourceStats>(`${base}/stats`),
+
+    getSyncLog: (params?: { status?: string; page?: number; size?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.status) q.set("status", params.status)
+      if (params?.page) q.set("page", String(params.page))
+      if (params?.size) q.set("size", String(params.size))
+      return request<PaginatedSyncLog>(`${base}/sync-log?${q}`)
+    },
+
+    search: (params?: { title?: string; page?: number; size?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.title) q.set("title", params.title)
+      if (params?.page) q.set("page", String(params.page))
+      if (params?.size) q.set("size", String(params.size))
+      return request<PaginatedExternalItems>(`${base}/search?${q}`)
+    },
+  }
+}
+
+export const kobisApi = makeExternalApi("kobis")
+export const kmdbApi = makeExternalApi("kmdb")
