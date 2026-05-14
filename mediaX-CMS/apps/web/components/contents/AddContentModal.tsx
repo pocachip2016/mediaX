@@ -29,11 +29,15 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
     synopsis: "",
   })
 
+  // CSV 파일 선택 state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+
   // External search state
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Handle external search with debounce
   const handleSearch = useCallback(async (query: string) => {
@@ -77,18 +81,32 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
     }
   }
 
-  // Handle CSV batch preview
-  const handleBatchPreview = async () => {
+  // Handle CSV batch upload
+  const handleBatchPreview = async (file?: File) => {
+    if (!file) return
     try {
-      const mockFormData = new FormData()
-      mockFormData.append("file", new File(["mock csv"], "mock.csv"))
-      const result = await metadataApi.batchPreviewCsv(mockFormData)
-      alert(`미리보기: ${result.valid_count}건 정상, ${result.missing_count}건 누락`)
+      const formData = new FormData()
+      formData.append("file", file)
+      const result: any = await metadataApi.batchPreviewCsv(formData)
+      const total = result.total_count ?? 0
+      const success = result.success_count ?? 0
+      const failed = result.failed_count ?? 0
+      alert(`배치 업로드 완료 (job #${result.id}): 총 ${total}건 중 ${success}건 성공, ${failed}건 실패`)
+      setSelectedFile(null)
+      onOpenChange(false)
     } catch (error) {
-      console.error("Batch preview failed:", error)
-      alert("CSV 미리보기에 실패했습니다.")
+      console.error("[CSV] API call failed:", error)
+      alert(`CSV 업로드 실패: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setSelectedFile(file)
+      e.target.value = ''
+    }
+  }, [])
 
   const handleSave = () => {
     console.log("Mock save:", { tab: activeTab, data: singleForm })
@@ -217,38 +235,25 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
           {/* CSV Tab */}
           {activeTab === "csv" && (
             <div className="space-y-4">
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
+              <label className="block border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
                 <Upload className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-                <p className="text-sm font-medium text-slate-700">CSV/Excel 파일을 드래그하거나 클릭해서 업로드</p>
+                {selectedFile ? (
+                  <p className="text-sm font-medium text-blue-700">{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</p>
+                ) : (
+                  <p className="text-sm font-medium text-slate-700">CSV/Excel 파일을 드래그하거나 클릭해서 업로드</p>
+                )}
                 <p className="text-xs text-slate-500 mt-1">최대 파일 크기: 10MB</p>
-                <button className="mt-3 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-medium">
-                  파일 선택
-                </button>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-blue-900 mb-2">✨ CSV 미리보기 (dry-run)</p>
-                <div className="grid grid-cols-4 gap-2 text-xs text-blue-700">
-                  <div>정상 242건</div>
-                  <div>누락 241건</div>
-                  <div>에러 0건</div>
-                  <div>중복 0건</div>
-                </div>
-                <p className="text-xs text-blue-600 mt-2">💡 누락 필드는 TMDB/KOBIS/AI로 자동 보강될 예정입니다.</p>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-amber-900">📊 누락 필드 분포</p>
-                <ul className="text-xs text-amber-700 mt-2 space-y-1">
-                  <li>production_year (157건) — TMDB 매칭률 95% 예상</li>
-                  <li>synopsis (132건) — AI fallback 필요 가능성 높음</li>
-                  <li>cp_name (89건) — CSV 기본값 적용</li>
-                </ul>
-              </div>
-
-              <div className="text-xs text-slate-500">
-                <strong>예상 비용:</strong> AI 호출 ~50건 × $0.001 = ~$0.05 | <strong>소요:</strong> 2~3분
-              </div>
+                <span className="mt-3 inline-block px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-medium">
+                  {selectedFile ? "파일 변경" : "파일 선택"}
+                </span>
+              </label>
 
               <div className="flex gap-2 justify-end pt-4 border-t border-slate-200">
                 <button
@@ -258,8 +263,9 @@ export function AddContentModal({ open, onOpenChange }: AddContentModalProps) {
                   취소
                 </button>
                 <button
-                  onClick={handleBatchPreview}
-                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium"
+                  onClick={() => handleBatchPreview(selectedFile ?? undefined)}
+                  disabled={!selectedFile}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   업로드 진행
                 </button>

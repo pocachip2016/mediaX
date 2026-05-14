@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     # External APIs
     TMDB_API_KEY: str = ""
     KOBIS_API_KEY: str = ""
-    KMDB_API_KEY: str = ""
+    KMDB_API_KEY: str = ""        # 영화상세정보 (kmdb_new2 컬렉션)
+    KMDB_KOFA_API_KEY: str = ""   # 시네마테크KOFA 상영일정 (별도 공공데이터포털 API)
     OMDB_API_KEY: str = ""
 
     # Ollama

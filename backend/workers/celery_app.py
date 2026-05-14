@@ -21,6 +21,9 @@ celery_app.conf.update(
     result_serializer="json",
     accept_content=["json"],
     timezone="Asia/Seoul",
+    beat_scheduler="redbeat.RedBeatScheduler",
+    redbeat_redis_url=settings.REDIS_URL,
+    redbeat_lock_timeout=5 * 60,  # 5분 — 락 만료 후 재획득
     beat_schedule={
         "poll-cp-emails": {
             "task": "workers.tasks.metadata.poll_cp_emails",

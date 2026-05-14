@@ -88,17 +88,18 @@ services:
       - worker
 
   frontend:
-    build: ./mediaX-CMS/apps/web
+    build:
+      context: ./mediaX-CMS
+      dockerfile: Dockerfile.dev
     restart: unless-stopped
-    command: npm run dev
     volumes:
       - ./mediaX-CMS:/app
       - /app/node_modules
       - /app/apps/web/.next
     ports:
-      - "3001:3000"
+      - "3002:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
 

@@ -243,6 +243,7 @@ async def batch_upload(
     file: UploadFile = File(..., description="CSV 또는 Excel 파일"),
     cp_name: Optional[str] = Form(None),
     created_by: Optional[str] = Form(None),
+    dry_run: Optional[bool] = Query(False, description="건강성 검사만 수행 (job 생성 스킵)"),
     db: Session = Depends(get_db),
 ):
     """CSV/엑셀 배치 업로드 → 파싱 후 Content(waiting) 생성 + AI 처리 큐 등록"""
@@ -711,17 +712,6 @@ async def api_enrich_preview(
     if preview:
         return await service.enrich_preview(db, content_id)
     return {"error": "preview=true 필수"}
-
-
-@router.post("/upload/batch", response_model=BatchPreviewOut, summary="CSV dry-run")
-async def api_batch_preview(
-    csv_data: list[dict],
-    preview: bool = Query(False),
-    db: Session = Depends(get_db),
-):
-    if preview:
-        return await service.batch_preview(db, csv_data)
-    return {"error": "preview=true 필수", "total": 0, "valid_count": 0, "missing_count": 0, "error_count": 0, "duplicate_count": 0}
 
 
 @router.get("/sources/search", response_model=SourceSearchOut, summary="소스 통합 검색")
