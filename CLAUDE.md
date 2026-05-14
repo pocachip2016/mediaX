@@ -30,6 +30,7 @@ docker compose up
 | 1.1 메타데이터 AI — 기반 | ✅ | ✅ | 14개 테이블, 26개 API, Gemini LLM 폴백 체인 |
 | 1.1 파이프라인 자동화 | ✅ | ✅ | staging 상태, 에이전틱 TMDB 검색, Beat 6개 |
 | 1.1 TMDB 동기화 | ✅ | ✅ | sync_tmdb Beat 매일 02:00 |
+| dev-poster-recommend | ✅ | ✅ | 다중 포스터 후보 추천(TMDB /images) + 운영자 primary 선택 UI |
 | 1.2 카탈로그 | 스텁 | 스텁 | |
 | 1.3 큐레이션 | 스텁 | 스텁 | |
 | 1.4 결재 워크플로우 | 스텁 | 스텁 | |

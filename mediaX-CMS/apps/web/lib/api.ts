@@ -914,3 +914,44 @@ function makeExternalApi(source: "kobis" | "kmdb") {
 
 export const kobisApi = makeExternalApi("kobis")
 export const kmdbApi = makeExternalApi("kmdb")
+
+// ── 포스터 추천 ────────────────────────────────────────────────────────────────
+
+export interface PosterCandidateOut {
+  id: number
+  url: string
+  source: string
+  is_primary: boolean
+  width?: number
+  height?: number
+}
+
+export interface PosterRecommendResponse {
+  content_id: number
+  candidates: PosterCandidateOut[]
+  added: number
+}
+
+export interface PosterSelectRequest {
+  image_id: number
+}
+
+const _posterBase = (contentId: number) =>
+  `/api/programming/metadata/contents/${contentId}`
+
+export const posterRecommendApi = {
+  recommend: (contentId: number) =>
+    request<PosterRecommendResponse>(`${_posterBase(contentId)}/recommend-posters`, {
+      method: "POST",
+    }),
+
+  getCandidates: (contentId: number) =>
+    request<PosterCandidateOut[]>(`${_posterBase(contentId)}/poster-candidates`),
+
+  selectPrimary: (contentId: number, imageId: number) =>
+    request<PosterCandidateOut[]>(`${_posterBase(contentId)}/poster/select`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_id: imageId } satisfies PosterSelectRequest),
+    }),
+}

@@ -64,8 +64,10 @@ from api.programming.metadata.schemas import (
     PromoteAIResultOut, ApplyExternalFieldsRequest,
     ContentChangelogOut, LockFieldsRequest,
     EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
+    PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
 )
 from api.programming.metadata.models import CpEmailLog
+from api.programming.metadata import poster_recommend
 
 router = APIRouter()
 
@@ -217,6 +219,62 @@ def trigger_enrichment(content_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Content not found")
     task_id = service.trigger_enrichment(content_id)
     return {"task_id": task_id, "message": "에이전틱 검색 큐에 등록되었습니다"}
+
+
+@router.post("/contents/{content_id}/recommend-posters", response_model=PosterRecommendResponse)
+def recommend_posters(content_id: int, db: Session = Depends(get_db)):
+    """TMDB /images API 에서 포스터 후보를 수집해 ContentImage 에 멱등 upsert."""
+    content = service.get_content(db, content_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    images, added = poster_recommend.recommend_posters_for_content(db, content_id)
+    return PosterRecommendResponse(
+        content_id=content_id,
+        candidates=[PosterCandidateOut.model_validate(img) for img in images],
+        added=added,
+    )
+
+
+@router.get("/contents/{content_id}/poster-candidates", response_model=list[PosterCandidateOut])
+def get_poster_candidates(content_id: int, db: Session = Depends(get_db)):
+    """콘텐츠의 poster 타입 ContentImage 전체 반환 (is_primary DESC, id ASC)."""
+    content = service.get_content(db, content_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    from api.programming.metadata.models import ContentImage, ImageType
+    images = (
+        db.query(ContentImage)
+        .filter(
+            ContentImage.content_id == content_id,
+            ContentImage.image_type == ImageType.poster,
+        )
+        .order_by(ContentImage.is_primary.desc(), ContentImage.id.asc())
+        .all()
+    )
+    return [PosterCandidateOut.model_validate(img) for img in images]
+
+
+@router.post("/contents/{content_id}/poster/select", response_model=list[PosterCandidateOut])
+def select_poster(content_id: int, req: PosterSelectRequest, db: Session = Depends(get_db)):
+    """image_id 의 poster 를 primary 로 지정, 나머지는 primary 해제."""
+    content = service.get_content(db, content_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    try:
+        poster_recommend.select_primary_poster(db, content_id, req.image_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    from api.programming.metadata.models import ContentImage, ImageType
+    images = (
+        db.query(ContentImage)
+        .filter(
+            ContentImage.content_id == content_id,
+            ContentImage.image_type == ImageType.poster,
+        )
+        .order_by(ContentImage.is_primary.desc(), ContentImage.id.asc())
+        .all()
+    )
+    return [PosterCandidateOut.model_validate(img) for img in images]
 
 
 @router.get("/contents/{content_id}/hierarchy", response_model=StagingItem)

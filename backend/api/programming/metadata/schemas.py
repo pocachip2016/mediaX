@@ -670,3 +670,29 @@ class UndoActionOut(BaseModel):
     id: int
     status: str
     reverted_count: int
+
+
+# ── 포스터 추천 ─────────────────────────────────────────────────────────────────
+
+class PosterCandidateOut(BaseModel):
+    """포스터 후보 단일 항목"""
+    id: int
+    url: str
+    source: str
+    is_primary: bool
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PosterRecommendResponse(BaseModel):
+    """POST /recommend-posters 응답"""
+    content_id: int
+    candidates: list[PosterCandidateOut]
+    added: int
+
+
+class PosterSelectRequest(BaseModel):
+    """POST /poster/select 요청"""
+    image_id: int
