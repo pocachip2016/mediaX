@@ -843,25 +843,32 @@ def check_missing_episodes():
     created = 0
     try:
         from api.programming.metadata.models import (
-            Content, ContentType, ContentMetadata,
-            ExternalMetaSource, ExternalSourceType, ContentStatus,
+            Content, ContentType,
+            ExternalMetaSource, ExternalSourceType,
         )
-        # TMDB 매핑된 시리즈 조회
-        series_list = (
-            db.query(Content)
+        # TMDB 매핑된 시리즈 조회 (ExternalMetaSource 기준, 중복 방지)
+        rows = (
+            db.query(Content, ExternalMetaSource)
+            .join(
+                ExternalMetaSource,
+                (ExternalMetaSource.content_id == Content.id) &
+                (ExternalMetaSource.source_type == ExternalSourceType.tmdb),
+            )
             .filter(Content.content_type == ContentType.series)
-            .join(Content.metadata_record)
-            .filter(ContentMetadata.tmdb_id.isnot(None))
             .limit(50)
             .all()
         )
-        for series in series_list:
-            meta = series.metadata_record
-            if not meta or not meta.tmdb_id:
+        seen_ids: set[int] = set()
+        for series, ext_source in rows:
+            if series.id in seen_ids:
+                continue
+            seen_ids.add(series.id)
+            tmdb_id = ext_source.external_id
+            if not tmdb_id:
                 continue
             try:
                 resp = httpx.get(
-                    f"https://api.themoviedb.org/3/tv/{meta.tmdb_id}",
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}",
                     params={"api_key": settings.TMDB_API_KEY, "language": "ko-KR"},
                     timeout=10.0,
                 )

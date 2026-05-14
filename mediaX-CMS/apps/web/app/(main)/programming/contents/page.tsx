@@ -7,7 +7,6 @@ import {
   Film, Tv, Layers, Play, Check, RotateCcw, Link2, Plus,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import Image from "next/image"
 import { metadataApi, type ContentOut, type ContentStatus, type ContentType, resolvePosterUrl } from "@/lib/api"
 import { AddContentModal } from "@/components/contents/AddContentModal"
 import { BulkActionModal, type BulkTarget } from "@/components/contents/BulkActionModal"
@@ -463,14 +462,12 @@ export default function ContentsPage() {
                       </td>
                       <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                         {resolvePosterUrl(item.poster_url) ? (
-                          <Image
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
                             src={resolvePosterUrl(item.poster_url)!}
                             alt={item.title}
-                            width={36}
-                            height={52}
-                            unoptimized
-                            className="rounded object-cover"
-                            style={{ width: 36, height: 52 }}
+                            className="rounded"
+                            style={{ width: 36, height: "auto" }}
                           />
                         ) : (
                           <div className="flex items-center justify-center rounded bg-muted" style={{ width: 36, height: 52 }}>

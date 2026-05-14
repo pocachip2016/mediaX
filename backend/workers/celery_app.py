@@ -23,7 +23,8 @@ celery_app.conf.update(
     timezone="Asia/Seoul",
     beat_scheduler="redbeat.RedBeatScheduler",
     redbeat_redis_url=settings.REDIS_URL,
-    redbeat_lock_timeout=5 * 60,  # 5분 — 락 만료 후 재획득
+    redbeat_lock_timeout=10 * 60,  # 10분 — loop interval(60s)의 10배
+    beat_max_loop_interval=60,     # 60s마다 lock 갱신 (기본 300s에서 단축)
     beat_schedule={
         "poll-cp-emails": {
             "task": "workers.tasks.metadata.poll_cp_emails",
@@ -87,5 +88,7 @@ celery_app.conf.update(
         "workers.tasks.ingest.*":                {"queue": "ingest"},
         "workers.tasks.analytics.*":             {"queue": "analytics"},
         "workers.tasks.metadata.*":              {"queue": "metadata"},
+        "workers.tasks.tmdb_cache.*":            {"queue": "metadata"},
+        "workers.tasks.discovery_tasks.*":       {"queue": "metadata"},
     },
 )
