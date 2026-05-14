@@ -165,20 +165,7 @@ export default function SourcesDashboard() {
       </div>
 
       {/* 소스 카드 그리드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* TMDB 영화/TV 합산 */}
-        <SourceCard
-          name="TMDB"
-          description="The Movie Database"
-          href="/programming/sources/tmdb-sync"
-          total={tmdbTotal.toLocaleString()}
-          lastRun={tmdb.last_run_at}
-          lastStatus={tmdb.last_run_status}
-          barData={tmdbBarData}
-          maxBar={tmdbMaxBar}
-          accent=""
-        />
-
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {/* TMDB 탐색 */}
         <Link href="/programming/sources/tmdb" className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-4">
           <div className="flex items-start justify-between">
@@ -188,14 +175,20 @@ export default function SourcesDashboard() {
             </div>
             <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors mt-1" />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-lg bg-muted/50 p-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Film className="w-3.5 h-3.5" />영화</div>
-              <p className="text-xl font-bold tabular-nums">{tmdb.total_movies.toLocaleString()}</p>
+          <div className="flex items-end gap-4">
+            <div className="grid grid-cols-2 gap-2 flex-1">
+              <div className="rounded-lg bg-muted/50 p-3">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Film className="w-3.5 h-3.5" />영화</div>
+                <p className="text-xl font-bold tabular-nums">{tmdb.total_movies.toLocaleString()}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Tv className="w-3.5 h-3.5" />TV</div>
+                <p className="text-xl font-bold tabular-nums">{tmdb.total_tv.toLocaleString()}</p>
+              </div>
             </div>
-            <div className="rounded-lg bg-muted/50 p-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Tv className="w-3.5 h-3.5" />TV</div>
-              <p className="text-xl font-bold tabular-nums">{tmdb.total_tv.toLocaleString()}</p>
+            <div className="w-[80px] shrink-0">
+              <MiniBar data={tmdbBarData} maxVal={tmdbMaxBar} />
+              <p className="text-[10px] text-muted-foreground mt-1 text-right">최근 7일</p>
             </div>
           </div>
           <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3 mt-auto">
