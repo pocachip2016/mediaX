@@ -28,7 +28,9 @@
     {
       "step": 3,
       "name": "add-modal",
-      "status": "pending"
+      "status": "completed",
+      "summary": "AddContentModal + pipeline/page API wiring complete (sourcesSearch, createFromSources, batchPreviewCsv, retryFailedJob)",
+      "completed_at": "2026-05-14T14:58:26+09:00"
     }
   ]
 }

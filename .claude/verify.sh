@@ -927,9 +927,206 @@ print('  ✓ Content.is_deleted column OK')
     echo "=== PASS ==="
     ;;
 
+  watcha-real-3)
+    echo "=== watcha-real-3: detail-crawler detail_real.csv ==="
+    CSV="$SCRIPT_DIR/../backend/data/watcha_real/detail_real.csv"
+    test -f "$CSV" || { echo "  ✗ $CSV 없음"; exit 1; }
+    echo "  ✓ detail_real.csv 존재"
+
+    lines=$(wc -l < "$CSV")
+    rows=$((lines - 1))
+    [[ "$rows" -ge 180 ]] || { echo "  ✗ 행 수 $rows (최소: 180)"; exit 1; }
+    echo "  ✓ 행 수 $rows OK (≥180)"
+
+    python3 << PYEOF
+import csv
+csv_path = "$CSV"
+with open(csv_path) as f:
+    reader = csv.DictReader(f)
+    rows = list(reader)
+
+# 필수 필드 검증
+missing = []
+for r in rows:
+    for fld in ['title', 'year', 'synopsis', 'poster_url']:
+        if not r.get(fld, '').strip():
+            missing.append((r['slug'], fld))
+            break
+assert len(missing) == 0, f"필수 필드 누락 {len(missing)}건 (예: {missing[:3]})"
+print(f"  ✓ 필수 필드 (title/year/synopsis/poster_url) 모두 채워짐")
+
+# placeholder가 없는지
+bad_title = [r['slug'] for r in rows if r['title'].startswith('콘텐츠_')]
+assert len(bad_title) == 0, f"placeholder title {len(bad_title)}건"
+print(f"  ✓ placeholder title 0건")
+
+# 포스터 URL 도메인
+bad_poster = [r['slug'] for r in rows if 'an2-img.amz.wtchn.net' not in r['poster_url'] and 'watcha' not in r['poster_url']]
+print(f"  ✓ 포스터 URL 도메인 확인 (의심 {len(bad_poster)}건)")
+
+# 카테고리 분포
+movies = sum(1 for r in rows if r.get('content_type') == 'movie')
+series = sum(1 for r in rows if r.get('content_type') == 'series')
+print(f"  ✓ 카테고리 분포 (영화 {movies}, 시리즈 {series})")
+PYEOF
+
+    echo "=== PASS ==="
+    ;;
+
+  watcha-real-2)
+    echo "=== watcha-real-2: url-collector list_real.csv ==="
+    CSV="$SCRIPT_DIR/../backend/data/watcha_real/list_real.csv"
+    test -f "$CSV" || { echo "  ✗ $CSV 없음"; exit 1; }
+    echo "  ✓ list_real.csv 존재"
+
+    # 2. 행 수 확인 (헤더 + 200~320 데이터 = 201~321 행)
+    lines=$(wc -l < "$CSV")
+    [[ "$lines" -ge 201 && "$lines" -le 321 ]] || { echo "  ✗ 행 수 $lines (목표: 201~321)"; exit 1; }
+    echo "  ✓ 행 수 $lines OK"
+
+    # 3. Python으로 CSV 검증 (슬러그, URL, 카테고리)
+    python3 << PYEOF
+import csv
+import re
+csv_path = "$CSV"
+with open(csv_path) as f:
+    reader = csv.DictReader(f)
+    slugs = []
+    urls = []
+    categories = []
+    for row in reader:
+        slugs.append(row['slug'])
+        urls.append(row['url'])
+        categories.append(row['category'])
+
+# 슬러그 형식 (7~22 영숫자)
+bad = [s for s in slugs if not re.match(r'^[A-Za-z0-9]{7,22}$', s)]
+assert len(bad) == 0, f"슬러그 형식 오류 {len(bad)}건"
+print("  ✓ 슬러그 형식 OK")
+
+# URL 도메인
+bad_url = [u for u in urls if not u.startswith('https://pedia.watcha.com/ko/contents/')]
+assert len(bad_url) == 0, f"URL 도메인 오류 {len(bad_url)}건"
+print("  ✓ URL 도메인 OK")
+
+# 카테고리
+movies = sum(1 for c in categories if c == 'movie')
+series = sum(1 for c in categories if c == 'series')
+assert movies + series == len(categories), f"카테고리 오류"
+print(f"  ✓ 카테고리 (movies={movies}, series={series})")
+
+# 비율 검증 (영화 200 ± 20, 시리즈 50 ± 20)
+assert 180 <= movies <= 220, f"영화 수 {movies} (목표: 180~220)"
+assert 30 <= series <= 70, f"시리즈 수 {series} (목표: 30~70)"
+print(f"  ✓ 비율 검증 OK (영화 {movies}/200, 시리즈 {series}/50)")
+PYEOF
+
+    echo "=== PASS ==="
+    ;;
+
+  watcha-real-4)
+    echo "=== watcha-real-4: poster-download posters/ ==="
+    POSTERS_DIR="$SCRIPT_DIR/../backend/data/watcha_real/posters"
+    DETAIL_CSV="$SCRIPT_DIR/../backend/data/watcha_real/detail_real.csv"
+
+    test -d "$POSTERS_DIR" || { echo "  ✗ posters/ 디렉토리 없음"; exit 1; }
+    echo "  ✓ posters/ 디렉토리 존재"
+
+    poster_count=$(find "$POSTERS_DIR" -maxdepth 1 -type f | wc -l)
+    detail_rows=$(python3 -c "import csv; f=open('$DETAIL_CSV'); print(sum(1 for _ in csv.DictReader(f)))")
+    expired=0
+    EXPIRED_CSV="$SCRIPT_DIR/../backend/data/watcha_real/expired_posters.csv"
+    [ -f "$EXPIRED_CSV" ] && \
+        expired=$(python3 -c "import csv; f=open('$EXPIRED_CSV'); print(sum(1 for _ in csv.DictReader(f)))")
+
+    expected_min=$((detail_rows - expired))
+    [[ "$poster_count" -ge "$expected_min" ]] || { echo "  ✗ 포스터 수 $poster_count (최소: $expected_min)"; exit 1; }
+    echo "  ✓ 포스터 수 $poster_count (detail $detail_rows - expired $expired = $expected_min)"
+
+    # 5KB 미만 파일 검사
+    small=$(find "$POSTERS_DIR" -maxdepth 1 -type f -size -5k | wc -l)
+    [[ "$small" -eq 0 ]] || { echo "  ✗ 5KB 미만 파일 ${small}건"; exit 1; }
+    echo "  ✓ 모든 파일 5KB 이상"
+
+    echo "=== PASS ==="
+    ;;
+
+  watcha-real-5)
+    echo "=== watcha-real-5: csv-conversion watcha_upload.csv ==="
+    CSV="$SCRIPT_DIR/../backend/data/watcha/upload/watcha_upload.csv"
+    OMIT="$SCRIPT_DIR/../backend/data/watcha/upload/omission_log.csv"
+    DETAIL="$SCRIPT_DIR/../backend/data/watcha_real/detail_real.csv"
+
+    test -f "$CSV" || { echo "  ✗ watcha_upload.csv 없음"; exit 1; }
+    test -f "$OMIT" || { echo "  ✗ omission_log.csv 없음"; exit 1; }
+    echo "  ✓ watcha_upload.csv, omission_log.csv 존재"
+
+    python3 << PYEOF
+import csv
+
+def count_csv(path):
+    with open(path) as f:
+        return sum(1 for _ in csv.DictReader(f))
+
+upload_rows = count_csv("$CSV")
+detail_rows = count_csv("$DETAIL")
+omit_rows = count_csv("$OMIT")
+
+assert upload_rows == detail_rows, f"행 수 불일치: upload={upload_rows} vs detail={detail_rows}"
+print(f"  ✓ 행 수 일치: {upload_rows}건")
+
+# placeholder title 없음
+with open("$CSV") as f:
+    rows = list(csv.DictReader(f))
+bad = [r['title'] for r in rows if r['title'].startswith('콘텐츠_')]
+assert len(bad) == 0, f"placeholder title {len(bad)}건: {bad[:3]}"
+print(f"  ✓ placeholder title 0건")
+
+# omission 비율 15~25%
+omit_pct = omit_rows / upload_rows * 100
+assert 15 <= omit_pct <= 25, f"omission 비율 {omit_pct:.1f}% (15~25% 범위 외)"
+print(f"  ✓ omission 비율 {omit_pct:.1f}% ({omit_rows}/{upload_rows})")
+PYEOF
+
+    echo "=== PASS ==="
+    ;;
+
+  watcha-real-6)
+    echo "=== watcha-real-6: dry-run-validation ==="
+    CSV="$SCRIPT_DIR/../backend/data/watcha/upload/watcha_upload.csv"
+
+    resp=$(curl -s -w "\n%{http_code}" -X POST \
+      "http://localhost:8000/api/programming/metadata/upload/batch?dry_run=true" \
+      -F "file=@${CSV}" \
+      -F "cp_name=Watcha")
+    http_code=$(echo "$resp" | tail -1)
+    body=$(echo "$resp" | head -1)
+
+    [[ "$http_code" == "200" || "$http_code" == "201" ]] || { echo "  ✗ HTTP $http_code"; echo "$body"; exit 1; }
+    echo "  ✓ HTTP $http_code"
+
+    python3 << PYEOF
+import json, sys
+body = '''$body'''
+try:
+    d = json.loads(body)
+except:
+    print("  ✗ JSON parse 실패:", body[:200])
+    sys.exit(1)
+total = d.get('total_count', 0)
+success = d.get('success_count', 0)
+failed = d.get('failed_count', -1)
+assert failed == 0, f"failed_count={failed} (0이어야 함)"
+assert success == total, f"success_count={success} != total={total}"
+print(f"  ✓ total={total}, success={success}, failed={failed}")
+PYEOF
+
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, M.1, M.2"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2"
     exit 1
     ;;
 esac
