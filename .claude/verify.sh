@@ -908,9 +908,28 @@ print('  ✓ Content.is_deleted column OK')
     echo "=== PASS ==="
     ;;
 
+  M.2)
+    echo "=== M.2: dam-proxy + assets-tab ==="
+    # 1. mediaX 프록시 엔드포인트
+    http=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:8000/api/meta-core/contents/1/dam-assets)
+    [[ "$http" == "200" ]] || { echo "  ✗ mediaX /contents/1/dam-assets HTTP $http"; exit 1; }
+    echo "  ✓ mediaX dam-assets proxy OK"
+
+    # 2. frontend — TabName + TAB_META
+    PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    grep -q '"assets"' "$PAGE" || { echo "  ✗ page.tsx: assets tab 없음"; exit 1; }
+    echo "  ✓ page.tsx assets tab OK"
+
+    # 3. lib/api.ts — getDamAssets
+    API="$SCRIPT_DIR/../mediaX-CMS/apps/web/lib/api.ts"
+    grep -q "getDamAssets" "$API" || { echo "  ✗ lib/api.ts: getDamAssets 없음"; exit 1; }
+    echo "  ✓ lib/api.ts getDamAssets OK"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, M.1"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, M.1, M.2"
     exit 1
     ;;
 esac

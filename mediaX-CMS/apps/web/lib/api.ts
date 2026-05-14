@@ -496,6 +496,9 @@ export const metadataApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  getDamAssets: (contentId: number) =>
+    request<DamAssetsOut>(`/api/meta-core/contents/${contentId}/dam-assets`),
 }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
@@ -861,6 +864,22 @@ export interface PaginatedExternalItems {
   total: number
   page: number
   size: number
+}
+
+export interface DamAssetItem {
+  asset_id: number
+  filename: string
+  folder_path?: string
+  confidence?: number
+  method?: string
+  status?: string
+  thumbnail_url: string
+}
+
+export interface DamAssetsOut {
+  content_id: number
+  assets: DamAssetItem[]
+  dam_available: boolean
 }
 
 function makeExternalApi(source: "kobis" | "kmdb") {

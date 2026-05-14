@@ -9,7 +9,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 import { metadataApi, type ContentOut } from "@/lib/api"
 
-type TabName = "text" | "image" | "video" | "sources" | "ai"
+type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
 const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
   waiting: { label: "대기", emoji: "⏳", color: "bg-slate-100 text-slate-600" },
@@ -25,6 +25,7 @@ const TAB_META = {
   image: { label: "이미지", status: "completed" as const },
   video: { label: "영상", status: "pending" as const },
   sources: { label: "외부소스", count: 3 },
+  assets: { label: "에셋" },
   ai: { label: "AI 이력", count: 8 },
 }
 
@@ -50,6 +51,7 @@ export default function ContentDetailPage() {
   const [activeTab, setActiveTab] = useState<TabName>("text")
   const [selectedSynopsis, setSelectedSynopsis] = useState<"cp" | "ai" | "tmdb" | "manual">("ai")
   const [changelog, setChangelog] = useState<any>(null)
+  const [damAssets, setDamAssets] = useState<any>(null)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -71,6 +73,15 @@ export default function ContentDetailPage() {
       handleLoadChangelog()
     }
   }, [activeTab])
+
+  // Load dam assets when assets tab becomes active
+  useEffect(() => {
+    if (activeTab === "assets") {
+      metadataApi.getDamAssets(contentId)
+        .then(setDamAssets)
+        .catch(() => setDamAssets({ content_id: contentId, assets: [], dam_available: false }))
+    }
+  }, [activeTab, contentId])
 
   if (loading) {
     return <div className="p-6 text-center text-slate-600">로드 중...</div>
@@ -219,7 +230,7 @@ export default function ContentDetailPage() {
       {/* Tabs */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="border-b border-slate-200 flex gap-4 px-6">
-          {(["text", "image", "video", "sources", "ai"] as TabName[]).map((tab) => (
+          {(["text", "image", "video", "sources", "assets", "ai"] as TabName[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -443,6 +454,37 @@ export default function ContentDetailPage() {
                   📋 필드별 가져오기
                 </button>
               </div>
+            </div>
+          )}
+
+          {activeTab === "assets" && (
+            <div className="space-y-4">
+              {!damAssets ? (
+                <p className="text-slate-500 text-sm text-center py-8">로딩 중...</p>
+              ) : !damAssets.dam_available ? (
+                <p className="text-amber-600 text-sm text-center py-8">Dam API에 연결할 수 없습니다.</p>
+              ) : damAssets.assets.length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-8">매핑된 에셋이 없습니다.</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-4">
+                  {damAssets.assets.map((asset: any) => (
+                    <div key={asset.asset_id} className="border rounded-lg overflow-hidden">
+                      <img
+                        src={asset.thumbnail_url}
+                        alt={asset.filename}
+                        className="w-full h-32 object-cover bg-slate-100"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                      <div className="p-2">
+                        <p className="text-xs font-medium truncate">{asset.filename}</p>
+                        {asset.confidence != null && (
+                          <p className="text-xs text-slate-500">{(asset.confidence * 100).toFixed(0)}% match</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

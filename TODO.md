@@ -7,7 +7,6 @@
 <!-- 지금 당장 작업 중인 것 -->
 
 ## Next (이번 마일스톤 — Dam 연동)
-- [ ] Dam dev-asset-content-mapping M.2 — CLIP 매핑 모듈
 - [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
 
 ## Later (백로그)
@@ -20,6 +19,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] Dam dev-asset-content-mapping M.2 — CLIP 매핑 UI 연결 (2026-05-14)
 - [x] Dam dev-asset-content-mapping M.1 — backend SQLite 복원 + /verify M.1 통과 (2026-05-14)
 - [x] dev-ui-api-wiring — 18개 엔드포인트 UI 연결 완료 (Step 0~3: types·bulk·detail·add flow) (2026-05-14)
 - [x] dev-api-consolidation — 18개 신규 엔드포인트 구현 완료 (Step 0~5: 스키마·Bulk·Jobs·Detail·Add Flow) (2026-05-13)
