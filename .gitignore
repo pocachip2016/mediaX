@@ -37,6 +37,9 @@ Thumbs.db
 # Docker
 *.log
 
+# Watcha real crawl data (CSV + poster JPEGs, local dev artifacts)
+backend/data/watcha_real/
+
 # Git 백업 디렉토리 (서브레포 전환 잔재)
 .git_bak/
 
