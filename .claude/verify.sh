@@ -1233,9 +1233,87 @@ print('  ✓ ContentOut.poster_url 필드 OK')
     echo "=== PASS ==="
     ;;
 
+  poster-recommend-1.1)
+    echo "=== poster-recommend-1.1: backend-tmdb-images-service ==="
+    cd "$SCRIPT_DIR/.."
+    source backend/.venv/bin/activate
+    python3 -c "
+import sys; sys.path.insert(0, 'backend')
+from api.programming.metadata.poster_recommend import (
+    PosterCandidate, fetch_tmdb_poster_candidates,
+    recommend_posters_for_content, select_primary_poster,
+)
+from api.programming.metadata.tmdb_client import TmdbClient
+assert hasattr(TmdbClient, 'images_movie'), 'images_movie 없음'
+assert hasattr(TmdbClient, 'images_tv'), 'images_tv 없음'
+print('  ✓ poster_recommend import OK')
+print('  ✓ TmdbClient.images_movie/images_tv OK')
+" 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  poster-recommend-1.2)
+    echo "=== poster-recommend-1.2: backend-recommend-api ==="
+    cd "$SCRIPT_DIR/.."
+    source backend/.venv/bin/activate
+    python3 -c "
+import sys; sys.path.insert(0, 'backend')
+from api.programming.metadata.schemas import PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest
+from api.programming.metadata.router import router
+routes = [r.path for r in router.routes if hasattr(r, 'path')]
+assert any('recommend-posters' in r for r in routes), 'recommend-posters 없음'
+assert any('poster-candidates' in r for r in routes), 'poster-candidates 없음'
+assert any('poster/select' in r for r in routes), 'poster/select 없음'
+print('  ✓ 스키마 3개 OK')
+print('  ✓ 엔드포인트 3개 OK')
+" 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  poster-recommend-1.3)
+    echo "=== poster-recommend-1.3: backend-tests ==="
+    cd "$SCRIPT_DIR/../backend"
+    source .venv/bin/activate
+    python3 -m pytest tests/test_poster_recommend.py -v 2>&1
+    echo "=== PASS ==="
+    ;;
+
+  poster-recommend-2.1)
+    echo "=== poster-recommend-2.1: frontend-api-client ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    grep -q "posterRecommendApi" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ posterRecommendApi 없음"; exit 1; }
+    echo "  ✓ posterRecommendApi 확인 OK"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  poster-recommend-2.2)
+    echo "=== poster-recommend-2.2: frontend-image-tab-ui ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL_PAGE="$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    grep -q "recommend-posters\|posterRecommendApi" "$DETAIL_PAGE" || { echo "  ✗ 추천 버튼/API 없음"; exit 1; }
+    echo "  ✓ 추천 UI 확인 OK"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  poster-recommend-3.1)
+    echo "=== poster-recommend-3.1: e2e-verify-and-docs ==="
+    grep -q "dev-poster-recommend\|다중 포스터" "$SCRIPT_DIR/../CLAUDE.md" || { echo "  ✗ CLAUDE.md 현황 갱신 없음"; exit 1; }
+    echo "  ✓ CLAUDE.md 갱신 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  1.1) bash "$0" poster-recommend-1.1 ;;
+  1.2) bash "$0" poster-recommend-1.2 ;;
+  1.3) bash "$0" poster-recommend-1.3 ;;
+  2.1) bash "$0" poster-recommend-2.1 ;;
+  2.2) bash "$0" poster-recommend-2.2 ;;
+  3.1) bash "$0" poster-recommend-3.1 ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1"
     exit 1
     ;;
 esac

@@ -117,6 +117,14 @@ class TmdbClient:
             {"language": "ko-KR", "append_to_response": "credits"},
         )
 
+    async def images_movie(self, tmdb_id: int) -> dict:
+        """GET /movie/{id}/images — 포스터·백드롭·로고 다중 후보 반환 (언어 파라미터 없음 → 전 언어)."""
+        return await self._get(f"/movie/{tmdb_id}/images", {})
+
+    async def images_tv(self, tmdb_id: int) -> dict:
+        """GET /tv/{id}/images — TV 포스터·백드롭·로고 다중 후보 반환."""
+        return await self._get(f"/tv/{tmdb_id}/images", {})
+
     async def configuration(self) -> dict:
         """GET /configuration — 이미지 base URL·sizes 조회."""
         return await self._get("/configuration", {})

@@ -1,0 +1,49 @@
+{
+  "project": "mediaX",
+  "phase": "dev-poster-recommend",
+  "description": "TMDB 다중 포스터 후보 추천 + 운영자 선택 UI (Phase 2)",
+  "steps": [
+    {
+      "step": "1.1",
+      "name": "backend-tmdb-images-service",
+      "description": "TmdbClient /images 메서드 추가 + poster_recommend.py 서비스 모듈 (fetch/recommend/select)",
+      "status": "completed",
+      "summary": "TmdbClient images_movie/images_tv 추가, poster_recommend.py 신규(PosterCandidate·fetch·recommend·select), plans/index.json 생성",
+      "completed_at": "2026-05-15T00:00:00+09:00"
+    },
+    {
+      "step": "1.2",
+      "name": "backend-recommend-api",
+      "description": "FastAPI 라우터 3개 (recommend-posters / poster-candidates / poster/select) + Pydantic 스키마",
+      "status": "completed",
+      "summary": "3개 엔드포인트(recommend-posters/poster-candidates/poster/select) + PosterCandidateOut·PosterRecommendResponse·PosterSelectRequest 스키마 추가, 라우터 등록 확인",
+      "completed_at": "2026-05-15T00:10:00+09:00"
+    },
+    {
+      "step": "1.3",
+      "name": "backend-tests",
+      "description": "pytest 6건 (정렬/멱등/primary 보존/tmdb 없음/select 토글/cross-content 400)",
+      "status": "completed",
+      "summary": "pytest 7건 통과 (정렬·멱등·primary보존·tmdb없음·select토글·cross400), verify.sh poster-recommend 케이스 추가",
+      "completed_at": "2026-05-15T00:20:00+09:00"
+    },
+    {
+      "step": "2.1",
+      "name": "frontend-api-client",
+      "description": "lib/api.ts 에 posterRecommendApi + 타입 3개 추가",
+      "status": "pending"
+    },
+    {
+      "step": "2.2",
+      "name": "frontend-image-tab-ui",
+      "description": "Image 탭 poster 섹션 인라인 확장 (추천 받기 버튼 + 이걸로 버튼 + primary 배지)",
+      "status": "pending"
+    },
+    {
+      "step": "3.1",
+      "name": "e2e-verify-and-docs",
+      "description": "실데이터 e2e 확인 + TODO.md Done 이동 + CLAUDE.md 현황 갱신",
+      "status": "pending"
+    }
+  ]
+}
