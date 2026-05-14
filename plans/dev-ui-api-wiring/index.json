@@ -1,0 +1,28 @@
+{
+  "project": "mediaX",
+  "phase": "dev-ui-api-wiring",
+  "description": "dev-api-consolidation 18개 신규 엔드포인트를 mediaX-CMS UI에 wiring (mock fallback 유지)",
+  "source": "migrated from ~/.claude_acc2/plans/elegant-sprouting-spindle.md (2026-05-13)",
+  "steps": [
+    {
+      "step": 0,
+      "name": "api-types",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "bulk-modal",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "content-detail",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "add-modal",
+      "status": "pending"
+    }
+  ]
+}

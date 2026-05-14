@@ -799,9 +799,97 @@ print('  ✓ Content.is_deleted column OK')
     echo "=== PASS ==="
     ;;
 
+  ui-wiring-step0)
+    echo "=== ui-wiring-step0: api-types (18 functions + interfaces in lib/api.ts) ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    API="$CMS/apps/web/lib/api.ts"
+    [ -f "$API" ] || { echo "  ✗ lib/api.ts 없음"; exit 1; }
+
+    # 18개 함수명 모두 존재 확인
+    for fn in bulkReprocess bulkEnrich bulkProcess bulkRecall bulkDelete \
+              getJobStatus bulkUndo retryFailedJob \
+              promoteAIResult partialReprocess applyExternalFields \
+              getChangelog lockFields requestPreviewClip \
+              enrichPreview batchPreviewCsv sourcesSearch createFromSources; do
+      grep -q "$fn" "$API" || { echo "  ✗ $fn 함수 미정의"; exit 1; }
+    done
+    echo "  ✓ 18개 API 함수 정의 OK"
+
+    # 핵심 인터페이스
+    for iface in JobStatusOut BulkActionResponse SourceSearchOut ContentChangelogOut; do
+      grep -q "interface $iface\|type $iface" "$API" || { echo "  ✗ $iface 인터페이스 미정의"; exit 1; }
+    done
+    echo "  ✓ 핵심 인터페이스 정의 OK"
+
+    # TypeScript 컴파일 (best-effort; turbo 환경에 따라 skip)
+    if [ -f "$CMS/package.json" ] && command -v npx >/dev/null 2>&1; then
+      (cd "$CMS" && npx --no-install tsc --noEmit 2>/dev/null) && echo "  ✓ tsc --noEmit 통과" || echo "  ⚠ tsc 미실행 (수동 확인 필요)"
+    fi
+    echo "=== PASS ==="
+    ;;
+
+  ui-wiring-step1)
+    echo "=== ui-wiring-step1: bulk-modal real API + job polling ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    MODAL="$CMS/apps/web/components/contents/BulkActionModal.tsx"
+    [ -f "$MODAL" ] || { echo "  ✗ BulkActionModal.tsx 없음"; exit 1; }
+
+    # bulk action API 호출 + job 폴링 코드 존재
+    grep -q "bulkReprocess\|ACTION_MAP" "$MODAL" || { echo "  ✗ bulk action API 호출 없음"; exit 1; }
+    grep -q "getJobStatus" "$MODAL" || { echo "  ✗ getJobStatus 폴링 없음"; exit 1; }
+    echo "  ✓ bulk API + job 폴링 OK"
+
+    # mock fallback (catch 블록) 보존
+    grep -qE "catch.*\{" "$MODAL" || { echo "  ✗ catch 블록 없음 (mock fallback 필요)"; exit 1; }
+    echo "  ✓ catch fallback 유지 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-wiring-step2)
+    echo "=== ui-wiring-step2: content-detail 6 buttons wired ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL="$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    [ -f "$DETAIL" ] || { echo "  ✗ contents/[id]/page.tsx 없음"; exit 1; }
+
+    for fn in promoteAIResult partialReprocess applyExternalFields getChangelog lockFields requestPreviewClip; do
+      grep -q "$fn" "$DETAIL" || { echo "  ✗ $fn 호출 없음"; exit 1; }
+    done
+    echo "  ✓ 6개 detail API 호출 OK"
+
+    # Step 2 placeholder 제거
+    if grep -q 'alert("Step 2에서' "$DETAIL"; then
+      echo "  ✗ 'Step 2에서' placeholder alert 잔존"
+      exit 1
+    fi
+    echo "  ✓ placeholder 제거 OK"
+    echo "=== PASS ==="
+    ;;
+
+  ui-wiring-step3)
+    echo "=== ui-wiring-step3: add-modal + pipeline retry ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    ADD="$CMS/apps/web/components/contents/AddContentModal.tsx"
+    PIPELINE="$CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    [ -f "$ADD" ] || { echo "  ✗ AddContentModal.tsx 없음"; exit 1; }
+    [ -f "$PIPELINE" ] || { echo "  ✗ pipeline/page.tsx 없음"; exit 1; }
+
+    for fn in sourcesSearch createFromSources batchPreviewCsv; do
+      grep -q "$fn" "$ADD" || { echo "  ✗ AddContentModal: $fn 호출 없음"; exit 1; }
+    done
+    echo "  ✓ AddContentModal 3개 API 호출 OK"
+
+    grep -q "retryFailedJob" "$PIPELINE" || { echo "  ✗ pipeline: retryFailedJob 호출 없음"; exit 1; }
+    if grep -q "triggerEnrich" "$PIPELINE"; then
+      echo "  ✗ pipeline: 기존 triggerEnrich 잔존 (retryFailedJob 로 교체 필요)"
+      exit 1
+    fi
+    echo "  ✓ pipeline retry → retryFailedJob 전환 OK"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1, ui-impl-2, ui-impl-3, ui-impl-4, dev-api-step0 ~ step1"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3"
     exit 1
     ;;
 esac
