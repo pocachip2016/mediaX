@@ -20,6 +20,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] content-register Steps 1–3 — Hero card + 3탭 패널 + enrich=true 진입점 (2026-05-16)
 - [x] dev-ai-review-queue Steps 5–6 — Dam Link Display(damApi+4상태) + Bulk Summary 보강(다중 필터+선택+Bulk Apply 가드) (2026-05-16)
 - [x] dev-ai-review-queue Steps 1–4, 7 — unified review queue API(30 tests) + Review Queue 리스트 + MetadataDiffPanel + MetadataEnrichPanel 2패널 + VisualAssetCandidatePanel (2026-05-16)
 - [x] dev-meta-recommendations-ui — Missing 배지 + 추천 패널(auto_fill + conflict 2단 비교 + AI 종합) + 백엔드 /recommendations 엔드포인트 (2026-05-15)
