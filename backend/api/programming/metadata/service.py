@@ -2439,3 +2439,174 @@ def resolve_metadata(db: Session, content_id: int) -> dict:
         "filled_fields": list(winner.keys()),
         "source_breakdown": {f: info["source"] for f, info in winner.items()},
     }
+
+
+# ── 메타 보강 추천 ────────────────────────────────────────
+
+_SOURCE_DEFAULT_CONFIDENCE = {
+    "tmdb": 0.94,
+    "kobis": 0.87,
+    "kmdb": 0.82,
+    "watcha": 1.0,
+    "manual": 1.0,
+    "bulk_upload": 0.15,
+    "netflix": 0.80,
+    "naver": 0.70,
+    "daum": 0.70,
+    "omdb": 0.75,
+    "other": 0.50,
+}
+
+_CAST_ROLES = {"actor", "cast", "주연", "출연", "조연", "단역", "특별출연", "카메오"}
+_DIRECTOR_ROLES = {"director", "감독", "연출"}
+
+
+def _extract_field_from_raw(raw: dict, field: str) -> str | None:
+    """raw_json에서 field에 해당하는 값을 문자열로 추출."""
+    if field == "cast":
+        v = raw.get("cast")
+        if not v:
+            return None
+        return v if isinstance(v, str) else ", ".join(str(x) for x in v)
+    if field == "director":
+        v = raw.get("directors") or raw.get("director")
+        if not v:
+            return None
+        return v if isinstance(v, str) else ", ".join(str(x) for x in v)
+    if field == "synopsis":
+        return raw.get("synopsis") or raw.get("cp_synopsis") or raw.get("overview") or None
+    if field == "runtime":
+        v = raw.get("runtime") or raw.get("runtime_minutes")
+        return str(v) if v else None
+    if field == "country":
+        v = raw.get("country") or raw.get("origin_country")
+        if isinstance(v, list):
+            return ", ".join(v)
+        return str(v) if v else None
+    if field == "genres":
+        v = raw.get("genres")
+        if not v:
+            return None
+        if isinstance(v, list):
+            items = []
+            for g in v:
+                items.append(g["name"] if isinstance(g, dict) else str(g))
+            return ", ".join(items)
+        return str(v)
+    return None
+
+
+def get_content_recommendations(db: Session, content_id: int):
+    from api.programming.metadata.schemas import SourceFieldRec, FieldRecommendation, RecommendationsOut
+    from api.programming.metadata.models.external import ContentAIResult, AITaskType
+
+    content = (
+        db.query(Content)
+        .options(
+            selectinload(Content.credits).joinedload(ContentCredit.person),
+            selectinload(Content.genres),
+            joinedload(Content.metadata_record),
+        )
+        .filter(Content.id == content_id)
+        .first()
+    )
+    if not content:
+        return RecommendationsOut(content_id=content_id, missing_fields=[], auto_fill=[], conflicts=[])
+
+    meta = content.metadata_record
+
+    # 누락 필드 판별
+    missing: list[str] = []
+    cast_credits = [c for c in content.credits if c.role.lower() in _CAST_ROLES]
+    director_credits = [c for c in content.credits if c.role.lower() in _DIRECTOR_ROLES]
+    synopsis_val = (meta.final_synopsis or meta.ai_synopsis or meta.cp_synopsis) if meta else None
+
+    if not cast_credits:
+        missing.append("cast")
+    if not director_credits:
+        missing.append("director")
+    if not synopsis_val or not synopsis_val.strip():
+        missing.append("synopsis")
+    if not content.runtime_minutes:
+        missing.append("runtime")
+    if not content.country or not content.country.strip():
+        missing.append("country")
+    if not content.genres:
+        missing.append("genres")
+
+    if not missing:
+        return RecommendationsOut(content_id=content_id, missing_fields=[], auto_fill=[], conflicts=[])
+
+    # 외부 소스에서 필드값 수집
+    ext_sources = (
+        db.query(ExternalMetaSource)
+        .filter(ExternalMetaSource.content_id == content_id)
+        .all()
+    )
+
+    # field → list[SourceFieldRec]
+    field_recs: dict[str, list[SourceFieldRec]] = {f: [] for f in missing}
+    for src in ext_sources:
+        raw = src.raw_json or {}
+        conf = src.match_confidence or _SOURCE_DEFAULT_CONFIDENCE.get(src.source_type.value if hasattr(src.source_type, 'value') else str(src.source_type), 0.5)
+        for field in missing:
+            val = _extract_field_from_raw(raw, field)
+            if val and val.strip():
+                field_recs[field].append(SourceFieldRec(
+                    source_type=src.source_type.value if hasattr(src.source_type, 'value') else str(src.source_type),
+                    source_id=src.id,
+                    value=val.strip(),
+                    confidence=round(float(conf), 2),
+                ))
+
+    # AI synopsis 결과 (is_final=True)
+    ai_synopsis_result = (
+        db.query(ContentAIResult)
+        .filter(
+            ContentAIResult.content_id == content_id,
+            ContentAIResult.task_type == AITaskType.synopsis,
+            ContentAIResult.is_final == True,
+        )
+        .first()
+    )
+    ai_synopsis_rec: SourceFieldRec | None = None
+    if ai_synopsis_result and ai_synopsis_result.result_json:
+        ai_val = ai_synopsis_result.result_json.get("synopsis") or ai_synopsis_result.result_json.get("text")
+        if ai_val:
+            ai_synopsis_rec = SourceFieldRec(
+                source_type="ai",
+                source_id=ai_synopsis_result.id,
+                value=str(ai_val).strip(),
+                confidence=round(float(ai_synopsis_result.quality_score or 0.79), 2),
+            )
+
+    # auto_fill vs conflicts 분류
+    auto_fill: list[FieldRecommendation] = []
+    conflicts: list[FieldRecommendation] = []
+
+    for field, recs in field_recs.items():
+        if not recs:
+            continue
+        synthesis = ai_synopsis_rec if field == "synopsis" else None
+        unique_values = {r.value for r in recs}
+        if len(recs) == 1 or len(unique_values) == 1:
+            auto_fill.append(FieldRecommendation(
+                field=field,
+                status="auto",
+                recommendations=recs,
+                ai_synthesis=synthesis,
+            ))
+        else:
+            conflicts.append(FieldRecommendation(
+                field=field,
+                status="conflict",
+                recommendations=recs,
+                ai_synthesis=synthesis,
+            ))
+
+    return RecommendationsOut(
+        content_id=content_id,
+        missing_fields=missing,
+        auto_fill=auto_fill,
+        conflicts=conflicts,
+    )

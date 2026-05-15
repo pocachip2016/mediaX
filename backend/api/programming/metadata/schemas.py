@@ -256,6 +256,32 @@ class BatchUploadRow(BaseModel):
     parse_message: Optional[str] = None
 
 
+# ── 메타 보강 추천 ────────────────────────────────────────
+
+class SourceFieldRec(BaseModel):
+    """단일 소스·단일 필드 추천값"""
+    source_type: str    # "tmdb" | "watcha" | "kobis" | "ai"
+    source_id: int      # ExternalMetaSource.id 또는 ContentAIResult.id
+    value: str          # 추출된 값 (문자열화)
+    confidence: float   # 0.0~1.0
+
+
+class FieldRecommendation(BaseModel):
+    """필드 하나에 대한 추천 묶음"""
+    field: str                          # "cast" | "synopsis" | "runtime" | "country" | "genres"
+    status: str                         # "auto" (소스 일치) | "conflict" (소스 불일치)
+    recommendations: list[SourceFieldRec]
+    ai_synthesis: Optional[SourceFieldRec] = None  # 충돌 시 is_final=True AI 결과
+
+
+class RecommendationsOut(BaseModel):
+    """GET /contents/{id}/recommendations 응답"""
+    content_id: int
+    missing_fields: list[str]
+    auto_fill: list[FieldRecommendation]    # 단일 소스 또는 소스 일치 → 자동 채택 가능
+    conflicts: list[FieldRecommendation]    # 복수 소스 불일치 → 운영자 선택 필요
+
+
 class BatchUploadPreview(BaseModel):
     """파싱 미리보기 응답"""
     job_id: int

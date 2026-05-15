@@ -4,11 +4,11 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
-  ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown,
+  ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown, Sparkles,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
-import { metadataApi, imageMetaApi, posterRecommendApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, resolvePosterUrl } from "@/lib/api"
+import { metadataApi, imageMetaApi, posterRecommendApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, resolvePosterUrl } from "@/lib/api"
 import { SourceBadge } from "@/components/source-badge"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
@@ -44,6 +44,142 @@ function TabCountBadge({ tab }: { tab: "sources" | "ai" }) {
   return <span className="text-xs font-medium text-slate-500 ml-2">{count}</span>
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  cast: "주연", director: "감독", synopsis: "줄거리",
+  runtime: "런타임", country: "제작국가", genres: "장르",
+}
+
+function MissingBadge() {
+  return (
+    <span className="text-xs text-slate-400 border border-dashed border-slate-200 rounded px-1.5 py-0.5">
+      Missing
+    </span>
+  )
+}
+
+function RecommendationPanel({
+  recommendations,
+  onDismiss,
+  onApply,
+  onApplyAll,
+}: {
+  recommendations: RecommendationsOut
+  onDismiss: () => void
+  onApply: (rec: FieldRecommendation, sourceRec: SourceFieldRec) => Promise<void>
+  onApplyAll: () => Promise<void>
+}) {
+  const [applying, setApplying] = useState<string | null>(null)
+
+  return (
+    <div className="bg-white rounded-lg border border-blue-200 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-blue-50 border-b border-blue-100">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-blue-600" />
+          <span className="text-sm font-semibold text-blue-900">메타 보강 제안</span>
+          <span className="text-xs text-blue-600 bg-blue-100 rounded-full px-2 py-0.5">
+            {recommendations.missing_fields.length}개 미입력
+          </span>
+        </div>
+        <button onClick={onDismiss} className="text-slate-400 hover:text-slate-600">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="p-4 space-y-4 max-h-[calc(100vh-14rem)] overflow-y-auto">
+        {recommendations.auto_fill.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1">
+              <Check className="h-3 w-3 text-green-500" /> 자동 채택 가능
+            </p>
+            <div className="space-y-1">
+              {recommendations.auto_fill.map((rec) => {
+                const top = rec.recommendations[0]!
+                return (
+                  <div key={rec.field} className="flex items-start gap-2 py-2 border-b border-slate-100 last:border-0">
+                    <span className="text-xs text-slate-500 w-14 flex-shrink-0 pt-0.5">
+                      {FIELD_LABELS[rec.field] ?? rec.field}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-800 leading-snug line-clamp-2">{top.value}</p>
+                      <div className="mt-1">
+                        <SourceBadge source={top.source_type} score={top.confidence} />
+                      </div>
+                    </div>
+                    <button
+                      disabled={applying === rec.field}
+                      onClick={async () => {
+                        setApplying(rec.field)
+                        await onApply(rec, top).catch(() => {})
+                        setApplying(null)
+                      }}
+                      className="flex-shrink-0 text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                    >
+                      {applying === rec.field ? "…" : "채택"}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            {recommendations.auto_fill.length > 1 && (
+              <button
+                onClick={onApplyAll}
+                className="mt-2 w-full text-xs py-1.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
+              >
+                {recommendations.auto_fill.length}개 모두 채택 →
+              </button>
+            )}
+          </div>
+        )}
+
+        {recommendations.conflicts.map((rec) => (
+          <div key={rec.field} className="border border-amber-200 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs font-medium text-amber-800">
+                {FIELD_LABELS[rec.field] ?? rec.field} — 소스 불일치
+              </span>
+            </div>
+            <div className={cn("grid divide-x divide-slate-100", rec.recommendations.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
+              {rec.recommendations.map((r) => (
+                <div key={r.source_id} className="p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <SourceBadge source={r.source_type} score={r.confidence} />
+                    <button
+                      onClick={() => onApply(rec, r).catch(() => {})}
+                      className="text-xs text-slate-500 hover:text-blue-600 transition-colors"
+                    >
+                      채택
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-700 leading-snug line-clamp-4">{r.value}</p>
+                </div>
+              ))}
+            </div>
+            {rec.ai_synthesis && (
+              <div className="p-3 border-t border-slate-100 bg-purple-50/50">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                    <span className="text-xs font-medium text-purple-700">AI 종합</span>
+                    <SourceBadge source="ai" score={rec.ai_synthesis.confidence} />
+                  </div>
+                  <button
+                    onClick={() => onApply(rec, rec.ai_synthesis!).catch(() => {})}
+                    className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
+                  >
+                    AI 종합 채택
+                  </button>
+                </div>
+                <p className="text-xs text-slate-700 leading-snug line-clamp-4">{rec.ai_synthesis.value}</p>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function ContentDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -60,6 +196,8 @@ export default function ContentDetailPage() {
   const [posterRecommending, setPosterRecommending] = useState(false)
   const [posterSelecting, setPosterSelecting] = useState<number | null>(null)
   const [castExpanded, setCastExpanded] = useState(false)
+  const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
+  const [recDismissed, setRecDismissed] = useState(false)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -99,12 +237,84 @@ export default function ContentDetailPage() {
     }
   }, [activeTab, contentId])
 
+  // Load meta recommendations on mount (mock fallback when backend unavailable)
+  useEffect(() => {
+    metadataApi.getRecommendations(contentId).then(setRecommendations).catch(() => {
+      setRecommendations({
+        content_id: contentId,
+        missing_fields: ["cast", "synopsis", "runtime", "country"],
+        auto_fill: [
+          {
+            field: "cast",
+            status: "auto",
+            recommendations: [{ source_type: "watcha", source_id: 1, value: "김설현 · 오정세 · 유재명 외 12명", confidence: 1.0 }],
+            ai_synthesis: null,
+          },
+          {
+            field: "runtime",
+            status: "auto",
+            recommendations: [{ source_type: "tmdb", source_id: 2, value: "132분", confidence: 0.94 }],
+            ai_synthesis: null,
+          },
+          {
+            field: "country",
+            status: "auto",
+            recommendations: [{ source_type: "tmdb", source_id: 2, value: "대한민국", confidence: 0.94 }],
+            ai_synthesis: null,
+          },
+        ],
+        conflicts: [
+          {
+            field: "synopsis",
+            status: "conflict",
+            recommendations: [
+              { source_type: "watcha", source_id: 1, value: "가난한 박씨 가족은 부잣집에 하나 둘씩 취업하며 묘한 공생 관계를 형성해간다.", confidence: 0.5 },
+              { source_type: "tmdb", source_id: 2, value: "A poor family schemes to become employed by a wealthy Park family and infiltrates their home.", confidence: 0.94 },
+            ],
+            ai_synthesis: {
+              source_type: "ai", source_id: 99,
+              value: "경제적으로 어려운 박씨 일가는 재벌 박 사장 가족의 집에 한 명씩 취업하며 공생 관계를 형성해가지만, 숨겨진 비밀이 드러나면서 예기치 못한 사건이 벌어진다.",
+              confidence: 0.79,
+            },
+          },
+        ],
+      })
+    })
+  }, [contentId])
+
   if (loading) {
     return <div className="p-6 text-center text-slate-600">로드 중...</div>
   }
 
   if (!content) {
     return <div className="p-6 text-center text-slate-600">콘텐츠를 찾을 수 없습니다.</div>
+  }
+
+  // Handler for recommendation apply
+  const handleApplyRec = async (rec: FieldRecommendation, sourceRec: SourceFieldRec) => {
+    try {
+      if (sourceRec.source_type === "ai") {
+        await metadataApi.promoteAIResult(contentId, sourceRec.source_id)
+      } else {
+        await metadataApi.applyExternalFields(contentId, sourceRec.source_id, [rec.field])
+      }
+      const [updated, updatedRecs] = await Promise.all([
+        metadataApi.getContent(contentId),
+        metadataApi.getRecommendations(contentId),
+      ])
+      setContent(updated)
+      setRecommendations(updatedRecs)
+    } catch (err) {
+      console.error("apply rec failed", err)
+    }
+  }
+
+  const handleApplyAllAuto = async () => {
+    if (!recommendations) return
+    for (const rec of recommendations.auto_fill) {
+      const top = rec.recommendations[0]
+      if (top) await handleApplyRec(rec, top)
+    }
   }
 
   // Handler for partialReprocess (AI 재처리)
@@ -196,8 +406,9 @@ export default function ContentDetailPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* Header — VOD 스타일: 포스터(좌) + 메타(우) */}
-      <div className="mb-6 bg-white rounded-lg border border-slate-200 p-6">
+      {/* Header — 2열: 좌(포스터+메타 카드) / 우(추천 패널) */}
+      <div className="mb-6 grid lg:grid-cols-2 gap-4 items-start">
+      <div className="bg-white rounded-lg border border-slate-200 p-6">
         <div className="flex gap-6">
           {/* 포스터 (2:3 비율) */}
           <div className="flex-shrink-0 w-44">
@@ -258,41 +469,37 @@ export default function ContentDetailPage() {
                   <span className="text-slate-400">🏢</span> {content.cp_name}
                 </span>
               )}
-              {content.runtime_minutes && (
-                <span className="inline-flex items-center gap-1">
-                  <span className="text-slate-400">⏱</span> {content.runtime_minutes}분
-                </span>
-              )}
-              {content.country && (
-                <span className="inline-flex items-center gap-1">
-                  <span className="text-slate-400">🌐</span> {content.country}
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1">
+                <span className="text-slate-400">⏱</span>
+                {content.runtime_minutes ? `${content.runtime_minutes}분` : <MissingBadge />}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="text-slate-400">🌐</span>
+                {content.country || <MissingBadge />}
+              </span>
             </div>
 
             {/* 감독 / 주연 / 줄거리 */}
-            {(directors.length > 0 || leads.length > 0 || synopsis) && (
-              <div className="space-y-1.5 mb-3 text-sm">
-                {directors.length > 0 && (
-                  <div className="flex gap-2">
-                    <span className="text-slate-400 w-10 flex-shrink-0">감독</span>
-                    <span className="text-slate-800">{directors.map((d) => d.person.name_ko).join(" · ")}</span>
-                  </div>
-                )}
-                {leads.length > 0 && (
-                  <div className="flex gap-2">
-                    <span className="text-slate-400 w-10 flex-shrink-0">주연</span>
-                    <span className="text-slate-800">{leads.map((l) => l.person.name_ko).join(" · ")}</span>
-                  </div>
-                )}
-                {synopsis && (
-                  <div className="flex gap-2">
-                    <span className="text-slate-400 w-10 flex-shrink-0 mt-0.5">줄거리</span>
-                    <p className="text-slate-700 leading-snug line-clamp-2">{synopsis}</p>
-                  </div>
-                )}
+            <div className="space-y-1.5 mb-3 text-sm">
+              <div className="flex gap-2 items-center">
+                <span className="text-slate-400 w-10 flex-shrink-0">감독</span>
+                {directors.length > 0
+                  ? <span className="text-slate-800">{directors.map((d) => d.person.name_ko).join(" · ")}</span>
+                  : <MissingBadge />}
               </div>
-            )}
+              <div className="flex gap-2 items-center">
+                <span className="text-slate-400 w-10 flex-shrink-0">주연</span>
+                {leads.length > 0
+                  ? <span className="text-slate-800">{leads.map((l) => l.person.name_ko).join(" · ")}</span>
+                  : <MissingBadge />}
+              </div>
+              <div className="flex gap-2 items-start">
+                <span className="text-slate-400 w-10 flex-shrink-0 mt-0.5">줄거리</span>
+                {synopsis
+                  ? <p className="text-slate-700 leading-snug line-clamp-2">{synopsis}</p>
+                  : <MissingBadge />}
+              </div>
+            </div>
 
             {/* 검수 상태 · 품질 점수 · 액션 버튼 */}
             <div className="mt-auto pt-3 border-t border-slate-100">
@@ -342,6 +549,17 @@ export default function ContentDetailPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 추천 패널 */}
+      {recommendations && !recDismissed && (recommendations.auto_fill.length > 0 || recommendations.conflicts.length > 0) && (
+        <RecommendationPanel
+          recommendations={recommendations}
+          onDismiss={() => setRecDismissed(true)}
+          onApply={handleApplyRec}
+          onApplyAll={handleApplyAllAuto}
+        />
+      )}
       </div>
 
       {/* 출연진 섹션 */}

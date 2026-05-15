@@ -4,16 +4,8 @@
   "description": "유연한 메타 스키마 + Resolution Service 기반 병합 + IA 구조 개선 + Watcha 재크롤 + AI 추천 fill",
   "status": "in_progress",
   "created_at": "2026-05-15T14:30:00+09:00",
-  "updated_at": "2026-05-15T14:30:00+09:00",
+  "updated_at": "2026-05-15T00:00:00+09:00",
   "steps": [
-    {
-      "id": "0",
-      "title": "더미 데이터 정리",
-      "description": "Watcha 크롤 중 생성된 콘텐츠_XXXXX 2,130건 삭제. 메타 파이프라인 검증 기준선 확보.",
-      "status": "pending",
-      "files": ["step0.md"],
-      "created_at": "2026-05-15T14:30:00+09:00"
-    },
     {
       "id": "1",
       "title": "Resolution Service 구현",
@@ -55,12 +47,44 @@
       "created_at": "2026-05-15T14:30:00+09:00"
     },
     {
-      "id": "5",
-      "title": "Watcha 데이터 재크롤",
-      "description": "04_to_upload_csv.py 확대(8열 출력). crawler에 cast/director 추출 추가. 679건 재처리 + 재업로드. resolution 트리거로 credits 테이블 채우기.",
-      "status": "pending",
-      "files": ["step5.md"],
-      "created_at": "2026-05-15T14:30:00+09:00"
+      "id": "5a",
+      "title": "cleanup-baseline — 더미 + Watcha 콘텐츠 삭제",
+      "description": "재업로드 전 clean baseline 확보. 더미(콘텐츠_XXX 2,130건) + 기존 Watcha 콘텐츠 DELETE. 신규 스크립트: 00_cleanup_baseline.py.",
+      "status": "completed",
+      "summary": "더미(콘텐츠_XXX) + Watcha 콘텐츠 합계 3,558건 삭제, ContentMetadata cascade 완료 — clean baseline 확보",
+      "completed_at": "2026-05-15T00:00:00+09:00",
+      "files": ["step5a.md"],
+      "created_at": "2026-05-15T00:00:00+09:00"
+    },
+    {
+      "id": "5b",
+      "title": "crawler-cast-directors — 크롤러 cast/director 추출 추가",
+      "description": "02_crawl_details.py에 extract_cast/extract_directors 함수 추가. --patch/--limit 옵션. 샘플 3건 검증.",
+      "status": "completed",
+      "summary": "a[href*='/people/'] 셀렉터 기반 extract_people() 추가, --patch/--limit 옵션 구현, 샘플 3건 cast/directors 수집 확인 (tEQkXW9: directors 4명, cast 15명)",
+      "completed_at": "2026-05-15T00:00:00+09:00",
+      "files": ["step5b.md"],
+      "created_at": "2026-05-15T00:00:00+09:00"
+    },
+    {
+      "id": "5c",
+      "title": "incremental-patch-and-csv-convert — 전체 679건 patch + 12열 CSV",
+      "description": "02_crawl_details.py --patch 전체 실행. 04_to_upload_csv.py 12열(+cast/directors/genres/country/runtime/rating_age/poster_url) 확장. 장르/runtime 정규화.",
+      "status": "completed",
+      "summary": "전체 237건 patch 완료 (cast/directors 51%), 04_to_upload_csv.py 12열 확장 + genres/runtime 정규화, watcha_upload.csv 237건 재생성",
+      "completed_at": "2026-05-15T00:00:00+09:00",
+      "files": ["step5c.md"],
+      "created_at": "2026-05-15T00:00:00+09:00"
+    },
+    {
+      "id": "5d",
+      "title": "bulk-reupload-credits-verify — 재업로드 + content_credits E2E 검증",
+      "description": "POST /upload/batch 호출 → content_credits(cast/director) > 0 DB 검증. FastAPI 사전 기동 필요.",
+      "status": "completed",
+      "summary": "237건 벌크 업로드 완료, content_credits actor 1,159건 / director 164건, content_genres 134건 E2E 검증 통과",
+      "completed_at": "2026-05-15T00:00:00+09:00",
+      "files": ["step5d.md"],
+      "created_at": "2026-05-15T00:00:00+09:00"
     },
     {
       "id": "6",

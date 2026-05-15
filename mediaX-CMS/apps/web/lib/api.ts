@@ -290,6 +290,29 @@ export interface CreateFromSourcesOut {
   status: string
 }
 
+// ── 메타 보강 추천 타입 ───────────────────────────────────
+
+export interface SourceFieldRec {
+  source_type: string
+  source_id: number
+  value: string
+  confidence: number
+}
+
+export interface FieldRecommendation {
+  field: string
+  status: "auto" | "conflict"
+  recommendations: SourceFieldRec[]
+  ai_synthesis: SourceFieldRec | null
+}
+
+export interface RecommendationsOut {
+  content_id: number
+  missing_fields: string[]
+  auto_fill: FieldRecommendation[]
+  conflicts: FieldRecommendation[]
+}
+
 // ── API 함수 ──────────────────────────────────────────────
 
 export const metadataApi = {
@@ -537,6 +560,11 @@ export const metadataApi = {
 
   getDamAssets: (contentId: number) =>
     request<DamAssetsOut>(`/api/meta-core/contents/${contentId}/dam-assets`),
+
+  getRecommendations: (contentId: number) =>
+    request<RecommendationsOut>(
+      `/api/programming/metadata/contents/${contentId}/recommendations`
+    ),
 }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────

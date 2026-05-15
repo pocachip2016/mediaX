@@ -11,6 +11,25 @@ interface PreviewRow {
   [key: string]: string
 }
 
+function parseCSVLine(line: string): string[] {
+  const cells: string[] = []
+  let current = ""
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++ }
+      else { inQuotes = !inQuotes }
+    } else if (ch === "," && !inQuotes) {
+      cells.push(current.trim()); current = ""
+    } else {
+      current += ch
+    }
+  }
+  cells.push(current.trim())
+  return cells
+}
+
 const FIELD_DESCRIPTIONS = [
   { field: "title", required: true, desc: "콘텐츠 제목" },
   { field: "production_year", required: false, desc: "제작년도 (숫자)" },
@@ -53,9 +72,9 @@ export default function UploadPage() {
       const text = await selectedFile.text()
       const lines = text.split("\n").filter(l => l.trim())
       if (lines.length < 2) return
-      const headers = lines[0]!.split(",").map(h => h.trim())
+      const headers = parseCSVLine(lines[0]!)
       const rows = lines.slice(1, 4).map(line => {
-        const cells = line.split(",")
+        const cells = parseCSVLine(line)
         return headers.reduce<PreviewRow>((acc, h, i) => {
           acc[h] = (cells[i] ?? "").trim()
           return acc

@@ -1547,9 +1547,118 @@ print('  ✓ get_or_create helpers OK')
     echo "=== PASS ==="
     ;;
 
+  flexible-meta-step5d)
+    echo "=== flexible-meta-step5d: bulk-reupload-credits-verify ==="
+    python3 -c "
+import sys; sys.path.insert(0, '.')
+from sqlalchemy import text
+from api.programming.metadata.models.content import Content
+from shared.database import SessionLocal
+db = SessionLocal()
+
+watcha = db.query(Content).filter(Content.cp_name == 'Watcha').count()
+assert watcha > 0, f'Watcha 콘텐츠 없음'
+print(f'  ✓ Watcha 콘텐츠: {watcha}건')
+
+actor_cnt = db.execute(text(\"SELECT COUNT(*) FROM content_credits WHERE role='actor'\")).scalar()
+dir_cnt = db.execute(text(\"SELECT COUNT(*) FROM content_credits WHERE role='director'\")).scalar()
+genre_cnt = db.execute(text('SELECT COUNT(*) FROM content_genres')).scalar()
+
+assert actor_cnt > 0, 'content_credits(actor) 없음'
+assert dir_cnt > 0, 'content_credits(director) 없음'
+assert genre_cnt > 0, 'content_genres 없음'
+
+print(f'  ✓ content_credits actor: {actor_cnt}건')
+print(f'  ✓ content_credits director: {dir_cnt}건')
+print(f'  ✓ content_genres: {genre_cnt}건')
+db.close()
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step5c)
+    echo "=== flexible-meta-step5c: incremental-patch-and-csv-convert ==="
+    # CSV 변환 실행 (patch 는 사전 완료 전제)
+    python3 scripts/watcha_real/04_to_upload_csv.py
+    python3 -c "
+import csv, json
+
+# detail_real.csv cast/directors 비율
+with open('data/watcha_real/detail_real.csv') as f:
+    rows = list(csv.DictReader(f))
+total = len(rows)
+filled = sum(1 for r in rows if r.get('cast') or r.get('directors'))
+pct = filled / total * 100 if total else 0
+print(f'  cast/directors 보유: {filled}/{total}건 ({pct:.0f}%)')
+assert pct >= 50, f'cast/directors 비율 {pct:.0f}% < 50%'
+print('  ✓ cast/directors ≥ 50%')
+
+# watcha_upload.csv 헤더 12열 확인
+with open('data/watcha/upload/watcha_upload.csv') as f:
+    reader = csv.DictReader(f)
+    headers = set(reader.fieldnames or [])
+    expected = {'title','production_year','content_type','cp_name','synopsis','cast','directors','genres','country','runtime','rating_age','poster_url'}
+    missing = expected - headers
+    assert not missing, f'누락 컬럼: {missing}'
+    print(f'  ✓ 12열 헤더 확인')
+    row = next(reader, None)
+    if row:
+        print(f'  샘플 cast={repr(row.get(\"cast\",\"\")[:40])}, directors={repr(row.get(\"directors\",\"\")[:30])}')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step5b)
+    echo "=== flexible-meta-step5b: crawler-cast-directors ==="
+    # v2bak 존재 확인 (patch 실행 전이라 없을 수 있으니 선행 생성)
+    DETAIL_CSV="data/watcha_real/detail_real.csv"
+    BAK_CSV="data/watcha_real/detail_real.csv.v2bak"
+    if [ ! -f "$DETAIL_CSV" ]; then
+      echo "ERROR: detail_real.csv 없음"
+      exit 1
+    fi
+    # --limit 3 --patch 실행 (3건 샘플 검증)
+    python3 scripts/watcha_real/02_crawl_details.py --patch --limit 3
+    # v2bak 파일 존재 확인
+    if [ ! -f "$BAK_CSV" ]; then
+      echo "ERROR: detail_real.csv.v2bak 없음"
+      exit 1
+    fi
+    echo "  ✓ .v2bak 생성 확인"
+    # cast 또는 directors 가 채워진 행 ≥ 1건 확인
+    python3 -c "
+import csv, json
+with open('data/watcha_real/detail_real.csv') as f:
+    rows = list(csv.DictReader(f))
+filled = sum(1 for r in rows if r.get('cast') or r.get('directors'))
+print(f'  cast/directors 있는 행: {filled}/{len(rows)}건')
+assert filled >= 1, 'cast/directors 채워진 행 없음'
+print('  ✓ 샘플 patch 성공')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step5a)
+    echo "=== flexible-meta-step5a: cleanup-baseline ==="
+    python3 scripts/watcha_real/00_cleanup_baseline.py
+    python3 -c "
+import sys; sys.path.insert(0, '.')
+from api.programming.metadata.models.content import Content
+from shared.database import SessionLocal
+db = SessionLocal()
+watcha = db.query(Content).filter(Content.cp_name == 'Watcha').count()
+dummy = db.query(Content).filter(Content.title.like('콘텐츠_%')).count()
+assert watcha == 0, f'Watcha {watcha}건 남음'
+assert dummy == 0, f'더미 {dummy}건 남음'
+db.close()
+print('  ✓ Watcha 0건 / 더미 0건 확인')
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step1"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d"
     exit 1
     ;;
 esac

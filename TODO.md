@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-flexible-meta-pipeline Step 5 — Watcha 재크롤 (04_to_upload_csv.py 8열 확장 + cast/director 추출)
+- (없음 — dev-flexible-meta-pipeline Step 5a~5d 완료)
 
 ## Next (이번 마일스톤 — Dam 연동)
 - [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
@@ -20,6 +20,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-meta-recommendations-ui — Missing 배지 + 추천 패널(auto_fill + conflict 2단 비교 + AI 종합) + 백엔드 /recommendations 엔드포인트 (2026-05-15)
+- [x] dev-flexible-meta-pipeline Step 5a~5d — DB 정리 + 크롤러 cast/director 추출 + CSV 12열 + Watcha 237건 재업로드 + credits E2E 검증 (2026-05-15)
 - [x] dev-flexible-meta-pipeline Step 0–4 — Resolution Service + CSV 8열 + PUT 엔드포인트 + IA 재구성(/new /upload /external /edit) + E2E 검증 (2026-05-15)
 - [x] dev-detail-page-vod-layout — 상세 페이지 VOD 스타일 재설계 + TMDB backfill task + 사이드바 UX 개선 (2026-05-15)
 - [x] dev-poster-recommend Phase 2 — TMDB 다중 포스터 추천 + 운영자 primary 선택 UI 완료 (2026-05-15)

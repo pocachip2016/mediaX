@@ -65,6 +65,7 @@ from api.programming.metadata.schemas import (
     ContentChangelogOut, LockFieldsRequest,
     EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
     PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
+    RecommendationsOut,
 )
 from api.programming.metadata.models import CpEmailLog
 from api.programming.metadata import poster_recommend
@@ -298,6 +299,12 @@ def get_content_hierarchy(content_id: int, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=404, detail="Content not found")
     return item
+
+
+@router.get("/contents/{content_id}/recommendations", response_model=RecommendationsOut)
+def get_recommendations(content_id: int, db: Session = Depends(get_db)):
+    """빈 메타 필드 감지 + 외부소스·AI 추천값 반환 (메타 보강 제안 패널용)"""
+    return service.get_content_recommendations(db, content_id)
 
 
 # ── 파이프라인 현황 ────────────────────────────────────────
