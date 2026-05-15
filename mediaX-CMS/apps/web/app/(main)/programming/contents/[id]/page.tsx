@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
   ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown, Sparkles,
@@ -58,6 +58,7 @@ function MissingBadge() {
 export default function ContentDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const contentId = Number(params.id)
   
   const [content, setContent] = useState<ContentDetail | null>(null)
@@ -88,6 +89,13 @@ export default function ContentDetailPage() {
     }
     fetchContent()
   }, [contentId])
+
+  // Auto-enable EnrichPanel when enrich=true query param present
+  useEffect(() => {
+    if (searchParams.get("enrich") === "true") {
+      setShowEnrich(true)
+    }
+  }, [searchParams])
 
   // Load changelog when ai tab becomes active
   useEffect(() => {

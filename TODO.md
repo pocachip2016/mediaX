@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] content-register Steps 2–3 대기 (Step 2: 3탭 패널(글자/이미지/영상), Step 3: [id]/?enrich=true 진입점)
+- [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴
 
 ## Next (이번 마일스톤 — Dam 연동)
 - [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)

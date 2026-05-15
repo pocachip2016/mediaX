@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Film, X } from "lucide-react"
+import { ArrowLeft, Film, X, Trash2 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { BASE, type ContentType } from "@/lib/api"
 
@@ -15,6 +15,9 @@ const CONTENT_TYPES: { value: ContentType; label: string }[] = [
   { value: "season",  label: "시즌" },
   { value: "episode", label: "에피소드" },
 ]
+
+const FORMATS = ["MP4", "TS", "HLS"]
+const RESOLUTIONS = ["4K", "1080p", "720p"]
 
 // ── 타입 ────────────────────────────────────────────────
 
@@ -29,6 +32,13 @@ type FormState = {
   director: string
   cast: string
   synopsis: string
+  extended_synopsis: string
+  catchphrase: string
+  keywords: string[]
+  vodPath: string
+  trailerPath: string
+  format: "MP4" | "TS" | "HLS"
+  resolution: "4K" | "1080p" | "720p"
 }
 
 const EMPTY_FORM: FormState = {
@@ -42,6 +52,13 @@ const EMPTY_FORM: FormState = {
   director: "",
   cast: "",
   synopsis: "",
+  extended_synopsis: "",
+  catchphrase: "",
+  keywords: [],
+  vodPath: "",
+  trailerPath: "",
+  format: "MP4",
+  resolution: "1080p",
 }
 
 // ── 메인 페이지 ─────────────────────────────────────────
@@ -49,6 +66,8 @@ const EMPTY_FORM: FormState = {
 export default function NewContentPage() {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const stillsInputRef = useRef<HTMLInputElement>(null)
+  const bgInputRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [genres, setGenres] = useState<string[]>([])
@@ -57,6 +76,11 @@ export default function NewContentPage() {
   const [touched, setTouched] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+
+  const [activeTab, setActiveTab] = useState<"text" | "image" | "video">("text")
+  const [stillPreviews, setStillPreviews] = useState<string[]>([])
+  const [bgPreview, setBgPreview] = useState<string | null>(null)
+  const [keywordInput, setKeywordInput] = useState("")
 
   function set(key: keyof FormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -93,6 +117,27 @@ export default function NewContentPage() {
     setGenres(prev => prev.filter(x => x !== g))
   }
 
+  // ── 키워드 태그 입력 (글자 탭) ──────────────────────
+
+  function handleKeywordKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault()
+      addKeyword()
+    }
+  }
+
+  function addKeyword() {
+    const val = keywordInput.trim().replace(/,$/, "")
+    if (val && !form.keywords.includes(val)) {
+      setForm(prev => ({ ...prev, keywords: [...prev.keywords, val] }))
+    }
+    setKeywordInput("")
+  }
+
+  function removeKeyword(k: string) {
+    setForm(prev => ({ ...prev, keywords: prev.keywords.filter(x => x !== k) }))
+  }
+
   // ── 포스터 파일 ─────────────────────────────────────
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -100,6 +145,37 @@ export default function NewContentPage() {
     if (!file) return
     const reader = new FileReader()
     reader.onload = ev => setPosterPreview(ev.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  // ── 스틸 이미지 (이미지 탭) ─────────────────────────
+
+  function handleStillsChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []).slice(0, 5)
+    if (files.length > 0) {
+      Promise.all(
+        files.map(f => {
+          return new Promise<string>(resolve => {
+            const reader = new FileReader()
+            reader.onload = ev => resolve(ev.target?.result as string)
+            reader.readAsDataURL(f)
+          })
+        })
+      ).then(previews => setStillPreviews(previews))
+    }
+  }
+
+  function removeStill(idx: number) {
+    setStillPreviews(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  // ── 배경 이미지 (이미지 탭) ─────────────────────────
+
+  function handleBgChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setBgPreview(ev.target?.result as string)
     reader.readAsDataURL(file)
   }
 
@@ -127,6 +203,15 @@ export default function NewContentPage() {
     if (form.cast.trim())           body.cast = form.cast.trim()
     if (form.synopsis.trim())       body.synopsis = form.synopsis.trim()
     if (genres.length > 0)          body.genres = genres.join(",")
+    if (form.extended_synopsis.trim())  body.extended_synopsis = form.extended_synopsis.trim()
+    if (form.catchphrase.trim())        body.catchphrase = form.catchphrase.trim()
+    if (form.keywords.length > 0)       body.keywords = form.keywords.join(",")
+    if (form.vodPath.trim())       body.vod_path = form.vodPath.trim()
+    if (form.trailerPath.trim())   body.trailer_path = form.trailerPath.trim()
+    if (form.vodPath.trim()) {
+      body.format = form.format
+      body.resolution = form.resolution
+    }
 
     try {
       const res = await fetch(`${BASE}/api/programming/metadata/contents`, {
@@ -152,10 +237,12 @@ export default function NewContentPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <div className="bg-white rounded-lg border border-slate-200 p-6">
+      <div className="bg-white rounded-lg border border-slate-200 p-6 space-y-6">
+
+        {/* ── HERO CARD ─────────────────────────────────── */}
         <div className="flex gap-6">
 
-          {/* ── 좌: 포스터 업로드 ─────────────────────── */}
+          {/* 좌: 포스터 업로드 */}
           <div className="flex-shrink-0 w-44">
             <input
               ref={fileInputRef}
@@ -191,7 +278,7 @@ export default function NewContentPage() {
             )}
           </div>
 
-          {/* ── 우: 입력 필드 ──────────────────────────── */}
+          {/* 우: 입력 필드 */}
           <div className="flex-1 min-w-0 flex flex-col">
 
             {/* 헤더 */}
@@ -200,7 +287,6 @@ export default function NewContentPage() {
                 <ArrowLeft className="h-5 w-5" />
               </Link>
               <div className="flex-1 min-w-0 space-y-1.5">
-                {/* 제목 */}
                 <div>
                   <input
                     className={cn(inputCls, "text-lg font-semibold", hasError("title", form.title) && "border-red-300 ring-red-100")}
@@ -213,7 +299,6 @@ export default function NewContentPage() {
                     <p className="text-xs text-red-500 mt-0.5">필수 항목입니다</p>
                   )}
                 </div>
-                {/* 원제목 */}
                 <input
                   className={cn(inputCls, "text-sm text-slate-500")}
                   placeholder="원제목 (선택)"
@@ -246,7 +331,7 @@ export default function NewContentPage() {
               />
             </div>
 
-            {/* 기본 메타 행 1: 유형 + 제작연도 */}
+            {/* 기본 메타 행 1 */}
             <div className="flex flex-wrap gap-x-4 gap-y-2 mb-2">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-slate-400 w-6">유형</span>
@@ -255,10 +340,9 @@ export default function NewContentPage() {
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
-                <span className="text-red-400 text-xs">*</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-400 whitespace-nowrap">📅</span>
+                <span className="text-xs text-slate-400">📅</span>
                 <input
                   className={cn(inputCls, "w-20")}
                   type="number"
@@ -270,7 +354,7 @@ export default function NewContentPage() {
               </div>
             </div>
 
-            {/* 기본 메타 행 2: CP사 + 런타임 + 국가 */}
+            {/* 기본 메타 행 2 */}
             <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-slate-400">🏢</span>
@@ -309,7 +393,7 @@ export default function NewContentPage() {
               </div>
             </div>
 
-            {/* 감독 / 주연 / 줄거리 — 상세 페이지와 동일한 라벨+입력 구조 */}
+            {/* 감독 / 주연 / 줄거리 */}
             <div className="space-y-1.5 mb-3 text-sm">
               <div className="flex gap-2 items-center">
                 <span className="text-slate-400 w-10 flex-shrink-0">감독</span>
@@ -334,41 +418,232 @@ export default function NewContentPage() {
                 <textarea
                   className={cn(inputCls, "flex-1 resize-none")}
                   rows={2}
-                  placeholder="시놉시스 (선택 — 등록 후 AI가 제안합니다)"
+                  placeholder="시놉시스 (선택)"
                   value={form.synopsis}
                   onChange={set("synopsis")}
                 />
               </div>
             </div>
 
-            {/* 서버 에러 */}
-            {serverError && (
-              <p className="text-xs text-red-600 mb-2">{serverError}</p>
-            )}
-
-            {/* 액션 버튼 (상세 페이지 border-t 행과 동일 위치) */}
-            <div className="mt-auto pt-3 border-t border-slate-100">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 text-sm disabled:opacity-50 transition-colors"
-                >
-                  {saving ? "등록 중…" : "등록"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => router.back()}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm transition-colors"
-                >
-                  취소
-                </button>
-              </div>
-            </div>
-
           </div>
         </div>
+
+        {/* ── 탭 패널 ───────────────────────────────────── */}
+        <div className="border-t border-slate-200 pt-6">
+
+          {/* 탭 내비 */}
+          <div className="flex gap-4 mb-6 border-b border-slate-200">
+            {(["text", "image", "video"] as const).map(tab => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "pb-3 px-1 text-sm font-medium transition-colors border-b-2",
+                  activeTab === tab
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                )}
+              >
+                {tab === "text" && "글자"}
+                {tab === "image" && "이미지"}
+                {tab === "video" && "영상"}
+              </button>
+            ))}
+          </div>
+
+          {/* 글자 탭 */}
+          {activeTab === "text" && (
+            <div className="space-y-4">
+              <div className="flex gap-2 items-start">
+                <span className="text-sm text-slate-600 w-20 flex-shrink-0 mt-1.5">상세 줄거리</span>
+                <textarea
+                  className={cn(inputCls, "flex-1 resize-none")}
+                  rows={6}
+                  placeholder="상세한 줄거리 (선택)"
+                  value={form.extended_synopsis}
+                  onChange={set("extended_synopsis")}
+                />
+              </div>
+              <div className="flex gap-2 items-center">
+                <span className="text-sm text-slate-600 w-20 flex-shrink-0">광고 문구</span>
+                <input
+                  className={cn(inputCls, "flex-1")}
+                  placeholder="짧은 광고 문구 (선택)"
+                  value={form.catchphrase}
+                  onChange={set("catchphrase")}
+                />
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm text-slate-600">키워드</span>
+                <div className="flex flex-wrap gap-1.5 items-center min-h-[28px]">
+                  {form.keywords.map(k => (
+                    <span
+                      key={k}
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-sm font-medium bg-green-50 border border-green-200 text-green-800"
+                    >
+                      {k}
+                      <button type="button" onClick={() => removeKeyword(k)} className="hover:text-red-500">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    className="text-sm px-2 py-0.5 rounded-full border border-dashed border-slate-300 focus:outline-none focus:border-blue-300 placeholder:text-slate-300 min-w-[80px] bg-transparent"
+                    placeholder="Enter"
+                    value={keywordInput}
+                    onChange={e => setKeywordInput(e.target.value)}
+                    onKeyDown={handleKeywordKeyDown}
+                    onBlur={addKeyword}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 이미지 탭 */}
+          {activeTab === "image" && (
+            <div className="space-y-6">
+              <div>
+                <div className="text-sm text-slate-600 mb-2">스틸컷 / 추가 이미지 (최대 5장)</div>
+                <input
+                  ref={stillsInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleStillsChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => stillsInputRef.current?.click()}
+                  className="w-full py-6 rounded-lg border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/20 transition-colors text-sm text-slate-500 hover:text-blue-600"
+                >
+                  이미지 선택 (최대 5장)
+                </button>
+                {stillPreviews.length > 0 && (
+                  <div className="grid grid-cols-5 gap-2 mt-3">
+                    {stillPreviews.map((prev, idx) => (
+                      <div key={idx} className="relative group">
+                        <img src={prev} alt={`still-${idx}`} className="w-full aspect-video object-cover rounded" />
+                        <button
+                          type="button"
+                          onClick={() => removeStill(idx)}
+                          className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded"
+                        >
+                          <Trash2 className="h-4 w-4 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-sm text-slate-600 mb-2">배경 이미지 (16:9)</div>
+                <input
+                  ref={bgInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleBgChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => bgInputRef.current?.click()}
+                  className={cn(
+                    "w-full aspect-video rounded-lg border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/20 transition-colors",
+                    bgPreview && "border-solid"
+                  )}
+                >
+                  {bgPreview ? (
+                    <img src={bgPreview} alt="배경" className="w-full h-full object-cover rounded" />
+                  ) : (
+                    <span className="flex flex-col items-center justify-center h-full text-sm text-slate-500 group-hover:text-blue-600">
+                      배경 이미지 선택
+                    </span>
+                  )}
+                </button>
+                {bgPreview && (
+                  <button
+                    type="button"
+                    onClick={() => { setBgPreview(null); if (bgInputRef.current) bgInputRef.current.value = "" }}
+                    className="mt-1.5 text-xs text-slate-400 hover:text-red-500 transition-colors"
+                  >
+                    제거
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 영상 탭 */}
+          {activeTab === "video" && (
+            <div className="space-y-4">
+              <div className="flex gap-2 items-center">
+                <span className="text-sm text-slate-600 w-20 flex-shrink-0">VOD 경로</span>
+                <input
+                  className={cn(inputCls, "flex-1")}
+                  placeholder="/vod/path/to/file.mp4 (선택)"
+                  value={form.vodPath}
+                  onChange={set("vodPath")}
+                />
+              </div>
+              <div className="flex gap-2 items-center">
+                <span className="text-sm text-slate-600 w-20 flex-shrink-0">예고편 경로</span>
+                <input
+                  className={cn(inputCls, "flex-1")}
+                  placeholder="/trailer/path.mp4 (선택)"
+                  value={form.trailerPath}
+                  onChange={set("trailerPath")}
+                />
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600 w-16 flex-shrink-0">포맷</span>
+                  <select className={cn(selectCls, "w-24")} value={form.format} onChange={set("format")}>
+                    {FORMATS.map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600 w-16 flex-shrink-0">해상도</span>
+                  <select className={cn(selectCls, "w-24")} value={form.resolution} onChange={set("resolution")}>
+                    {RESOLUTIONS.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* ── 액션 버튼 ────────────────────────────────── */}
+        {serverError && (
+          <p className="text-xs text-red-600">{serverError}</p>
+        )}
+        <div className="border-t border-slate-100 pt-3">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 text-sm disabled:opacity-50 transition-colors"
+            >
+              {saving ? "등록 중…" : "등록"}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm transition-colors"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   )

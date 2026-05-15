@@ -1742,6 +1742,71 @@ print('  ✓ Watcha 0건 / 더미 0건 확인')
     echo "=== PASS ==="
     ;;
 
+  content-register-2)
+    echo "=== content-register-2: 3탭 패널 (글자/이미지/영상) ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- activeTab state ---"
+    grep -q 'setActiveTab.*"text" \| "image" \| "video"' "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ activeTab state present" \
+      || (echo "  ✗ activeTab missing" && exit 1)
+    echo "--- 글자 탭 (extended_synopsis, catchphrase, keywords) ---"
+    grep -q "extended_synopsis" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ extended_synopsis field present" \
+      || (echo "  ✗ extended_synopsis missing" && exit 1)
+    grep -q "catchphrase" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ catchphrase field present" \
+      || (echo "  ✗ catchphrase missing" && exit 1)
+    grep -q "form.keywords" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ keywords array present" \
+      || (echo "  ✗ keywords missing" && exit 1)
+    echo "--- 이미지 탭 (stills, backgroundImage) ---"
+    grep -q "stillPreviews" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ stills preview state present" \
+      || (echo "  ✗ stillPreviews missing" && exit 1)
+    grep -q "bgPreview" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ background preview state present" \
+      || (echo "  ✗ bgPreview missing" && exit 1)
+    echo "--- 영상 탭 (vodPath, trailerPath, format, resolution) ---"
+    grep -q "vodPath\|vod_path" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ vodPath field present" \
+      || (echo "  ✗ vodPath missing" && exit 1)
+    grep -q "form.format\|form.resolution" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ format/resolution selects present" \
+      || (echo "  ✗ format/resolution missing" && exit 1)
+    echo "--- POST body extend ---"
+    grep -q "extended_synopsis.*body" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ extended_synopsis in POST body" \
+      || (echo "  ✗ extended_synopsis not sent" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  content-register-3)
+    echo "=== content-register-3: [id]/?enrich=true 진입점 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL_PAGE="$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- useSearchParams import ---"
+    grep -q "useSearchParams" "$DETAIL_PAGE" \
+      && echo "  ✓ useSearchParams imported" \
+      || (echo "  ✗ useSearchParams missing" && exit 1)
+    echo "--- enrich param detection ---"
+    grep -q 'searchParams.get.*"enrich"' "$DETAIL_PAGE" \
+      && echo "  ✓ enrich param detection present" \
+      || (echo "  ✗ enrich param detection missing" && exit 1)
+    echo "--- showEnrich auto-enable ---"
+    grep -q 'setShowEnrich.*true' "$DETAIL_PAGE" \
+      && echo "  ✓ showEnrich auto-enable present" \
+      || (echo "  ✗ showEnrich auto-enable missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
   ai-review-queue-6)
     echo "=== ai-review-queue-6: Bulk Review Summary 보강 ==="
     CMS="$SCRIPT_DIR/../mediaX-CMS"
