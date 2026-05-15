@@ -3,7 +3,7 @@
  * Base URL: NEXT_PUBLIC_API_URL (기본 http://localhost:8000)
  */
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+export const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export function resolvePosterUrl(url: string | null | undefined): string | null {
   if (!url) return null

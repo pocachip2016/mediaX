@@ -1,0 +1,74 @@
+{
+  "id": "dev-flexible-meta-pipeline",
+  "title": "메타 파이프라인 정규화 재설계",
+  "description": "유연한 메타 스키마 + Resolution Service 기반 병합 + IA 구조 개선 + Watcha 재크롤 + AI 추천 fill",
+  "status": "in_progress",
+  "created_at": "2026-05-15T14:30:00+09:00",
+  "updated_at": "2026-05-15T14:30:00+09:00",
+  "steps": [
+    {
+      "id": "0",
+      "title": "더미 데이터 정리",
+      "description": "Watcha 크롤 중 생성된 콘텐츠_XXXXX 2,130건 삭제. 메타 파이프라인 검증 기준선 확보.",
+      "status": "pending",
+      "files": ["step0.md"],
+      "created_at": "2026-05-15T14:30:00+09:00"
+    },
+    {
+      "id": "1",
+      "title": "Resolution Service 구현",
+      "description": "external_meta_sources 다중 소스에서 메타 병합. 우선순위: manual > tmdb > kobis > watcha > ai. ContentAIResult와 confidence_score 활용.",
+      "status": "completed",
+      "summary": "resolve_metadata() + 소스별 파서 구현, ExternalSourceType 확장(manual/bulk_upload), DB 검증 완료",
+      "completed_at": "2026-05-15T15:00:00+09:00",
+      "files": ["step1.md"],
+      "created_at": "2026-05-15T14:30:00+09:00"
+    },
+    {
+      "id": "2",
+      "title": "벌크 업로드 API 확장",
+      "description": "CSV 필드 확대(8열): title, production_year, content_type, cp_name, synopsis, cast, directors, genres, country, runtime. external_meta_sources 저장 후 resolution 호출.",
+      "status": "completed",
+      "summary": "CSV 8열 파싱 + ExternalMetaSource(bulk_upload) 저장 + resolve_metadata 연결. ContentUpdate 스키마 + PUT /contents/{id} 엔드포인트 추가",
+      "completed_at": "2026-05-15T15:30:00+09:00",
+      "files": ["step2.md"],
+      "created_at": "2026-05-15T14:30:00+09:00"
+    },
+    {
+      "id": "3",
+      "title": "프론트 IA 재구성",
+      "description": "AddContentModal 제거. 메뉴 분해: 콘텐츠 등록(단일) / 일괄 업로드(CSV) / 외부 검색(TMDB/KOBIS). 라우트 추가: /new, /upload, /external, /[id]/edit.",
+      "status": "completed",
+      "summary": "docs.ts 3개 메뉴 추가 + /new /upload /external /[id]/edit 페이지 신규 + ContentForm 공유 컴포넌트 + AddContentModal 제거 + 목록/상세 [편집] 버튼. 타입체크 통과",
+      "completed_at": "2026-05-15T16:00:00+09:00",
+      "files": ["step3.md"],
+      "created_at": "2026-05-15T14:30:00+09:00"
+    },
+    {
+      "id": "4",
+      "title": "수동 입력 페이지 구현",
+      "description": "/new, /[id]/edit 페이지. ContentForm 컴포넌트 (공유). 필드: title, synopsis, genres, cast, directors, country, runtime, poster_url, rating_age.",
+      "status": "completed",
+      "summary": "POST/PUT API E2E 검증 — credits 3건/genres 2건 DB 저장 확인. 프론트 /new /upload /external 200 OK 확인",
+      "completed_at": "2026-05-15T16:30:00+09:00",
+      "files": ["step4.md"],
+      "created_at": "2026-05-15T14:30:00+09:00"
+    },
+    {
+      "id": "5",
+      "title": "Watcha 데이터 재크롤",
+      "description": "04_to_upload_csv.py 확대(8열 출력). crawler에 cast/director 추출 추가. 679건 재처리 + 재업로드. resolution 트리거로 credits 테이블 채우기.",
+      "status": "pending",
+      "files": ["step5.md"],
+      "created_at": "2026-05-15T14:30:00+09:00"
+    },
+    {
+      "id": "6",
+      "title": "AI 추천 fill (선택)",
+      "description": "missing_fields_task: content_ai_results 조회 → confidence_score > 0.7인 값 자동 채우기. tmdb_cache/web_search_cache 활용. ContentMetadata.ai_filled 플래그 추가.",
+      "status": "pending",
+      "files": ["step6.md"],
+      "created_at": "2026-05-15T14:30:00+09:00"
+    }
+  ]
+}

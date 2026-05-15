@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import {
   Search, X, ChevronLeft, ChevronRight, RefreshCw,
-  Film, Tv, Layers, Play, Check, RotateCcw, Link2, Plus,
+  Film, Tv, Layers, Play, Check, RotateCcw, Link2,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { metadataApi, type ContentOut, type ContentStatus, type ContentType, resolvePosterUrl } from "@/lib/api"
-import { AddContentModal } from "@/components/contents/AddContentModal"
 import { BulkActionModal, type BulkTarget } from "@/components/contents/BulkActionModal"
 
 // ── 타입 ───────────────────────────────────────────────────
@@ -151,7 +151,6 @@ export default function ContentsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   // 모달
-  const [addModalOpen, setAddModalOpen] = useState(false)
   const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [bulkAction, setBulkAction] = useState<"approve" | "reject" | "reprocess" | "rematch">("approve")
   const bulkTargets: BulkTarget[] = Array.from(selectedIds).map(id => {
@@ -246,13 +245,6 @@ export default function ContentsPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAddModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" /> 콘텐츠 추가
-          </button>
           <button
             type="button"
             onClick={() => fetchList(appliedForm, page, size)}
@@ -498,6 +490,14 @@ export default function ContentsPage() {
                       <td className="px-4 py-3"><QualityBadge score={item.quality_score} /></td>
                       <td className="px-4 py-3"><EnrichmentBadge enrichment={item.enrichment} /></td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(item.created_at)}</td>
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Link
+                          href={`/programming/contents/${item.id}/edit`}
+                          className="inline-flex items-center px-2.5 py-1 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors"
+                        >
+                          편집
+                        </Link>
+                      </td>
                     </tr>
                   )
                 })
@@ -549,7 +549,6 @@ export default function ContentsPage() {
         )}
       </div>
       {/* Modals */}
-      <AddContentModal open={addModalOpen} onOpenChange={setAddModalOpen} />
       <BulkActionModal open={bulkModalOpen} onOpenChange={setBulkModalOpen} action={bulkAction} targets={bulkTargets} />
 
     </div>

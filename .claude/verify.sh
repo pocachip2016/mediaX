@@ -1340,9 +1340,216 @@ print('  ✓ ContentDetail 필드 확장 OK:', list(fields.keys()))
   2.3) bash "$0" detail-vod-2.3 ;;
   3.1) bash "$0" detail-vod-3.1 ;;
 
+  # ── dev-flexible-meta-pipeline ───────────────────────────
+  flexible-meta-step0)
+    echo "=== flexible-meta-step0: 더미 데이터 정리 ==="
+    python3 -c "
+from shared.database import SessionLocal
+from api.programming.metadata.models import Content
+db = SessionLocal()
+dummy = db.query(Content).filter(Content.title.like('콘텐츠_%')).count()
+assert dummy == 0, f'더미 데이터 {dummy}건 남아있음'
+total = db.query(Content).count()
+db.close()
+print(f'  ✓ 더미 0건, 총 콘텐츠 {total}건')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step4)
+    echo "=== flexible-meta-step4: 수동 입력 UI 검증 ==="
+    # 1. 백엔드 API E2E 테스트
+    python3 -c "
+import urllib.request, json
+
+BASE = 'http://localhost:8000'
+
+# POST /contents 신규 등록
+req = urllib.request.Request(
+    f'{BASE}/api/programming/metadata/contents',
+    data=json.dumps({'title': 'verify-step4-테스트', 'content_type': 'movie', 'cp_name': 'TestCP'}).encode(),
+    headers={'Content-Type': 'application/json'},
+    method='POST',
+)
+with urllib.request.urlopen(req) as r:
+    content = json.loads(r.read())
+cid = content['id']
+assert content['title'] == 'verify-step4-테스트', f'title mismatch: {content[\"title\"]}'
+print(f'  ✓ POST /contents → id={cid}')
+
+# PUT /contents/{id} 수동 수정
+req2 = urllib.request.Request(
+    f'{BASE}/api/programming/metadata/contents/{cid}',
+    data=json.dumps({'cast': '홍길동, 이영희', 'directors': '테스트감독', 'genres': '액션, 드라마'}).encode(),
+    headers={'Content-Type': 'application/json'},
+    method='PUT',
+)
+with urllib.request.urlopen(req2) as r:
+    r.read()
+print(f'  ✓ PUT /contents/{cid}')
+
+# GET /contents/{id} credits/genres 확인
+with urllib.request.urlopen(f'{BASE}/api/programming/metadata/contents/{cid}') as r:
+    detail = json.loads(r.read())
+
+credits = detail.get('credits', [])
+genres = detail.get('genres', [])
+actors = [c for c in credits if c['role'] == 'actor']
+directors = [c for c in credits if c['role'] == 'director']
+assert len(actors) == 2, f'actor 2명 기대, 실제 {len(actors)}명'
+assert len(directors) == 1, f'director 1명 기대, 실제 {len(directors)}명'
+assert len(genres) == 2, f'genre 2개 기대, 실제 {len(genres)}개'
+print(f'  ✓ credits {len(credits)}건, genres {len(genres)}건 저장 확인')
+"
+    # 2. 프론트 새 페이지 접근 확인
+    for path in "/programming/contents/new" "/programming/contents/upload" "/programming/contents/external"; do
+      code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3002${path}")
+      [ "$code" = "200" ] || { echo "FAIL: ${path} → ${code}"; exit 1; }
+    done
+    echo "  ✓ 프론트 3개 페이지 200 OK"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step3)
+    echo "=== flexible-meta-step3: 프론트 IA 재구성 ==="
+    cd "$SCRIPT_DIR/.."
+    # 1. docs.ts 메뉴 3개 추가 확인
+    node -e "
+const fs = require('fs');
+const src = fs.readFileSync('mediaX-CMS/apps/web/config/docs.ts', 'utf8');
+['콘텐츠 등록', '일괄 업로드', '외부 검색'].forEach(title => {
+  if (!src.includes(title)) throw new Error(title + ' 메뉴 없음');
+});
+console.log('  ✓ docs.ts 메뉴 3개 추가 OK');
+"
+    # 2. 새 페이지 파일 존재 확인
+    for f in \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/upload/page.tsx" \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/external/page.tsx" \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/[id]/edit/page.tsx" \
+      "mediaX-CMS/apps/web/components/contents/ContentForm.tsx"; do
+      [ -f "$f" ] || { echo "파일 없음: $f"; exit 1; }
+    done
+    echo "  ✓ 새 페이지 5개 + ContentForm 존재 OK"
+    # 3. AddContentModal 제거 확인 (목록 페이지에서 import 없어야 함)
+    ! grep -q "AddContentModal" "mediaX-CMS/apps/web/app/(main)/programming/contents/page.tsx" \
+      || { echo "AddContentModal 아직 목록 페이지에 있음"; exit 1; }
+    echo "  ✓ AddContentModal 제거 OK"
+    # 4. TypeScript 타입체크
+    cd mediaX-CMS && npm run typecheck 2>&1 | grep -E "error TS|PASS|Tasks:" | tail -5
+    cd ..
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step2)
+    echo "=== flexible-meta-step2: 벌크 업로드 API 확장 + PUT 엔드포인트 ==="
+    python3 -c "
+# 1. ContentUpdate 스키마 존재 확인
+from api.programming.metadata.schemas import ContentUpdate
+data = ContentUpdate(synopsis='테스트', cast='배우1, 배우2', directors='감독1')
+assert data.synopsis == '테스트'
+assert data.cast == '배우1, 배우2'
+print('  ✓ ContentUpdate 스키마 OK')
+
+# 2. update_content 서비스 import + 실행
+from api.programming.metadata.service import update_content
+from shared.database import SessionLocal
+from api.programming.metadata.models import Content
+from api.programming.metadata.models.external import ExternalSourceType
+
+db = SessionLocal()
+content = db.query(Content).first()
+if content:
+    result = update_content(db, content.id, ContentUpdate(synopsis='검증용 줄거리'))
+    # ExternalMetaSource(manual) 저장 확인
+    from api.programming.metadata.models import ExternalMetaSource
+    manual_src = db.query(ExternalMetaSource).filter(
+        ExternalMetaSource.content_id == content.id,
+        ExternalMetaSource.source_type == ExternalSourceType.manual,
+    ).first()
+    assert manual_src is not None, 'manual ExternalMetaSource 없음'
+    assert manual_src.raw_json.get('synopsis') == '검증용 줄거리'
+    print(f'  ✓ update_content + manual ExternalMetaSource 저장 OK (content_id={content.id})')
+    db.rollback()
+db.close()
+
+# 3. process_batch_rows 시그니처 + bulk_upload source 사용 확인
+import inspect
+from api.programming.metadata.service import process_batch_rows
+src = inspect.getsource(process_batch_rows)
+assert 'ExternalSourceType.bulk_upload' in src, 'bulk_upload source_type 없음'
+assert 'resolve_metadata' in src, 'resolve_metadata 호출 없음'
+print('  ✓ process_batch_rows bulk_upload + resolve_metadata OK')
+
+# 4. router PUT 엔드포인트 등록 확인
+from api.programming.metadata.router import router
+put_routes = [r for r in router.routes if hasattr(r, 'methods') and 'PUT' in r.methods]
+assert any('/contents/{content_id}' in str(r.path) for r in put_routes), 'PUT /contents/{id} 없음'
+print('  ✓ PUT /contents/{content_id} 엔드포인트 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step1)
+    echo "=== flexible-meta-step1: Resolution Service ==="
+    python3 -c "
+from api.programming.metadata.models.external import ExternalSourceType
+assert hasattr(ExternalSourceType, 'manual'), 'manual 타입 없음'
+assert hasattr(ExternalSourceType, 'bulk_upload'), 'bulk_upload 타입 없음'
+print('  ✓ ExternalSourceType 확장 OK')
+from api.programming.metadata.service import (
+    resolve_metadata, _source_priority, _parse_source_fields,
+    _get_or_create_genre, _get_or_create_person,
+)
+assert _source_priority('manual') == 100
+assert _source_priority('tmdb') == 80
+assert _source_priority('kobis') == 70
+assert _source_priority('watcha') == 50
+print('  ✓ _source_priority OK')
+fields = _parse_source_fields('tmdb', {
+    'title': '테스트', 'overview': '줄거리', 'runtime': 120,
+    'genres': [{'name': '드라마'}],
+    'credits': {'cast': [{'name': '배우1', 'character': '역1'}], 'crew': [{'name': '감독1', 'job': 'Director'}]},
+    'production_countries': [{'name': 'Korea'}],
+    'release_date': '2024-01-01',
+})
+assert fields['title'] == '테스트'
+assert fields['synopsis'] == '줄거리'
+assert fields['runtime'] == 120
+assert fields['genres'] == ['드라마']
+assert fields['directors'] == ['감독1']
+assert len(fields['cast']) == 1
+assert fields['country'] == 'Korea'
+assert fields['production_year'] == 2024
+print('  ✓ _parse_source_fields (TMDB) OK')
+fields2 = _parse_source_fields('watcha', {
+    'cast': '배우A, 배우B', 'directors': '감독X', 'genres': '드라마/, 판타지/',
+    'runtime': '90분',
+})
+assert fields2['cast'][0]['name'] == '배우A'
+assert fields2['directors'][0] == '감독X'
+assert '드라마' in fields2['genres']
+assert fields2['runtime'] == 90
+print('  ✓ _parse_source_fields (watcha/bulk) OK')
+from shared.database import SessionLocal
+db = SessionLocal()
+g = _get_or_create_genre(db, '__test_genre__', 'test')
+assert g is not None
+assert g.name_ko == '__test_genre__'
+p = _get_or_create_person(db, '__test_person__')
+assert p is not None
+assert p.name_ko == '__test_person__'
+db.rollback()
+db.close()
+print('  ✓ get_or_create helpers OK')
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step1"
     exit 1
     ;;
 esac

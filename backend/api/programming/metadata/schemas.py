@@ -24,6 +24,20 @@ class ContentCreate(BaseModel):
     episode_number: Optional[int] = None
 
 
+class ContentUpdate(BaseModel):
+    """PUT /contents/{id} — 수동 수정. 입력된 필드만 manual source로 external_meta_sources에 저장."""
+    title: Optional[str] = None
+    synopsis: Optional[str] = None
+    cast: Optional[str] = None        # "배우1, 배우2, ..." 쉼표 구분
+    directors: Optional[str] = None  # "감독1, 감독2, ..."
+    genres: Optional[str] = None     # "드라마, 판타지, ..."
+    country: Optional[str] = None
+    runtime: Optional[int] = None    # 분 단위
+    rating_age: Optional[str] = None
+    poster_url: Optional[str] = None
+    production_year: Optional[int] = None
+
+
 class ContentOut(BaseModel):
     id: int
     title: str

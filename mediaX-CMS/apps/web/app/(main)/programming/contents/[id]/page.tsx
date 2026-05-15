@@ -309,6 +309,12 @@ export default function ContentDetailPage() {
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap">
+                <Link
+                  href={`/programming/contents/${content.id}/edit`}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm"
+                >
+                  ✏️ 편집
+                </Link>
                 <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200 text-sm">
                   <Check className="h-4 w-4" />
                   승인
