@@ -33,6 +33,7 @@ class ContentOut(BaseModel):
     cp_name: Optional[str]
     production_year: Optional[int]
     runtime_minutes: Optional[int]
+    country: Optional[str] = None
     created_at: datetime
     quality_score: Optional[float] = None
     poster_url: Optional[str] = None
@@ -40,8 +41,47 @@ class ContentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PersonOut(BaseModel):
+    id: int
+    name_ko: str
+    name_en: Optional[str] = None
+    tmdb_person_id: Optional[int] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ContentCreditOut(BaseModel):
+    id: int
+    person: PersonOut
+    role: str
+    character_name: Optional[str] = None
+    cast_order: Optional[int] = None
+    source: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class GenreOut(BaseModel):
+    id: int
+    code: str
+    name_ko: str
+
+    model_config = {"from_attributes": True}
+
+
+class ContentGenreOut(BaseModel):
+    genre: GenreOut
+    is_primary: bool = False
+    source: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class ContentDetail(ContentOut):
     metadata_record: Optional[MetadataOut] = None
+    genres: list[ContentGenreOut] = Field(default_factory=list)
+    credits: list[ContentCreditOut] = Field(default_factory=list)
+    external_sources: list[ExternalSourceOut] = Field(default_factory=list)
 
 
 # ── Metadata ──────────────────────────────────────────────

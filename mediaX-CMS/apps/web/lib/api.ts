@@ -63,8 +63,39 @@ export interface MetadataOut {
   reviewed_at: string | null
 }
 
+export interface PersonOut {
+  id: number
+  name_ko: string
+  name_en: string | null
+  tmdb_person_id: number | null
+}
+
+export interface ContentCreditOut {
+  id: number
+  person: PersonOut
+  role: string
+  character_name: string | null
+  cast_order: number | null
+  source: string | null
+}
+
+export interface GenreOut {
+  id: number
+  code: string
+  name_ko: string
+}
+
+export interface ContentGenreOut {
+  genre: GenreOut
+  is_primary: boolean
+  source: string | null
+}
+
 export interface ContentDetail extends ContentOut {
   metadata_record: MetadataOut | null
+  genres: ContentGenreOut[]
+  credits: ContentCreditOut[]
+  external_sources: ExternalSourceOut[]
 }
 
 export interface PaginatedContents {

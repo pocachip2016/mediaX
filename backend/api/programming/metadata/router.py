@@ -119,7 +119,11 @@ def get_content(content_id: int, db: Session = Depends(get_db)):
     content = service.get_content(db, content_id)
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    return ContentDetail.model_validate(content)
+    out = ContentDetail.model_validate(content)
+    out.poster_url = service._primary_poster_url(content)
+    if content.metadata_record:
+        out.quality_score = content.metadata_record.quality_score
+    return out
 
 
 @router.post("/contents/{content_id}/process")

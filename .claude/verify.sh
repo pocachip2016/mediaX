@@ -1304,16 +1304,45 @@ print('  ✓ 엔드포인트 3개 OK')
     echo "=== PASS ==="
     ;;
 
-  1.1) bash "$0" poster-recommend-1.1 ;;
-  1.2) bash "$0" poster-recommend-1.2 ;;
-  1.3) bash "$0" poster-recommend-1.3 ;;
-  2.1) bash "$0" poster-recommend-2.1 ;;
-  2.2) bash "$0" poster-recommend-2.2 ;;
-  3.1) bash "$0" poster-recommend-3.1 ;;
+  detail-vod-1.1)
+    echo "=== detail-vod-1.1: backend ContentDetail 확장 ==="
+    cd "$BACKEND"
+    python3 -c "
+from api.programming.metadata.schemas import ContentDetail, ContentCreditOut, ContentGenreOut, PersonOut
+fields = ContentDetail.model_fields
+for k in ['metadata_record','genres','credits','external_sources']:
+    assert k in fields, f'{k} 누락'
+print('  ✓ ContentDetail 필드 확장 OK:', list(fields.keys()))
+"
+    echo "=== PASS ==="
+    ;;
+
+  detail-vod-1.2)
+    echo "=== detail-vod-1.2: frontend 타입 확장 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    grep -q "CreditOut\|credits:" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ CreditOut 타입 없음"; exit 1; }
+    grep -q "genres:" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ genres 필드 없음"; exit 1; }
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  detail-vod-2.1|detail-vod-2.2|detail-vod-2.3|detail-vod-3.1)
+    echo "=== ${STEP}: frontend UI step ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  1.1) bash "$0" detail-vod-1.1 ;;
+  1.2) bash "$0" detail-vod-1.2 ;;
+  2.1) bash "$0" detail-vod-2.1 ;;
+  2.2) bash "$0" detail-vod-2.2 ;;
+  2.3) bash "$0" detail-vod-2.3 ;;
+  3.1) bash "$0" detail-vod-3.1 ;;
 
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1"
     exit 1
     ;;
 esac

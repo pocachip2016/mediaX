@@ -21,6 +21,7 @@ from api.programming.metadata.models import (
     Content, ContentMetadata, CpEmailLog, ContentBatchJob,
     ContentStatus, ContentType,
     ExternalMetaSource,
+    ContentGenre, ContentCredit,
 )
 from api.programming.metadata.schemas import (
     ContentCreate, MetadataReviewAction, DashboardStats,
@@ -46,7 +47,13 @@ def create_content(db: Session, data: ContentCreate) -> Content:
 def get_content(db: Session, content_id: int) -> Optional[Content]:
     return (
         db.query(Content)
-        .options(joinedload(Content.metadata_record))
+        .options(
+            joinedload(Content.metadata_record),
+            selectinload(Content.genres).joinedload(ContentGenre.genre),
+            selectinload(Content.credits).joinedload(ContentCredit.person),
+            selectinload(Content.external_sources),
+            selectinload(Content.images),
+        )
         .filter(Content.id == content_id)
         .first()
     )

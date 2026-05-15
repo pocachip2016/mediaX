@@ -17,6 +17,7 @@ import difflib
 import imaplib
 import email
 import logging
+import os
 import httpx
 from email.header import decode_header
 from datetime import datetime, timedelta
@@ -415,6 +416,91 @@ async def _async_sync_tmdb(db, api_key: str) -> dict:
     return {"total": len(unmapped), "updated": updated, "skipped": skipped, "failed": failed}
 
 
+@celery_app.task(name="workers.tasks.metadata.backfill_tmdb_details")
+def backfill_tmdb_details(batch: int = 100):
+    """기존 TMDB 매핑 레코드의 runtime/country/credits 백필 (TMDB detail 재조회)"""
+    db = SessionLocal()
+    try:
+        api_key = os.environ.get("TMDB_API_KEY", "")
+        if not api_key:
+            logger.warning("[backfill_tmdb] TMDB_API_KEY 없음")
+            return {"error": "no api key"}
+        stats = asyncio.run(_async_backfill_tmdb(db, api_key, batch))
+        logger.info(f"[backfill_tmdb] 완료: {stats}")
+        return stats
+    finally:
+        db.close()
+
+
+async def _async_backfill_tmdb(db, api_key: str, batch: int) -> dict:
+    from api.programming.metadata.models import (
+        Content, ContentType, ExternalMetaSource, ExternalSourceType,
+    )
+
+    targets = (
+        db.query(Content, ExternalMetaSource)
+        .join(
+            ExternalMetaSource,
+            (ExternalMetaSource.content_id == Content.id) &
+            (ExternalMetaSource.source_type == ExternalSourceType.tmdb),
+        )
+        .filter(Content.content_type.in_([ContentType.movie, ContentType.series]))
+        .filter(Content.runtime_minutes.is_(None))
+        .limit(batch)
+        .all()
+    )
+
+    updated = failed = 0
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for content, ext_src in targets:
+            try:
+                tmdb_id = ext_src.external_id
+                is_series = content.content_type == ContentType.series
+                detail_url = (
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}"
+                    if is_series
+                    else f"https://api.themoviedb.org/3/movie/{tmdb_id}"
+                )
+                resp = await client.get(
+                    detail_url,
+                    params={"api_key": api_key, "language": "ko-KR", "append_to_response": "credits"},
+                )
+                if resp.status_code != 200:
+                    logger.warning(f"[backfill_tmdb] content_id={content.id} TMDB {resp.status_code}")
+                    failed += 1
+                    continue
+                detail = resp.json()
+
+                if not content.runtime_minutes:
+                    runtime = (
+                        detail.get("runtime")
+                        or (detail.get("episode_run_time") or [None])[0]
+                    )
+                    if runtime:
+                        content.runtime_minutes = int(runtime)
+
+                if not content.country:
+                    countries = (
+                        [c.get("iso_3166_1") for c in detail.get("production_countries", [])]
+                        or detail.get("origin_country", [])
+                    )
+                    if countries:
+                        content.country = countries[0]
+
+                ext_src.raw_json = detail
+                _save_credits(content.id, detail.get("credits", {}), db)
+
+                db.commit()
+                updated += 1
+                await asyncio.sleep(0.1)  # TMDB rate limit
+            except Exception as exc:
+                logger.warning(f"[backfill_tmdb] content_id={content.id} 실패: {exc}")
+                db.rollback()
+                failed += 1
+
+    return {"total": len(targets), "updated": updated, "failed": failed}
+
+
 @celery_app.task(name="workers.tasks.metadata.reeval_quality_scores")
 def reeval_quality_scores():
     """메타 품질 재평가 배치 (매일 01:00)"""
@@ -586,6 +672,23 @@ async def _tmdb_search_and_save(content, db, api_key: str) -> dict | None:
                     raw_json=detail,
                     matched_at=datetime.utcnow(),
                 ))
+
+            # Content 필드 보강 (runtime_minutes / country) — 기존 값 우선 보존
+            if not content.runtime_minutes:
+                runtime = (
+                    detail.get("runtime")  # movie
+                    or (detail.get("episode_run_time") or [None])[0]  # tv
+                )
+                if runtime:
+                    content.runtime_minutes = int(runtime)
+
+            if not content.country:
+                countries = (
+                    [c.get("iso_3166_1") for c in detail.get("production_countries", [])]
+                    or detail.get("origin_country", [])
+                )
+                if countries:
+                    content.country = countries[0]
 
             # 포스터 이미지 저장 — service.add_content_image() 와 동일 규약 (멱등 + is_primary)
             # commit 분리: 워커 트랜잭션 원자성을 위해 헬퍼 대신 인라인 처리

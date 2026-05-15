@@ -8,9 +8,11 @@ import {
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
-import { metadataApi, imageMetaApi, posterRecommendApi, type ContentOut, type ImageMetaOut, type PosterCandidateOut, resolvePosterUrl } from "@/lib/api"
+import { metadataApi, imageMetaApi, posterRecommendApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, resolvePosterUrl } from "@/lib/api"
+import { SourceBadge } from "@/components/source-badge"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
+
 
 const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
   waiting: { label: "대기", emoji: "⏳", color: "bg-slate-100 text-slate-600" },
@@ -47,7 +49,7 @@ export default function ContentDetailPage() {
   const router = useRouter()
   const contentId = Number(params.id)
   
-  const [content, setContent] = useState<ContentOut | null>(null)
+  const [content, setContent] = useState<ContentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabName>("text")
   const [selectedSynopsis, setSelectedSynopsis] = useState<"cp" | "ai" | "tmdb" | "manual">("ai")
@@ -57,6 +59,7 @@ export default function ContentDetailPage() {
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
   const [posterRecommending, setPosterRecommending] = useState(false)
   const [posterSelecting, setPosterSelecting] = useState<number | null>(null)
+  const [castExpanded, setCastExpanded] = useState(false)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -169,76 +172,219 @@ export default function ContentDetailPage() {
     }
   }
 
-  const mockQualityScore = 82
   const statusInfo = (STATUS_BADGE[content.status] ?? STATUS_BADGE.waiting)!
+  const qualityScore = content.quality_score ?? 0
+  const posterSrc = resolvePosterUrl(content.poster_url)
+  const contentTypeLabel =
+    content.content_type === "movie" ? "영화"
+    : content.content_type === "series" ? "시리즈"
+    : content.content_type === "season" ? "시즌"
+    : "에피소드"
+
+  const directors = content.credits.filter(
+    (c) => c.role.toLowerCase().includes("director") || c.role === "감독"
+  )
+  const leads = content.credits
+    .filter((c) => ["actor", "cast", "주연", "출연"].includes(c.role.toLowerCase()))
+    .sort((a, b) => (a.cast_order ?? 99) - (b.cast_order ?? 99))
+    .slice(0, 3)
+  const synopsis =
+    content.metadata_record?.final_synopsis ||
+    content.metadata_record?.ai_synopsis ||
+    content.metadata_record?.cp_synopsis ||
+    null
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* Header */}
+      {/* Header — VOD 스타일: 포스터(좌) + 메타(우) */}
       <div className="mb-6 bg-white rounded-lg border border-slate-200 p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-start gap-4">
-            <Link href="/programming/contents" className="text-slate-400 hover:text-slate-600 mt-1">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{content.title}</h1>
-              {content.original_title && (
-                <p className="text-slate-600 text-sm mt-1">{content.original_title}</p>
+        <div className="flex gap-6">
+          {/* 포스터 (2:3 비율) */}
+          <div className="flex-shrink-0 w-44">
+            <div className="aspect-[2/3] rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center shadow-sm">
+              {posterSrc ? (
+                <img src={posterSrc} alt={content.title} className="w-full h-full object-cover" />
+              ) : (
+                <Film className="h-12 w-12 text-slate-300" />
               )}
-              <p className="text-slate-500 text-sm mt-2">
-                {content.content_type === "movie" ? "영화" : content.content_type === "series" ? "시리즈" : content.content_type} ·
-                {content.cp_name ? ` ${content.cp_name} ·` : ""} {content.production_year || ""}
-              </p>
             </div>
           </div>
-          <div className="text-right">
-            <div className={cn("inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium", statusInfo.color)}>
-              {statusInfo.emoji} {statusInfo.label}
-            </div>
-            <p className="text-slate-500 text-xs mt-2">ID: #{content.id}</p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-4 mb-4 pb-4 border-b border-slate-200">
-          <div className="flex-1">
-            <p className="text-xs text-slate-500 mb-1">품질 점수</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
-                <div className="bg-amber-500 h-full" style={{ width: `${mockQualityScore}%` }} />
+          {/* 메타 정보 */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            {/* 제목 */}
+            <div className="flex items-start gap-3 min-w-0 mb-2">
+              <Link href="/programming/contents" className="text-slate-400 hover:text-slate-600 mt-1 flex-shrink-0">
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold text-slate-900 leading-tight">{content.title}</h1>
+                {content.original_title && (
+                  <p className="text-slate-500 text-sm mt-0.5">{content.original_title}</p>
+                )}
               </div>
-              <span className="font-bold text-sm text-amber-700">{mockQualityScore}</span>
+            </div>
+
+            {/* 장르 칩 */}
+            {content.genres.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {content.genres.map((g) => (
+                  <span
+                    key={g.genre.id}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium bg-slate-50 border border-slate-200",
+                      g.is_primary && "border-blue-300 bg-blue-50 text-blue-800",
+                    )}
+                  >
+                    {g.genre.name_ko}
+                    {g.source && <SourceBadge source={g.source} />}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* 기본 메타 필드 */}
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600 mb-3">
+              <span className="inline-flex items-center gap-1">
+                <span className="text-slate-400">유형</span> {contentTypeLabel}
+              </span>
+              {content.production_year && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-slate-400">📅</span> {content.production_year}
+                </span>
+              )}
+              {content.cp_name && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-slate-400">🏢</span> {content.cp_name}
+                </span>
+              )}
+              {content.runtime_minutes && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-slate-400">⏱</span> {content.runtime_minutes}분
+                </span>
+              )}
+              {content.country && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-slate-400">🌐</span> {content.country}
+                </span>
+              )}
+            </div>
+
+            {/* 감독 / 주연 / 줄거리 */}
+            {(directors.length > 0 || leads.length > 0 || synopsis) && (
+              <div className="space-y-1.5 mb-3 text-sm">
+                {directors.length > 0 && (
+                  <div className="flex gap-2">
+                    <span className="text-slate-400 w-10 flex-shrink-0">감독</span>
+                    <span className="text-slate-800">{directors.map((d) => d.person.name_ko).join(" · ")}</span>
+                  </div>
+                )}
+                {leads.length > 0 && (
+                  <div className="flex gap-2">
+                    <span className="text-slate-400 w-10 flex-shrink-0">주연</span>
+                    <span className="text-slate-800">{leads.map((l) => l.person.name_ko).join(" · ")}</span>
+                  </div>
+                )}
+                {synopsis && (
+                  <div className="flex gap-2">
+                    <span className="text-slate-400 w-10 flex-shrink-0 mt-0.5">줄거리</span>
+                    <p className="text-slate-700 leading-snug line-clamp-2">{synopsis}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 검수 상태 · 품질 점수 · 액션 버튼 */}
+            <div className="mt-auto pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-3 mb-2.5">
+                <div className={cn("inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium", statusInfo.color)}>
+                  {statusInfo.emoji} {statusInfo.label}
+                </div>
+                <span className="text-slate-400 text-xs">#{content.id}</span>
+                <div className="flex-1 flex items-center gap-2 ml-2">
+                  <div className="flex-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-amber-500 h-full" style={{ width: `${qualityScore}%` }} />
+                  </div>
+                  <span className="font-bold text-sm text-amber-700 w-8 text-right">{qualityScore}</span>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200 text-sm">
+                  <Check className="h-4 w-4" />
+                  승인
+                </button>
+                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200 text-sm">
+                  <X className="h-4 w-4" />
+                  반려
+                </button>
+                <button onClick={handlePartialReprocess} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
+                  <RotateCcw className="h-4 w-4" />
+                  AI 재처리
+                </button>
+                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 text-sm">
+                  <Eye className="h-4 w-4" />
+                  외부 재매칭
+                </button>
+                <button onClick={handleLockFields} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+                  🔒 잠금
+                </button>
+                <button onClick={handleRequestPreviewClip} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+                  <Film className="h-4 w-4" />
+                  Preview clip
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2">
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200 text-sm">
-            <Check className="h-4 w-4" />
-            승인
-          </button>
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200 text-sm">
-            <X className="h-4 w-4" />
-            반려
-          </button>
-          <button onClick={handlePartialReprocess} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
-            <RotateCcw className="h-4 w-4" />
-            AI 재처리
-          </button>
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 text-sm">
-            <Eye className="h-4 w-4" />
-            외부 재매칭
-          </button>
-          <button onClick={handleLockFields} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
-            🔒 잠금
-          </button>
-          <button onClick={handleRequestPreviewClip} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
-            <Film className="h-4 w-4" />
-            Preview clip
-          </button>
         </div>
       </div>
+
+      {/* 출연진 섹션 */}
+      {content.credits.length > 0 && (() => {
+        const sorted = [...content.credits].sort((a, b) => {
+          if (a.cast_order == null && b.cast_order == null) return 0
+          if (a.cast_order == null) return 1
+          if (b.cast_order == null) return -1
+          return a.cast_order - b.cast_order
+        })
+        const PREVIEW = 8
+        const visible = castExpanded ? sorted : sorted.slice(0, PREVIEW)
+        return (
+          <div className="mb-6 bg-white rounded-lg border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-slate-900">출연진 ({content.credits.length})</h2>
+              {sorted.length > PREVIEW && (
+                <button
+                  onClick={() => setCastExpanded((v) => !v)}
+                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  {castExpanded ? "접기" : "전체 보기"}
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", castExpanded && "rotate-180")} />
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
+              {visible.map((credit) => (
+                <div key={credit.id} className="flex flex-col items-center gap-1.5 text-center">
+                  <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-semibold text-sm flex-shrink-0">
+                    {credit.person.name_ko.charAt(0)}
+                  </div>
+                  <div className="w-full">
+                    <p className="text-xs font-medium text-slate-800 truncate leading-tight">{credit.person.name_ko}</p>
+                    <p className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
+                      {credit.character_name ?? credit.role}
+                    </p>
+                    {credit.source && (
+                      <div className="mt-1 flex justify-center">
+                        <SourceBadge source={credit.source} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Tabs */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -268,21 +414,19 @@ export default function ContentDetailPage() {
               <div>
                 <h3 className="font-semibold text-slate-900 mb-3">시놉시스</h3>
                 <div className="grid grid-cols-3 gap-4">
+                  {/* CP 시놉시스 */}
                   <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
-                    <div className="text-xs font-semibold text-slate-600 mb-2">
-                      <span className="inline-block px-2 py-0.5 rounded bg-slate-200 text-slate-700">[CP]</span>
-                      <span className="ml-2">trust 100</span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <SourceBadge source="cp" score={100} />
                     </div>
                     <p className="text-sm text-slate-500">(없음)</p>
                     <input type="radio" name="synopsis" disabled className="mt-3" />
                   </div>
 
+                  {/* AI 시놉시스 */}
                   <div className={cn("border-2 rounded-lg p-4", selectedSynopsis === "ai" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white")}>
-                    <div className="text-xs font-semibold text-slate-600 mb-2 flex items-center justify-between">
-                      <span>
-                        <span className="inline-block px-2 py-0.5 rounded bg-purple-100 text-purple-700">[AI]</span>
-                        <span className="ml-2">score 89</span>
-                      </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <SourceBadge source="ai" score={89} />
                       <span className="inline-block px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">자동</span>
                     </div>
                     <p className="text-sm text-slate-700 mb-3">가난한 가족이 부유한 가족의 집에 침투하면서...</p>
@@ -298,10 +442,10 @@ export default function ContentDetailPage() {
                     </div>
                   </div>
 
+                  {/* TMDB 시놉시스 */}
                   <div className={cn("border-2 rounded-lg p-4", selectedSynopsis === "tmdb" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white")}>
-                    <div className="text-xs font-semibold text-slate-600 mb-2">
-                      <span className="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-700">[TMDB]</span>
-                      <span className="ml-2">match .94</span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <SourceBadge source="tmdb" score={0.94} />
                     </div>
                     <p className="text-sm text-slate-700 mb-3">A poor family schemes to become employed by a wealthy...</p>
                     <div className="mt-3">
@@ -325,12 +469,26 @@ export default function ContentDetailPage() {
               <div>
                 <h3 className="font-semibold text-slate-900 mb-3">장르</h3>
                 <div className="flex gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm">
-                    드라마 <span className="text-xs">✓ TMDB·.91</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm">
-                    스릴러 <span className="text-xs">✓ AI·.84</span>
-                  </span>
+                  {content.genres.length > 0 ? (
+                    content.genres.map((g) => (
+                      <span key={g.genre.id} className={cn(
+                        "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-slate-50 border border-slate-200",
+                        g.is_primary && "border-blue-300 bg-blue-50 text-blue-800",
+                      )}>
+                        {g.genre.name_ko}
+                        {g.source && <SourceBadge source={g.source} />}
+                      </span>
+                    ))
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-200 bg-slate-50 text-sm">
+                        드라마 <SourceBadge source="tmdb" score={0.91} />
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-200 bg-slate-50 text-sm">
+                        스릴러 <SourceBadge source="ai" score={0.84} />
+                      </span>
+                    </>
+                  )}
                   <button className="px-3 py-1 rounded-full border border-dashed border-slate-300 text-slate-600 text-sm hover:bg-slate-50">
                     + 추가
                   </button>

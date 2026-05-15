@@ -4,6 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
+- [ ] genre_codes 테이블 시딩 + ContentGenre 연결 (dev-detail-page-vod-layout 후속)
 
 ## Next (이번 마일스톤 — Dam 연동)
 - [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
@@ -19,6 +20,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-detail-page-vod-layout — 상세 페이지 VOD 스타일 재설계 + TMDB backfill task + 사이드바 UX 개선 (2026-05-15)
 - [x] dev-poster-recommend Phase 2 — TMDB 다중 포스터 추천 + 운영자 primary 선택 UI 완료 (2026-05-15)
 - [x] dev-poster-display Phase 1 — 리스트/상세 포스터 표시, Watcha 237건 backfill, TMDB idempotency 강화 (2026-05-14)
 - [x] watcha-real-sampling — 237건 실데이터 크롤링, 포스터 다운로드, bulk upload + AI enrichment 트리거 완료 (2026-05-14)

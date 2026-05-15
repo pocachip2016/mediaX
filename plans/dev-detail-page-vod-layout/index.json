@@ -1,0 +1,55 @@
+{
+  "project": "mediaX",
+  "phase": "dev-detail-page-vod-layout",
+  "description": "콘텐츠 상세화면을 VOD 서비스 스타일로 재구성 (포스터·제목·장르·제작사·방영년·출연진·줄거리) + 필드별 source/score 표시",
+  "steps": [
+    {
+      "step": "1.1",
+      "name": "backend-content-detail-expand",
+      "description": "ContentOut 스키마 확장 (metadata_record/genres/credits/external_sources) + service.get_content eager-load",
+      "status": "completed",
+      "summary": "ContentDetail에 genres/credits/external_sources 추가 + 신규 스키마(PersonOut/ContentCreditOut/GenreOut/ContentGenreOut), service.get_content에 selectinload+joinedload eager-load 추가",
+      "completed_at": "2026-05-15T07:50:00+09:00"
+    },
+    {
+      "step": "1.2",
+      "name": "frontend-types-update",
+      "description": "lib/api.ts 의 ContentOut 타입 확장 + 신규 타입 (CreditOut/GenreOut/ExternalSourceOut)",
+      "status": "completed",
+      "summary": "lib/api.ts에 PersonOut/ContentCreditOut/GenreOut/ContentGenreOut 신규 + ContentDetail에 genres/credits/external_sources 추가, getContent는 이미 ContentDetail 반환",
+      "completed_at": "2026-05-15T07:55:00+09:00"
+    },
+    {
+      "step": "2.1",
+      "name": "detail-header-redesign",
+      "description": "상세 페이지 헤더 — 큰 포스터(좌, 2:3) + 메타 정보 그리드(우, 제목·장르·제작사·년도·런타임)",
+      "status": "completed",
+      "summary": "page.tsx 헤더를 포스터(w-44 aspect-[2/3]) + 메타 그리드 2-column으로 재구성, ContentDetail 타입 적용, 장르 칩+source 색상(cp/ai/tmdb/kobis), 메타 필드(년도·CP·런타임·국가), 품질점수+액션버튼 우측 배치",
+      "completed_at": "2026-05-15T11:30:00+09:00"
+    },
+    {
+      "step": "2.2",
+      "name": "source-badge-component",
+      "description": "공용 <SourceBadge source score /> 컴포넌트 (cp/ai/tmdb/kobis 색상 매핑)",
+      "status": "completed",
+      "summary": "apps/web/components/source-badge.tsx 생성 (cp/ai/tmdb/kobis 색상 매핑, optional score), 헤더 장르 칩에 즉시 적용, 인라인 SOURCE_CHIP 제거",
+      "completed_at": "2026-05-15T11:45:00+09:00"
+    },
+    {
+      "step": "2.3",
+      "name": "cast-section",
+      "description": "출연진 섹션 — credits[] top 6-8 (cast_order) + '전체 보기' 펼침",
+      "status": "completed",
+      "summary": "헤더-탭 사이에 출연진 섹션 추가 — cast_order 정렬, top 8 미리보기 + '전체 보기' 토글, 아바타(이니셜)+이름+배역+SourceBadge 카드 그리드",
+      "completed_at": "2026-05-15T12:00:00+09:00"
+    },
+    {
+      "step": "3.1",
+      "name": "synopsis-source-badges",
+      "description": "기존 시놉시스 3-card 영역을 SourceBadge로 시각 통일",
+      "status": "completed",
+      "summary": "text 탭 시놉시스 3-card 헤더를 SourceBadge로 교체(cp·score/ai·score/tmdb·score), 장르 섹션도 content.genres 데이터 연결+SourceBadge 통일",
+      "completed_at": "2026-05-15T12:15:00+09:00"
+    }
+  ]
+}

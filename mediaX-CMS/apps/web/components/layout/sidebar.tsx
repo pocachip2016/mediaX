@@ -30,7 +30,7 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
 } from "@workspace/ui/components/sidebar"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@workspace/ui/components/collapsible"
+import { Collapsible, CollapsibleContent } from "@workspace/ui/components/collapsible"
 import { Badge } from "@workspace/ui/components/badge"
 import { cn } from "@workspace/ui/lib/utils"
 import { docsNav, type NavSection, type NavItem } from "@/config/docs"
@@ -59,31 +59,29 @@ function SubGroup({
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <SidebarMenuSubItem>
-        {/* 제목 → 페이지 이동 / 화살표 → 토글 */}
-        <div className="flex items-center w-full">
-          <SidebarMenuSubButton
-            asChild
-            isActive={isGroupActive}
-            className={cn(
-              "flex-1 min-w-0 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-              isGroupActive && "text-sidebar-accent-foreground font-medium"
+        <SidebarMenuSubButton
+          asChild
+          isActive={isGroupActive}
+          className={cn(
+            "w-full text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            isGroupActive && "text-sidebar-accent-foreground font-medium"
+          )}
+        >
+          <Link href={item.href!} onClick={() => setOpen((v) => !v)} className="flex w-full items-center">
+            <span className="flex-1 truncate">{item.title}</span>
+            {item.label && (
+              <Badge variant="secondary" className="h-4 px-1 text-[10px] shrink-0">{item.label}</Badge>
             )}
-          >
-            <Link href={item.href!} onClick={() => setOpen(true)}>
-              <span className="flex-1 truncate">{item.title}</span>
-              {item.label && (
-                <Badge variant="secondary" className="h-4 px-1 text-[10px] shrink-0">{item.label}</Badge>
+            <ChevronRight
+              className={cn(
+                "size-3.5 shrink-0 transition-transform duration-200",
+                open && "rotate-90"
               )}
-            </Link>
-          </SidebarMenuSubButton>
-          <CollapsibleTrigger asChild>
-            <button className="shrink-0 p-1 rounded hover:bg-sidebar-accent text-sidebar-foreground/40 hover:text-sidebar-accent-foreground transition-colors">
-              <ChevronRight className={cn("size-3.5 transition-transform duration-200", open && "rotate-90")} />
-            </button>
-          </CollapsibleTrigger>
-        </div>
+            />
+          </Link>
+        </SidebarMenuSubButton>
         <CollapsibleContent>
-          <SidebarMenuSub>
+          <SidebarMenuSub className="mr-0 pr-0 border-l-0">
             {(item.items ?? []).filter((sub) => !sub.disabled).map((sub) => {
               const isSubActive = pathname === sub.href
               return (
@@ -92,15 +90,15 @@ function SubGroup({
                     asChild={!!sub.href}
                     isActive={isSubActive}
                     className={cn(
-                      "pl-4 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                       isSubActive && "text-sidebar-accent-foreground font-medium"
                     )}
                   >
                     {sub.href ? (
                       <Link href={sub.href} className="flex w-full items-center justify-between">
-                        <span>{sub.title}</span>
+                        <span className="truncate">{sub.title}</span>
                         {sub.label && (
-                          <Badge variant="secondary" className="h-4 px-1 text-[10px]">{sub.label}</Badge>
+                          <Badge variant="secondary" className="h-4 px-1 text-[10px] shrink-0">{sub.label}</Badge>
                         )}
                       </Link>
                     ) : (
@@ -127,10 +125,11 @@ function NavGroup({
   const isActive = pathname.startsWith(section.base)
   const [open, setOpen] = useState(isActive)
   const Icon = SECTION_ICONS[section.base] ?? LayoutDashboard
-  // "LIVE" 뱃지: 섹션 내 아이템에 label 이 있으면 섹션에도 표시
   const sectionLabel = section.items.some((i) => i.label)
     ? section.items.find((i) => i.label)?.label
     : undefined
+
+  const visibleItems = section.items.filter((item) => !item.disabled)
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="group/collapsible">
@@ -160,59 +159,57 @@ function NavGroup({
         </SidebarMenuButton>
 
         <CollapsibleContent>
-          <SidebarMenuSub>
-            {section.items
-              .filter((item) => !item.disabled)
-              .map((item) => {
-                const isItemActive = pathname === item.href
-                const hasChildren = item.items && item.items.length > 0
+          <SidebarMenuSub className="mr-0 pr-0 border-l-0">
+            {visibleItems.map((item) => {
+              const isItemActive = pathname === item.href
+              const hasChildren = item.items && item.items.length > 0
 
-                if (hasChildren) {
-                  const isGroupActive = pathname.startsWith(item.href ?? "__never__")
-                  return (
-                    <SubGroup
-                      key={item.href ?? item.title}
-                      item={item}
-                      pathname={pathname}
-                      isGroupActive={isGroupActive}
-                    />
-                  )
-                }
-
+              if (hasChildren) {
+                const isGroupActive = pathname.startsWith(item.href ?? "__never__")
                 return (
-                  <SidebarMenuSubItem key={item.href ?? item.title}>
-                    <SidebarMenuSubButton
-                      asChild={!!item.href}
-                      isActive={isItemActive}
-                      className={cn(
-                        "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                        isItemActive && "text-sidebar-accent-foreground font-medium"
-                      )}
-                    >
-                      {item.href ? (
-                        <Link
-                          href={item.href}
-                          target={item.external ? "_blank" : undefined}
-                          rel={item.external ? "noopener noreferrer" : undefined}
-                          className="flex w-full items-center justify-between"
-                        >
-                          <span>{item.title}</span>
-                          {item.label && (
-                            <Badge
-                              variant={item.label === "LIVE" ? "destructive" : "secondary"}
-                              className="h-4 px-1 text-[10px]"
-                            >
-                              {item.label}
-                            </Badge>
-                          )}
-                        </Link>
-                      ) : (
-                        <span>{item.title}</span>
-                      )}
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
+                  <SubGroup
+                    key={item.href ?? item.title}
+                    item={item}
+                    pathname={pathname}
+                    isGroupActive={isGroupActive}
+                  />
                 )
-              })}
+              }
+
+              return (
+                <SidebarMenuSubItem key={item.href ?? item.title}>
+                  <SidebarMenuSubButton
+                    asChild={!!item.href}
+                    isActive={isItemActive}
+                    className={cn(
+                      "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      isItemActive && "text-sidebar-accent-foreground font-medium"
+                    )}
+                  >
+                    {item.href ? (
+                      <Link
+                        href={item.href}
+                        target={item.external ? "_blank" : undefined}
+                        rel={item.external ? "noopener noreferrer" : undefined}
+                        className="flex w-full items-center justify-between"
+                      >
+                        <span className="truncate">{item.title}</span>
+                        {item.label && (
+                          <Badge
+                            variant={item.label === "LIVE" ? "destructive" : "secondary"}
+                            className="h-4 px-1 text-[10px] shrink-0"
+                          >
+                            {item.label}
+                          </Badge>
+                        )}
+                      </Link>
+                    ) : (
+                      <span>{item.title}</span>
+                    )}
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              )
+            })}
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>
@@ -225,22 +222,18 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      {/* 로고 */}
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild tooltip={siteConfig.name}>
               <Link href={siteConfig.defaultPath} className="flex items-center gap-2">
-                {/* 아이콘 영역 — collapsed 시 이것만 표시 */}
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground font-black text-xs tracking-tight select-none">
                   MX
                 </div>
-                {/* 텍스트 영역 — expanded 시 표시 */}
                 <div className="grid flex-1 text-left leading-snug min-w-0">
                   <span className="truncate text-sm font-bold text-sidebar-foreground tracking-tight">
                     {siteConfig.name}
                   </span>
-                  {/* made by kt alpha 로고 */}
                   <span className="flex items-center gap-1 text-[10px] text-sidebar-foreground/40 leading-none mt-0.5">
                     made by
                     <Image
@@ -259,7 +252,6 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarHeader>
 
-      {/* 네비게이션 — docsNav 데이터 기반 */}
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel className="uppercase text-[10px] tracking-widest">
@@ -275,7 +267,6 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* 푸터 */}
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
