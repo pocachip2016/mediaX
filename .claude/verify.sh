@@ -1656,9 +1656,133 @@ print('  ✓ Watcha 0건 / 더미 0건 확인')
     echo "=== PASS ==="
     ;;
 
+  # ── dev-ai-review-queue ──────────────────────────────────
+  ai-review-queue-1.1)
+    echo "=== ai-review-queue-1.1: schemas + classifier helpers ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "classify or risk_level" -v --tb=short -q 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.2)
+    echo "=== ai-review-queue-1.2: build_ai_review_queue core ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "queue and not dam_integration" -v --tb=short -q 2>&1 | tail -25
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.3)
+    echo "=== ai-review-queue-1.3: router endpoint ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "endpoint" -v --tb=short -q 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.4)
+    echo "=== ai-review-queue-1.4: dam integration ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "dam_integration" -v --tb=short -q 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.5)
+    echo "=== ai-review-queue-1.5: e2e smoke ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -v --tb=short -q 2>&1 | tail -30
+    curl -sf "http://localhost:8000/api/programming/metadata/ai-review-queue?size=3" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'summary' in d; assert 'items' in d; print('  ✓ endpoint 200 OK, summary:', d['summary'])"
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-7)
+    echo "=== ai-review-queue-7: MetadataEnrichPanel 2패널 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- component exists ---"
+    [ -f "$CMS/apps/web/components/contents/MetadataEnrichPanel.tsx" ] \
+      && echo "  ✓ MetadataEnrichPanel.tsx exists" \
+      || (echo "  ✗ MetadataEnrichPanel.tsx missing" && exit 1)
+    echo "--- page integration ---"
+    grep -q "MetadataEnrichPanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ MetadataEnrichPanel used in page" \
+      || (echo "  ✗ MetadataEnrichPanel not found in page" && exit 1)
+    grep -q "showEnrich" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ showEnrich toggle state present" \
+      || (echo "  ✗ showEnrich state missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-4)
+    echo "=== ai-review-queue-4: VisualAssetCandidatePanel MVP ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- component exists ---"
+    [ -f "$CMS/apps/web/components/contents/VisualAssetCandidatePanel.tsx" ] \
+      && echo "  ✓ VisualAssetCandidatePanel.tsx exists" \
+      || (echo "  ✗ VisualAssetCandidatePanel.tsx missing" && exit 1)
+    echo "--- inline poster section replaced ---"
+    grep -q "VisualAssetCandidatePanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ VisualAssetCandidatePanel used in page" \
+      || (echo "  ✗ VisualAssetCandidatePanel not found in page" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-3)
+    echo "=== ai-review-queue-3: MetadataDiffPanel 분리 + 추천 패널 위치 정리 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- component exists ---"
+    [ -f "$CMS/apps/web/components/contents/MetadataDiffPanel.tsx" ] \
+      && echo "  ✓ MetadataDiffPanel.tsx exists" \
+      || (echo "  ✗ MetadataDiffPanel.tsx missing" && exit 1)
+    echo "--- inline function removed ---"
+    ! grep -q "^function RecommendationPanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ inline RecommendationPanel removed" \
+      || (echo "  ✗ inline RecommendationPanel still present" && exit 1)
+    echo "--- new import present ---"
+    grep -q "MetadataDiffPanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ MetadataDiffPanel import OK" \
+      || (echo "  ✗ MetadataDiffPanel import missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-2)
+    echo "=== ai-review-queue-2: frontend Review Queue list page ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error|warning|PASS|✓" | tail -10
+    echo "--- route exists ---"
+    [ -f "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" ] \
+      && echo "  ✓ review/page.tsx exists" \
+      || (echo "  ✗ review/page.tsx missing" && exit 1)
+    echo "--- docs.ts entry ---"
+    grep -q "contents/review" "$CMS/apps/web/config/docs.ts" \
+      && echo "  ✓ docs.ts entry OK" \
+      || (echo "  ✗ docs.ts entry missing" && exit 1)
+    echo "--- api.ts types ---"
+    grep -q "AiReviewQueueRow" "$CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ AiReviewQueueRow type OK" \
+      || (echo "  ✗ AiReviewQueueRow missing" && exit 1)
+    grep -q "getAiReviewQueue" "$CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ getAiReviewQueue fn OK" \
+      || (echo "  ✗ getAiReviewQueue missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-7"
     exit 1
     ;;
 esac

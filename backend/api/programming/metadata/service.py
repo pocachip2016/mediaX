@@ -11,6 +11,9 @@
   - 배치 업로드
 """
 
+import os
+import httpx
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date, timedelta
 from typing import Optional
 
@@ -20,13 +23,14 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from api.programming.metadata.models import (
     Content, ContentMetadata, CpEmailLog, ContentBatchJob,
     ContentStatus, ContentType,
-    ExternalMetaSource,
+    ExternalMetaSource, ExternalSourceType,
     ContentGenre, ContentCredit,
+    ContentImage,
 )
 from api.programming.metadata.schemas import (
     ContentCreate, ContentUpdate, MetadataReviewAction, DashboardStats,
     StagingItem, BulkActionRequest, PipelineStatus,
-    ExternalSourceOut,
+    ExternalSourceOut, RecommendationsOut,
 )
 
 
@@ -2609,4 +2613,187 @@ def get_content_recommendations(db: Session, content_id: int):
         missing_fields=missing,
         auto_fill=auto_fill,
         conflicts=conflicts,
+    )
+
+
+# ── AI Review Queue 분류 헬퍼 ─────────────────────────────────────────────────
+
+def _classify_input_type(external_sources: list[ExternalMetaSource]) -> str:
+    types = {s.source_type for s in external_sources}
+    if ExternalSourceType.bulk_upload in types:
+        return "bulk"
+    if ExternalSourceType.manual in types:
+        return "manual"
+    return "existing"
+
+
+def _classify_metadata_status(rec: RecommendationsOut) -> str:
+    if rec.conflicts:
+        return "conflict"
+    if rec.missing_fields:
+        return "missing"
+    if rec.auto_fill:
+        return "enhancement"
+    return "clean"
+
+
+def _classify_poster_status(images: list[ContentImage], dam_count: int) -> str:
+    if not images:
+        return "no_candidate"
+    primary = next((img for img in images if img.is_primary), None)
+    if primary and primary.source in {"cp", "manual"}:
+        return "poster_ok"
+    if primary and primary.source == "tmdb":
+        return "external_only"
+    if not primary and dam_count > 0:
+        return "dam_match_found"
+    return "needs_selection"
+
+
+def _risk_level(metadata_status: str, poster_status: str, confidence: float) -> str:
+    if metadata_status == "conflict" or poster_status == "no_candidate" or confidence < 0.5:
+        return "high"
+    if metadata_status == "missing":
+        return "medium"
+    return "low"
+
+
+def _fetch_dam_count(content_id: int, dam_url: str) -> tuple[int, int]:
+    """(content_id, dam_asset_count) 반환. 실패·타임아웃 시 (content_id, 0)."""
+    try:
+        resp = httpx.get(
+            f"{dam_url}/api/mapping/by-content/{content_id}",
+            timeout=2.0,
+        )
+        if resp.status_code == 200:
+            return content_id, len(resp.json().get("assets", []))
+        return content_id, 0
+    except Exception:
+        return content_id, 0
+
+
+def _fetch_dam_counts(content_ids: list[int]) -> dict[int, int]:
+    """DAM에서 content_id별 매칭 에셋 수를 병렬 조회 (max 5 동시)."""
+    dam_url = os.environ.get("DAM_API_URL", "http://localhost:18000")
+    results: dict[int, int] = {cid: 0 for cid in content_ids}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(_fetch_dam_count, cid, dam_url): cid
+            for cid in content_ids
+        }
+        for future in as_completed(futures):
+            cid, count = future.result()
+            results[cid] = count
+    return results
+
+
+def build_ai_review_queue(
+    db: Session,
+    *,
+    status: str | None = None,
+    input_type: str | None = None,
+    metadata_status: str | None = None,
+    poster_status: str | None = None,
+    risk_level: str | None = None,
+    include_dam: bool = False,
+    page: int = 1,
+    size: int = 50,
+):
+    from api.programming.metadata.schemas import (
+        AiReviewQueueRow, AiReviewQueueSummary, PaginatedAiReviewQueue,
+    )
+
+    query = (
+        db.query(Content)
+        .options(
+            selectinload(Content.images),
+            selectinload(Content.external_sources),
+        )
+        .filter(Content.is_deleted == False)  # noqa: E712
+    )
+    if status:
+        try:
+            query = query.filter(Content.status == ContentStatus(status))
+        except ValueError:
+            pass
+
+    contents = query.all()
+
+    rows: list[AiReviewQueueRow] = []
+    content_images_map: dict[int, list] = {}
+    for content in contents:
+        rec = get_content_recommendations(db, content.id)
+
+        all_source_recs = [
+            r
+            for field in (rec.auto_fill + rec.conflicts)
+            for r in field.recommendations
+        ]
+        confidence = (
+            sum(r.confidence for r in all_source_recs) / len(all_source_recs)
+            if all_source_recs
+            else 1.0
+        )
+
+        it = _classify_input_type(content.external_sources)
+        ms = _classify_metadata_status(rec)
+        ps = _classify_poster_status(content.images, 0)
+        rl = _risk_level(ms, ps, confidence)
+
+        content_images_map[content.id] = list(content.images)
+        rows.append(AiReviewQueueRow(
+            content_id=content.id,
+            title=content.title,
+            content_type=content.content_type.value if content.content_type else "",
+            input_type=it,
+            content_status=content.status.value if content.status else "",
+            metadata_status=ms,
+            poster_status=ps,
+            dam_match_count=0,
+            risk_level=rl,
+            confidence=round(confidence, 3),
+            updated_at=content.updated_at or content.created_at or datetime.utcnow(),
+        ))
+
+    # 인-메모리 필터 (status는 DB 쿼리에서, 나머지는 분류 후)
+    if input_type:
+        rows = [r for r in rows if r.input_type == input_type]
+    if metadata_status:
+        rows = [r for r in rows if r.metadata_status == metadata_status]
+    if poster_status:
+        rows = [r for r in rows if r.poster_status == poster_status]
+    if risk_level:
+        rows = [r for r in rows if r.risk_level == risk_level]
+
+    # DAM 조회 (opt-in, 필터 후 남은 rows에만)
+    if include_dam and rows:
+        dam_counts = _fetch_dam_counts([r.content_id for r in rows])
+        updated = []
+        for r in rows:
+            dc = dam_counts.get(r.content_id, 0)
+            ps = _classify_poster_status(content_images_map.get(r.content_id, []), dc)
+            rl = _risk_level(r.metadata_status, ps, r.confidence)
+            updated.append(r.model_copy(update={"dam_match_count": dc, "poster_status": ps, "risk_level": rl}))
+        rows = updated
+
+    summary = AiReviewQueueSummary(
+        total=len(rows),
+        missing=sum(1 for r in rows if r.metadata_status == "missing"),
+        conflict=sum(1 for r in rows if r.metadata_status == "conflict"),
+        needs_poster=sum(
+            1 for r in rows
+            if r.poster_status in {"needs_selection", "no_candidate", "external_only"}
+        ),
+        dam_match=sum(1 for r in rows if r.dam_match_count > 0),
+        high_risk=sum(1 for r in rows if r.risk_level == "high"),
+    )
+
+    total = len(rows)
+    start = (page - 1) * size
+    return PaginatedAiReviewQueue(
+        items=rows[start:start + size],
+        summary=summary,
+        total=total,
+        page=page,
+        size=size,
     )

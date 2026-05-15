@@ -10,6 +10,9 @@ import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
 import { metadataApi, imageMetaApi, posterRecommendApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, resolvePosterUrl } from "@/lib/api"
 import { SourceBadge } from "@/components/source-badge"
+import { MetadataDiffPanel } from "@/components/contents/MetadataDiffPanel"
+import { MetadataEnrichPanel } from "@/components/contents/MetadataEnrichPanel"
+import { VisualAssetCandidatePanel } from "@/components/contents/VisualAssetCandidatePanel"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
@@ -44,139 +47,11 @@ function TabCountBadge({ tab }: { tab: "sources" | "ai" }) {
   return <span className="text-xs font-medium text-slate-500 ml-2">{count}</span>
 }
 
-const FIELD_LABELS: Record<string, string> = {
-  cast: "주연", director: "감독", synopsis: "줄거리",
-  runtime: "런타임", country: "제작국가", genres: "장르",
-}
-
 function MissingBadge() {
   return (
     <span className="text-xs text-slate-400 border border-dashed border-slate-200 rounded px-1.5 py-0.5">
       Missing
     </span>
-  )
-}
-
-function RecommendationPanel({
-  recommendations,
-  onDismiss,
-  onApply,
-  onApplyAll,
-}: {
-  recommendations: RecommendationsOut
-  onDismiss: () => void
-  onApply: (rec: FieldRecommendation, sourceRec: SourceFieldRec) => Promise<void>
-  onApplyAll: () => Promise<void>
-}) {
-  const [applying, setApplying] = useState<string | null>(null)
-
-  return (
-    <div className="bg-white rounded-lg border border-blue-200 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-blue-50 border-b border-blue-100">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-blue-600" />
-          <span className="text-sm font-semibold text-blue-900">메타 보강 제안</span>
-          <span className="text-xs text-blue-600 bg-blue-100 rounded-full px-2 py-0.5">
-            {recommendations.missing_fields.length}개 미입력
-          </span>
-        </div>
-        <button onClick={onDismiss} className="text-slate-400 hover:text-slate-600">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="p-4 space-y-4 max-h-[calc(100vh-14rem)] overflow-y-auto">
-        {recommendations.auto_fill.length > 0 && (
-          <div>
-            <p className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1">
-              <Check className="h-3 w-3 text-green-500" /> 자동 채택 가능
-            </p>
-            <div className="space-y-1">
-              {recommendations.auto_fill.map((rec) => {
-                const top = rec.recommendations[0]!
-                return (
-                  <div key={rec.field} className="flex items-start gap-2 py-2 border-b border-slate-100 last:border-0">
-                    <span className="text-xs text-slate-500 w-14 flex-shrink-0 pt-0.5">
-                      {FIELD_LABELS[rec.field] ?? rec.field}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-800 leading-snug line-clamp-2">{top.value}</p>
-                      <div className="mt-1">
-                        <SourceBadge source={top.source_type} score={top.confidence} />
-                      </div>
-                    </div>
-                    <button
-                      disabled={applying === rec.field}
-                      onClick={async () => {
-                        setApplying(rec.field)
-                        await onApply(rec, top).catch(() => {})
-                        setApplying(null)
-                      }}
-                      className="flex-shrink-0 text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
-                    >
-                      {applying === rec.field ? "…" : "채택"}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-            {recommendations.auto_fill.length > 1 && (
-              <button
-                onClick={onApplyAll}
-                className="mt-2 w-full text-xs py-1.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
-              >
-                {recommendations.auto_fill.length}개 모두 채택 →
-              </button>
-            )}
-          </div>
-        )}
-
-        {recommendations.conflicts.map((rec) => (
-          <div key={rec.field} className="border border-amber-200 rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-              <span className="text-xs font-medium text-amber-800">
-                {FIELD_LABELS[rec.field] ?? rec.field} — 소스 불일치
-              </span>
-            </div>
-            <div className={cn("grid divide-x divide-slate-100", rec.recommendations.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
-              {rec.recommendations.map((r) => (
-                <div key={r.source_id} className="p-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <SourceBadge source={r.source_type} score={r.confidence} />
-                    <button
-                      onClick={() => onApply(rec, r).catch(() => {})}
-                      className="text-xs text-slate-500 hover:text-blue-600 transition-colors"
-                    >
-                      채택
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-700 leading-snug line-clamp-4">{r.value}</p>
-                </div>
-              ))}
-            </div>
-            {rec.ai_synthesis && (
-              <div className="p-3 border-t border-slate-100 bg-purple-50/50">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                    <span className="text-xs font-medium text-purple-700">AI 종합</span>
-                    <SourceBadge source="ai" score={rec.ai_synthesis.confidence} />
-                  </div>
-                  <button
-                    onClick={() => onApply(rec, rec.ai_synthesis!).catch(() => {})}
-                    className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
-                  >
-                    AI 종합 채택
-                  </button>
-                </div>
-                <p className="text-xs text-slate-700 leading-snug line-clamp-4">{rec.ai_synthesis.value}</p>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
   )
 }
 
@@ -193,11 +68,11 @@ export default function ContentDetailPage() {
   const [damAssets, setDamAssets] = useState<any>(null)
   const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
-  const [posterRecommending, setPosterRecommending] = useState(false)
-  const [posterSelecting, setPosterSelecting] = useState<number | null>(null)
+
   const [castExpanded, setCastExpanded] = useState(false)
   const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
   const [recDismissed, setRecDismissed] = useState(false)
+  const [showEnrich, setShowEnrich] = useState(false)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -317,6 +192,21 @@ export default function ContentDetailPage() {
     }
   }
 
+  const handleApplyMultiple = async (targets: Array<{ rec: FieldRecommendation; source: SourceFieldRec }>) => {
+    for (const { rec, source } of targets) {
+      await handleApplyRec(rec, source)
+    }
+  }
+
+  const handleRegenerate = async () => {
+    try {
+      await metadataApi.triggerEnrich(contentId)
+      alert("AI 재분석 요청이 전송됐습니다. 잠시 후 새로고침하세요.")
+    } catch {
+      alert("재분석 요청에 실패했습니다.")
+    }
+  }
+
   // Handler for partialReprocess (AI 재처리)
   const handlePartialReprocess = async () => {
     try {
@@ -404,10 +294,16 @@ export default function ContentDetailPage() {
     content.metadata_record?.cp_synopsis ||
     null
 
+  const recCurrentValues: Record<string, string | null> = {
+    synopsis,
+    cast: leads.map((c) => c.person.name_ko).join(" · ") || null,
+    runtime: content.runtime_minutes ? `${content.runtime_minutes}분` : null,
+    country: content.country ?? null,
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* Header — 2열: 좌(포스터+메타 카드) / 우(추천 패널) */}
-      <div className="mb-6 grid lg:grid-cols-2 gap-4 items-start">
+      <div className="mb-6">
       <div className="bg-white rounded-lg border border-slate-200 p-6">
         <div className="flex gap-6">
           {/* 포스터 (2:3 비율) */}
@@ -553,12 +449,43 @@ export default function ContentDetailPage() {
 
       {/* 추천 패널 */}
       {recommendations && !recDismissed && (recommendations.auto_fill.length > 0 || recommendations.conflicts.length > 0) && (
-        <RecommendationPanel
-          recommendations={recommendations}
-          onDismiss={() => setRecDismissed(true)}
-          onApply={handleApplyRec}
-          onApplyAll={handleApplyAllAuto}
-        />
+        <div className="mt-4 space-y-2">
+          {/* 뷰 토글 */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowEnrich((v) => !v)}
+              className={cn(
+                "flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors",
+                showEnrich
+                  ? "border-blue-300 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:text-blue-600"
+              )}
+            >
+              <Sparkles className="h-3 w-3" />
+              {showEnrich ? "테이블 보기" : "AI Enrich"}
+            </button>
+          </div>
+
+          {showEnrich ? (
+            <MetadataEnrichPanel
+              recommendations={recommendations}
+              currentValues={recCurrentValues}
+              onApply={handleApplyRec}
+              onApplyAll={handleApplyMultiple}
+              onRegenerate={handleRegenerate}
+              onDismiss={() => setRecDismissed(true)}
+            />
+          ) : (
+            <MetadataDiffPanel
+              recommendations={recommendations}
+              currentValues={recCurrentValues}
+              onDismiss={() => setRecDismissed(true)}
+              onApply={handleApplyRec}
+              onApplyAll={handleApplyAllAuto}
+              onEditManually={(field) => console.log("edit manually:", field)}
+            />
+          )}
+        </div>
       )}
       </div>
 
@@ -752,81 +679,27 @@ export default function ContentDetailPage() {
                     const typeImages = imageMeta.images.filter((img) => img.image_type === type)
 
                     if (type === "poster") {
-                      const displayImages = posterCandidates ?? typeImages.map((img) => ({
+                      const displayCandidates: PosterCandidateOut[] = posterCandidates ?? typeImages.map((img) => ({
                         id: img.id, url: img.url, source: img.source ?? "", is_primary: false,
-                        width: img.width, height: img.height,
+                        width: img.width ?? undefined, height: img.height ?? undefined,
                       }))
+                      const primaryId = displayCandidates.find((c) => c.is_primary)?.id ?? null
                       return (
                         <div key="poster">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-xs font-semibold text-slate-500 uppercase">poster</h4>
-                            <button
-                              onClick={async () => {
-                                setPosterRecommending(true)
-                                try {
-                                  await posterRecommendApi.recommend(contentId)
-                                  const updated = await posterRecommendApi.getCandidates(contentId)
-                                  setPosterCandidates(updated)
-                                } finally {
-                                  setPosterRecommending(false)
-                                }
-                              }}
-                              disabled={posterRecommending}
-                              className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 disabled:opacity-50 transition-colors"
-                            >
-                              {posterRecommending ? "조회 중…" : "TMDB 추천 받기"}
-                            </button>
-                          </div>
-                          {displayImages.length === 0 ? (
-                            <div className="border border-dashed border-slate-200 rounded-lg aspect-[3/4] w-24 flex items-center justify-center">
-                              <Film className="h-6 w-6 text-slate-300" />
-                            </div>
-                          ) : (
-                            <div className="flex gap-3 flex-wrap">
-                              {displayImages.map((img) => {
-                                const src = resolvePosterUrl(img.url)
-                                return (
-                                  <div key={img.id} className={cn(
-                                    "relative border rounded-lg overflow-hidden transition-colors w-24",
-                                    img.is_primary ? "border-blue-400 ring-1 ring-blue-300" : "border-slate-200 hover:border-blue-300",
-                                  )}>
-                                    <div className="aspect-[3/4] bg-slate-100 flex items-center justify-center">
-                                      {src ? (
-                                        <Image src={src} alt="poster" width={96} height={128} unoptimized className="object-cover w-full h-full" />
-                                      ) : (
-                                        <Film className="h-6 w-6 text-slate-300" />
-                                      )}
-                                    </div>
-                                    {img.is_primary && (
-                                      <div className="absolute top-1 left-1 bg-blue-500 text-white text-[10px] font-bold px-1 py-0.5 rounded leading-tight">
-                                        primary
-                                      </div>
-                                    )}
-                                    <div className="p-1.5 space-y-1">
-                                      <div className="text-xs text-slate-600 truncate font-medium">{img.source ?? "—"}</div>
-                                      {!img.is_primary && posterCandidates && (
-                                        <button
-                                          onClick={async () => {
-                                            setPosterSelecting(img.id)
-                                            try {
-                                              const updated = await posterRecommendApi.selectPrimary(contentId, img.id)
-                                              setPosterCandidates(updated)
-                                            } finally {
-                                              setPosterSelecting(null)
-                                            }
-                                          }}
-                                          disabled={posterSelecting === img.id}
-                                          className="w-full text-[10px] px-1 py-0.5 bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-600 rounded transition-colors disabled:opacity-50"
-                                        >
-                                          {posterSelecting === img.id ? "…" : "이걸로"}
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
+                          <VisualAssetCandidatePanel
+                            contentId={contentId}
+                            candidates={displayCandidates}
+                            primaryId={primaryId}
+                            onRecommend={async () => {
+                              await posterRecommendApi.recommend(contentId)
+                              const updated = await posterRecommendApi.getCandidates(contentId)
+                              setPosterCandidates(updated)
+                            }}
+                            onSelectPrimary={async (imageId) => {
+                              const updated = await posterRecommendApi.selectPrimary(contentId, imageId)
+                              setPosterCandidates(updated)
+                            }}
+                          />
                         </div>
                       )
                     }

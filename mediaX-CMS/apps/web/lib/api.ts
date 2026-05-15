@@ -422,6 +422,29 @@ export const metadataApi = {
   getBatchJob: (jobId: number) =>
     request<BatchJobOut>(`/api/programming/metadata/upload/batch/${jobId}`),
 
+  // ── AI Review Queue ───────────────────────────────────────
+  getAiReviewQueue: (params?: {
+    status?: string
+    input_type?: string
+    metadata_status?: string
+    poster_status?: string
+    risk_level?: string
+    include_dam?: boolean
+    page?: number
+    size?: number
+  }) => {
+    const q = new URLSearchParams()
+    if (params?.status) q.set("status", params.status)
+    if (params?.input_type) q.set("input_type", params.input_type)
+    if (params?.metadata_status) q.set("metadata_status", params.metadata_status)
+    if (params?.poster_status) q.set("poster_status", params.poster_status)
+    if (params?.risk_level) q.set("risk_level", params.risk_level)
+    if (params?.include_dam != null) q.set("include_dam", String(params.include_dam))
+    if (params?.page) q.set("page", String(params.page))
+    if (params?.size) q.set("size", String(params.size))
+    return request<PaginatedAiReviewQueue>(`/api/programming/metadata/ai-review-queue?${q}`)
+  },
+
   // ── dev-ui-api-wiring: 18개 신규 함수 ─────────────────────
 
   // Bulk Actions (5개)
@@ -993,6 +1016,39 @@ export interface PosterRecommendResponse {
 
 export interface PosterSelectRequest {
   image_id: number
+}
+
+// ── AI Review Queue 타입 ──────────────────────────────────
+
+export type AiReviewQueueRow = {
+  content_id: number
+  title: string
+  content_type: string
+  input_type: "bulk" | "manual" | "existing"
+  content_status: string
+  metadata_status: "missing" | "conflict" | "enhancement" | "clean"
+  poster_status: "poster_ok" | "needs_selection" | "dam_match_found" | "external_only" | "no_candidate"
+  dam_match_count: number
+  risk_level: "low" | "medium" | "high"
+  confidence: number
+  updated_at: string
+}
+
+export type AiReviewQueueSummary = {
+  total: number
+  missing: number
+  conflict: number
+  needs_poster: number
+  dam_match: number
+  high_risk: number
+}
+
+export type PaginatedAiReviewQueue = {
+  items: AiReviewQueueRow[]
+  summary: AiReviewQueueSummary
+  total: number
+  page: number
+  size: number
 }
 
 const _posterBase = (contentId: number) =>

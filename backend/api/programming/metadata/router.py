@@ -66,6 +66,7 @@ from api.programming.metadata.schemas import (
     EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
     PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
     RecommendationsOut,
+    PaginatedAiReviewQueue,
 )
 from api.programming.metadata.models import CpEmailLog
 from api.programming.metadata import poster_recommend
@@ -772,6 +773,31 @@ async def api_get_changelog(
     db: Session = Depends(get_db),
 ):
     return await service.get_changelog(db, content_id)
+
+
+@router.get("/ai-review-queue", response_model=PaginatedAiReviewQueue, summary="AI 검수 큐 — 메타+포스터+Dam 통합")
+def api_get_ai_review_queue(
+    status: Optional[str] = None,
+    input_type: Optional[str] = None,
+    metadata_status: Optional[str] = None,
+    poster_status: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    include_dam: bool = False,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return service.build_ai_review_queue(
+        db,
+        status=status,
+        input_type=input_type,
+        metadata_status=metadata_status,
+        poster_status=poster_status,
+        risk_level=risk_level,
+        include_dam=include_dam,
+        page=page,
+        size=size,
+    )
 
 
 @router.post("/contents/{content_id}/lock", summary="필드 잠금")

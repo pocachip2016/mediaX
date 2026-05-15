@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from api.programming.metadata.models import ContentType, ContentStatus, MetaSource
@@ -776,3 +776,36 @@ class PosterRecommendResponse(BaseModel):
 class PosterSelectRequest(BaseModel):
     """POST /poster/select 요청"""
     image_id: int
+
+
+# ── AI Review Queue ───────────────────────────────────────────────────────────
+
+class AiReviewQueueRow(BaseModel):
+    content_id: int
+    title: str
+    content_type: str
+    input_type: Literal["bulk", "manual", "existing"]
+    content_status: str
+    metadata_status: Literal["missing", "conflict", "enhancement", "clean"]
+    poster_status: Literal["poster_ok", "needs_selection", "external_only", "dam_match_found", "no_candidate"]
+    dam_match_count: int = 0
+    risk_level: Literal["low", "medium", "high"]
+    confidence: float
+    updated_at: datetime
+
+
+class AiReviewQueueSummary(BaseModel):
+    total: int
+    missing: int
+    conflict: int
+    needs_poster: int
+    dam_match: int
+    high_risk: int
+
+
+class PaginatedAiReviewQueue(BaseModel):
+    items: list[AiReviewQueueRow]
+    summary: AiReviewQueueSummary
+    total: int
+    page: int
+    size: int
