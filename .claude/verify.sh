@@ -1784,6 +1784,394 @@ print('  ✓ Watcha 0건 / 더미 0건 확인')
     echo "=== PASS ==="
     ;;
 
+  phase-d-step1)
+    echo "=== phase-d-step1: migration 0013 + env keys ==="
+    echo "--- alembic 0013 파일 ---"
+    [ -f "$BACKEND/alembic/versions/0013_phase_d_websearch.py" ] \
+      && echo "  ✓ alembic 0013 파일 존재" \
+      || (echo "  ✗ alembic 0013 missing" && exit 1)
+    echo "--- ExternalSourceType.websearch ---"
+    python3 -c "
+from api.programming.metadata.models.external import ExternalSourceType
+assert ExternalSourceType.websearch == 'websearch'
+print('  ✓ ExternalSourceType.websearch = websearch')
+"
+    echo "--- WebSearchQuotaLog model ---"
+    python3 -c "
+from api.programming.metadata.models.tmdb_cache import WebSearchQuotaLog, WebSearchCache
+assert WebSearchQuotaLog.__tablename__ == 'web_search_quota_log'
+print('  ✓ WebSearchQuotaLog 모델 OK')
+assert ('query_hash', 'source') == tuple(c.name for c in WebSearchCache.__table_args__[0].columns) \
+    or any(c.name == 'query_hash' for c in WebSearchCache.__table_args__[0].columns)
+print('  ✓ WebSearchCache composite unique OK')
+"
+    echo "--- models __init__ re-export ---"
+    python3 -c "
+from api.meta_core.models import WebSearchQuotaLog
+print('  ✓ meta_core.models.WebSearchQuotaLog re-export OK')
+"
+    echo "--- .env.example keys ---"
+    for k in BRAVE_SEARCH_API_KEY SERPAPI_KEY WEBSEARCH_ENABLED WEBSEARCH_BULK_ALLOWED WEBSEARCH_PROVIDERS WEBSEARCH_BRAVE_DAILY WEBSEARCH_SERPAPI_DAILY WEBSEARCH_GEMINI_DAILY WEBSEARCH_TRENDING_ENABLED; do
+      grep -q "^$k=" "$BACKEND/.env.example" \
+        && echo "  ✓ $k" \
+        || (echo "  ✗ $k missing in .env.example" && exit 1)
+    done
+    echo "--- shared.config Settings ---"
+    python3 -c "
+from shared.config import Settings
+s = Settings()
+assert hasattr(s, 'BRAVE_SEARCH_API_KEY')
+assert hasattr(s, 'SERPAPI_KEY')
+assert s.WEBSEARCH_ENABLED is True
+assert s.WEBSEARCH_BULK_ALLOWED is False
+assert s.WEBSEARCH_PROVIDERS == 'brave,serpapi,gemini,ollama'
+assert s.WEBSEARCH_BRAVE_DAILY == 60
+assert s.WEBSEARCH_SERPAPI_DAILY == 3
+assert s.WEBSEARCH_GEMINI_DAILY == 200
+assert s.WEBSEARCH_TRENDING_ENABLED is False
+print('  ✓ Settings 9 keys OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step2)
+    echo "=== phase-d-step2: web_search package + BraveSearchProvider ==="
+    echo "--- Files structure ---"
+    for f in __init__.py base.py brave.py cache.py errors.py; do
+      [ -f "$BACKEND/api/meta_core/web_search/$f" ] && echo "  ✓ $f" || (echo "  ✗ $f missing" && exit 1)
+    done
+    echo "--- WebSearchProvider ABC ---"
+    python3 -c "
+from api.meta_core.web_search.base import WebSearchProvider, WebSearchResult
+from abc import ABC
+assert issubclass(WebSearchProvider, ABC)
+assert hasattr(WebSearchProvider, 'provider_name')
+assert hasattr(WebSearchProvider, 'daily_limit')
+assert hasattr(WebSearchProvider, 'search')
+print('  ✓ WebSearchProvider ABC OK')
+"
+    echo "--- WebSearchResult dataclass ---"
+    python3 -c "
+from api.meta_core.web_search.base import WebSearchResult
+r = WebSearchResult(url='http://test.com', title='Test', snippet='snippet', source_domain='test.com', score=1.0)
+assert r.url == 'http://test.com'
+assert r.title == 'Test'
+assert r.source_domain == 'test.com'
+assert r.score == 1.0
+print('  ✓ WebSearchResult dataclass OK')
+"
+    echo "--- BraveSearchProvider ---"
+    python3 -c "
+from api.meta_core.web_search.brave import BraveSearchProvider
+assert hasattr(BraveSearchProvider, 'search')
+b = BraveSearchProvider()
+assert b.provider_name == 'brave'
+assert b.daily_limit == 60
+print('  ✓ BraveSearchProvider OK')
+"
+    echo "--- Cache helpers ---"
+    python3 -c "
+from api.meta_core.web_search.cache import cache_get, cache_put
+import inspect
+assert callable(cache_get)
+assert callable(cache_put)
+assert 'db' in inspect.signature(cache_get).parameters
+assert 'provider' in inspect.signature(cache_get).parameters
+print('  ✓ cache_get/cache_put OK')
+"
+    echo "--- Exception classes ---"
+    python3 -c "
+from api.meta_core.web_search.errors import QuotaExhaustedError, ProviderUnavailableError, BulkQuotaError
+assert issubclass(QuotaExhaustedError, Exception)
+assert issubclass(ProviderUnavailableError, Exception)
+assert issubclass(BulkQuotaError, Exception)
+print('  ✓ Exception classes OK')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_brave.py" ] \
+      && echo "  ✓ test_brave.py exists" \
+      || (echo "  ✗ test_brave.py missing" && exit 1)
+    echo "--- Package imports ---"
+    python3 -c "
+from api.meta_core.web_search import (
+    WebSearchProvider, WebSearchResult, BraveSearchProvider,
+    cache_get, cache_put,
+    QuotaExhaustedError, ProviderUnavailableError, BulkQuotaError
+)
+print('  ✓ All imports OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step3)
+    echo "=== phase-d-step3: SerpAPI + Gemini Grounding + Ollama-DDG + factory ==="
+    echo "--- Provider files ---"
+    for f in serpapi.py gemini_grounding.py ollama_ddg.py factory.py; do
+      [ -f "$BACKEND/api/meta_core/web_search/$f" ] && echo "  ✓ $f" || (echo "  ✗ $f missing" && exit 1)
+    done
+    echo "--- SerpApiProvider ---"
+    python3 -c "
+from api.meta_core.web_search.serpapi import SerpApiProvider
+s = SerpApiProvider()
+assert s.provider_name == 'serpapi'
+assert s.daily_limit == 3
+print('  ✓ SerpApiProvider OK')
+"
+    echo "--- GeminiGroundingProvider ---"
+    python3 -c "
+from api.meta_core.web_search.gemini_grounding import GeminiGroundingProvider
+g = GeminiGroundingProvider()
+assert g.provider_name == 'gemini'
+assert g.daily_limit == 200
+print('  ✓ GeminiGroundingProvider OK')
+"
+    echo "--- OllamaDDGProvider ---"
+    python3 -c "
+from api.meta_core.web_search.ollama_ddg import OllamaDDGProvider
+o = OllamaDDGProvider()
+assert o.provider_name == 'ollama'
+assert o.daily_limit == 999999
+print('  ✓ OllamaDDGProvider OK')
+"
+    echo "--- Factory functions ---"
+    python3 -c "
+from api.meta_core.web_search.factory import get_provider_chain, search_with_fallback
+assert callable(get_provider_chain)
+assert callable(search_with_fallback)
+chain = get_provider_chain()
+assert len(chain) >= 3
+assert chain[-1].provider_name == 'ollama'  # Ollama last
+print('  ✓ get_provider_chain OK')
+print('  ✓ search_with_fallback OK')
+"
+    echo "--- Test files ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_factory.py" ] \
+      && echo "  ✓ test_factory.py exists" \
+      || (echo "  ✗ test_factory.py missing" && exit 1)
+    echo "--- Package re-export ---"
+    python3 -c "
+from api.meta_core.web_search import (
+    SerpApiProvider, GeminiGroundingProvider, OllamaDDGProvider,
+    get_provider_chain, search_with_fallback
+)
+print('  ✓ All re-exports OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step4)
+    echo "=== phase-d-step4: bulk-guard + cache integration ==="
+    echo "--- guard.py ---"
+    [ -f "$BACKEND/api/meta_core/web_search/guard.py" ] \
+      && echo "  ✓ guard.py exists" \
+      || (echo "  ✗ guard.py missing" && exit 1)
+    echo "--- check_bulk_allowed function ---"
+    python3 -c "
+from api.meta_core.web_search.guard import check_bulk_allowed
+from api.meta_core.web_search.errors import BulkQuotaError
+from unittest.mock import MagicMock
+mgr = MagicMock()
+mgr.current_count.return_value = 40
+result = check_bulk_allowed(8, 'brave', 60, mgr)
+assert result is True
+print('  ✓ check_bulk_allowed returns bool')
+mgr.current_count.return_value = 50
+try:
+    check_bulk_allowed(20, 'brave', 60, mgr)
+    print('  ✗ Should raise BulkQuotaError')
+    exit(1)
+except BulkQuotaError as e:
+    assert e.expected == 20
+    assert e.remaining == 10
+    print('  ✓ BulkQuotaError raised with expected/remaining')
+"
+    echo "--- cache hit/miss logic ---"
+    python3 -c "
+from api.meta_core.web_search.cache import cache_get, cache_put
+import inspect
+sig_get = inspect.signature(cache_get)
+sig_put = inspect.signature(cache_put)
+assert 'query' in sig_get.parameters
+assert 'provider' in sig_get.parameters
+assert 'db' in sig_get.parameters
+assert 'ttl_days' in sig_put.parameters
+print('  ✓ cache_get/cache_put signatures correct')
+"
+    echo "--- Test files ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_guard.py" ] \
+      && echo "  ✓ test_guard.py exists" \
+      || (echo "  ✗ test_guard.py missing" && exit 1)
+    [ -f "$BACKEND/tests/meta_core/web_search/test_cache.py" ] \
+      && echo "  ✓ test_cache.py exists" \
+      || (echo "  ✗ test_cache.py missing" && exit 1)
+    echo "--- Package exports ---"
+    python3 -c "
+from api.meta_core.web_search import check_bulk_allowed, cache_get, cache_put
+print('  ✓ All guard/cache exports OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step5)
+    echo "=== phase-d-step5: WebSearchDiscoverySource ==="
+    echo "--- websearch_source.py ---"
+    [ -f "$BACKEND/api/meta_core/discovery/websearch_source.py" ] \
+      && echo "  ✓ websearch_source.py exists" \
+      || (echo "  ✗ websearch_source.py missing" && exit 1)
+    echo "--- WebSearchDiscoverySource class ---"
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+from api.meta_core.discovery.base import DiscoverySource
+from unittest.mock import MagicMock
+assert issubclass(WebSearchDiscoverySource, DiscoverySource)
+assert WebSearchDiscoverySource.source_type == 'websearch'
+db = MagicMock()
+source = WebSearchDiscoverySource(db)
+assert hasattr(source, 'discover')
+assert hasattr(source, '_discover_async')
+print('  ✓ WebSearchDiscoverySource OK')
+"
+    echo "--- Mode support ---"
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource, _TRENDING_QUERIES
+assert len(_TRENDING_QUERIES) == 5
+print(f'  ✓ 3 modes (query/topic/trending) with {len(_TRENDING_QUERIES)} trending queries')
+"
+    echo "--- LLM extraction & JSON parsing ---"
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+from unittest.mock import MagicMock
+source = WebSearchDiscoverySource(MagicMock())
+response = '{\"title\": \"Test\", \"content_type\": \"movie\", \"production_year\": 2026}'
+parsed = source._parse_extraction_response(response)
+assert parsed is not None
+assert parsed['title'] == 'Test'
+print('  ✓ JSON parsing OK')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/discovery/test_websearch.py" ] \
+      && echo "  ✓ test_websearch.py exists" \
+      || (echo "  ✗ test_websearch.py missing" && exit 1)
+    echo "--- search_with_fallback integration ---"
+    python3 -c "
+import inspect
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+source_code = inspect.getsource(WebSearchDiscoverySource._search_and_extract)
+assert 'search_with_fallback' in source_code
+print('  ✓ search_with_fallback integrated')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step6)
+    echo "=== phase-d-step6: Aggregator opt-in integration ==="
+    echo "--- aggregator.py enable_web_search ---"
+    python3 -c "
+import inspect
+from api.meta_core.aggregator import aggregate_content, aggregate_batch
+sig_content = inspect.signature(aggregate_content)
+sig_batch = inspect.signature(aggregate_batch)
+assert 'enable_web_search' in sig_content.parameters
+assert 'enable_web_search' in sig_batch.parameters
+print('  ✓ enable_web_search parameter added')
+"
+    echo "--- WebSearch helper functions ---"
+    python3 -c "
+from api.meta_core.aggregator import _add_websearch_suggestions, _create_websearch_suggestion
+import inspect
+assert callable(_add_websearch_suggestions)
+assert callable(_create_websearch_suggestion)
+print('  ✓ _add_websearch_suggestions OK')
+print('  ✓ _create_websearch_suggestion OK')
+"
+    echo "--- BulkAcceptRequest.enable_web_search ---"
+    python3 -c "
+from api.meta_core.intelligence.schemas import BulkAcceptRequest
+req = BulkAcceptRequest(fields=['synopsis'], enable_web_search=True)
+assert req.enable_web_search is True
+print('  ✓ BulkAcceptRequest.enable_web_search field OK')
+"
+    echo "--- bulk_accept guard ---"
+    python3 -c "
+import inspect
+from api.meta_core.intelligence.router import bulk_accept
+source = inspect.getsource(bulk_accept)
+assert 'check_bulk_allowed' in source
+assert 'BulkQuotaError' in source
+assert 'enable_web_search' in source
+print('  ✓ bulk_accept check_bulk_allowed guard present')
+print('  ✓ bulk_accept enable_web_search integration')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/test_aggregator_websearch.py" ] \
+      && echo "  ✓ test_aggregator_websearch.py exists" \
+      || (echo "  ✗ test_aggregator_websearch.py missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step7)
+    echo "=== phase-d-step7: Monitoring Backend API ==="
+    echo "--- web_search/router.py ---"
+    [ -f "$BACKEND/api/meta_core/web_search/router.py" ] \
+      && echo "  ✓ router.py exists" \
+      || (echo "  ✗ router.py missing" && exit 1)
+    echo "--- 3 GET endpoints ---"
+    python3 -c "
+from api.meta_core.web_search.router import router
+routes = [r.path for r in router.routes if r.methods and 'GET' in r.methods]
+assert '/quota' in str(routes)
+assert '/cache-stats' in str(routes) or 'cache-stats' in str(routes)
+assert '/recent' in str(routes)
+print('  ✓ /quota endpoint')
+print('  ✓ /cache-stats endpoint')
+print('  ✓ /recent endpoint')
+"
+    echo "--- Pydantic schemas ---"
+    python3 -c "
+from api.meta_core.web_search.router import (
+    ProviderQuotaOut, QuotaStatsOut,
+    CacheStatsOut, RecentCallOut, RecentCallsOut
+)
+p = ProviderQuotaOut(provider='test', daily_limit=60, used_today=30, remaining=30, percent_used=50.0)
+assert p.provider == 'test'
+print('  ✓ ProviderQuotaOut')
+print('  ✓ QuotaStatsOut')
+print('  ✓ CacheStatsOut')
+print('  ✓ RecentCallOut')
+print('  ✓ RecentCallsOut')
+"
+    echo "--- Router mounts ---"
+    python3 -c "
+from api.meta_core.web_search.router import router as ws_router
+assert ws_router is not None
+print('  ✓ web_search_router importable')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_router.py" ] \
+      && echo "  ✓ test_router.py exists" \
+      || (echo "  ✗ test_router.py missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step0)
+    echo "=== phase-d-step0: ADR Phase D WebSearch ==="
+    DOCS="$SCRIPT_DIR/../docs/dev/phase-d"
+    echo "--- 7 ADR 파일 존재 ---"
+    for f in _index.md sources.md quota-policy.md on-off-policy.md bulk-guard.md cache-policy.md monitoring-data-model.md; do
+      [ -f "$DOCS/$f" ] && echo "  ✓ $f" || (echo "  ✗ $f missing" && exit 1)
+    done
+    echo "--- _index.md 핵심 키워드 ---"
+    grep -q "Phase D" "$DOCS/_index.md" && echo "  ✓ Phase D 키워드" || (echo "  ✗ Phase D 키워드 없음" && exit 1)
+    grep -q "Provider 폴백\|Brave → SerpAPI" "$DOCS/_index.md" && echo "  ✓ Provider 폴백 키워드" || (echo "  ✗ Provider 폴백 없음" && exit 1)
+    grep -q "Quota\|쿼터" "$DOCS/_index.md" && echo "  ✓ Quota 키워드" || (echo "  ✗ Quota 키워드 없음" && exit 1)
+    grep -q "Bulk 가드\|bulk-guard" "$DOCS/_index.md" && echo "  ✓ Bulk 가드 키워드" || (echo "  ✗ Bulk 가드 없음" && exit 1)
+    echo "--- plans 디렉토리 ---"
+    [ -f "$SCRIPT_DIR/../plans/dev-meta-intelligence-phase-d/index.json" ] \
+      && echo "  ✓ plans/dev-meta-intelligence-phase-d/index.json" \
+      || (echo "  ✗ plan index 없음" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
   content-register-3)
     echo "=== content-register-3: [id]/?enrich=true 진입점 ==="
     CMS="$SCRIPT_DIR/../mediaX-CMS"
@@ -1921,6 +2309,133 @@ print('  ✓ Watcha 0건 / 더미 0건 확인')
     grep -q "getAiReviewQueue" "$CMS/apps/web/lib/api.ts" \
       && echo "  ✓ getAiReviewQueue fn OK" \
       || (echo "  ✗ getAiReviewQueue missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step0)
+    echo "=== phase-d-step0: ADR docs/dev/phase-d/ ==="
+    DIR="$SCRIPT_DIR/../docs/dev/phase-d"
+    test -d "$DIR" || { echo "  ✗ $DIR 없음"; exit 1; }
+    REQUIRED_FILES=("_index.md" "sources.md" "quota-policy.md" "on-off-policy.md" "bulk-guard.md" "cache-policy.md" "monitoring-data-model.md")
+    for f in "${REQUIRED_FILES[@]}"; do
+      test -f "$DIR/$f" || { echo "  ✗ $f 누락"; exit 1; }
+    done
+    echo "  ✓ 7개 파일 존재"
+    INDEX="$DIR/_index.md"
+    for sec in "sources.md" "quota-policy.md" "on-off-policy.md" "bulk-guard.md" "cache-policy.md" "monitoring-data-model.md"; do
+      grep -q "$sec" "$INDEX" || { echo "  ✗ _index.md 에 $sec 링크 누락"; exit 1; }
+    done
+    echo "  ✓ _index.md 에 섹션 링크 확인"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step1)
+    echo "=== phase-d-step1: migration 0013 + env keys ==="
+    test -f "$BACKEND/alembic/versions/0013_phase_d_websearch.py" || { echo "  ✗ 0013_phase_d_websearch.py 없음"; exit 1; }
+    echo "  ✓ 0013_phase_d_websearch.py 존재"
+    python3 -c "
+from shared.config import settings
+assert hasattr(settings, 'BRAVE_SEARCH_API_KEY'), 'BRAVE_SEARCH_API_KEY 없음'
+assert hasattr(settings, 'WEBSEARCH_ENABLED'), 'WEBSEARCH_ENABLED 없음'
+assert hasattr(settings, 'WEBSEARCH_BULK_ALLOWED'), 'WEBSEARCH_BULK_ALLOWED 없음'
+print('  ✓ env 키 9개 import OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step2)
+    echo "=== phase-d-step2: web_search package + Brave ==="
+    python3 -c "
+from api.meta_core.web_search import WebSearchProvider, WebSearchResult
+from api.meta_core.web_search.brave import BraveSearchProvider
+from api.meta_core.web_search.cache import cache_get, cache_put
+from api.meta_core.web_search.errors import QuotaExhaustedError, ProviderUnavailableError
+print('  ✓ web_search 패키지 + base + brave + cache + errors import OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_brave.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step3)
+    echo "=== phase-d-step3: SerpAPI + Gemini + Ollama ==="
+    python3 -c "
+from api.meta_core.web_search.serpapi import SerpApiProvider
+from api.meta_core.web_search.gemini_grounding import GeminiGroundingProvider
+from api.meta_core.web_search.ollama_ddg import OllamaDDGProvider
+from api.meta_core.web_search.factory import get_provider_chain, search_with_fallback
+print('  ✓ 4 provider + factory import OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_factory.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step4)
+    echo "=== phase-d-step4: bulk guard + cache ==="
+    python3 -c "
+from api.meta_core.web_search.guard import check_bulk_allowed, BulkQuotaError
+print('  ✓ guard import OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_guard.py tests/meta_core/web_search/test_cache.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step5)
+    echo "=== phase-d-step5: WebSearchDiscoverySource ==="
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+print('  ✓ WebSearchDiscoverySource import OK')
+"
+    python3 -m pytest tests/meta_core/discovery/test_websearch.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step6)
+    echo "=== phase-d-step6: aggregator opt-in ==="
+    python3 -c "
+from api.meta_core.aggregator import aggregate_content
+from api.meta_core.intelligence.schemas import BulkAcceptRequest
+import inspect
+src = inspect.getsource(aggregate_content)
+assert 'enable_web_search' in src, 'enable_web_search 파라미터 없음'
+print('  ✓ aggregator.aggregate_content enable_web_search 파라미터 OK')
+"
+    python3 -m pytest tests/meta_core/test_aggregator_websearch.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step7)
+    echo "=== phase-d-step7: monitoring API ==="
+    python3 -c "
+from api.meta_core.web_search.router import router
+from api.meta_core.web_search.router import ProviderQuotaOut, QuotaStatsOut, CacheStatsOut, RecentCallOut, RecentCallsOut
+paths = [str(route.path) for route in router.routes]
+for p in ['/quota', '/cache-stats', '/recent']:
+    assert p in paths, f'{p} 엔드포인트 없음'
+print('  ✓ 3개 GET 엔드포인트 확인 OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_router.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step8)
+    echo "=== phase-d-step8: monitoring UI + Beat + wrap ==="
+    # 백엔드: websearch_tasks + celery Beat 등록
+    python3 -c "
+from workers.websearch_tasks import discover_websearch_trending
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'discover-websearch-trending' in sched, 'discover-websearch-trending beat 없음'
+print('  ✓ websearch_tasks + Beat 스케줄 확인 OK')
+"
+    # 프론트엔드: webSearchApi + 모니터링 페이지
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    grep -q "webSearchApi" "$CMS/apps/web/lib/webSearchApi.ts" || { echo "  ✗ webSearchApi 없음"; exit 1; }
+    test -f "$CMS/apps/web/app/(main)/monitoring/web-search/page.tsx" || { echo "  ✗ web-search/page.tsx 없음"; exit 1; }
+    echo "  ✓ webSearchApi + 모니터링 페이지 확인 OK"
+    # 문서: step8.md + CHANGELOG.md
+    test -f "$SCRIPT_DIR/../plans/dev-meta-intelligence-phase-d/step8.md" || { echo "  ✗ step8.md 없음"; exit 1; }
+    test -f "$SCRIPT_DIR/../docs/dev/phase-d/CHANGELOG.md" || { echo "  ✗ CHANGELOG.md 없음"; exit 1; }
+    echo "  ✓ 문서 파일 확인 OK"
     echo "=== PASS ==="
     ;;
 

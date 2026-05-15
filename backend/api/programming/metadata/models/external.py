@@ -25,6 +25,7 @@ class ExternalSourceType(str, enum.Enum):
     other = "other"
     kmdb = "kmdb"  # 한국영상자료원 KMDb
     omdb = "omdb"  # OMDb — IMDb 글로벌 보완 (Phase C)
+    websearch = "websearch"    # WebSearch (Brave/SerpAPI/Gemini/Ollama+DDG) — Phase D
     manual = "manual"          # 수동 입력
     bulk_upload = "bulk_upload"  # CSV/Excel 일괄 업로드
 

@@ -127,6 +127,7 @@ class MergeRequest(BaseModel):
 
 class BulkAcceptRequest(BaseModel):
     fields: list[str]
+    enable_web_search: bool = False  # Phase D WebSearch opt-in
 
 
 class ActionResultOut(BaseModel):

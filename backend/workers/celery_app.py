@@ -13,6 +13,7 @@ celery_app = Celery(
         "workers.tasks.metadata",          # 메타 AI 분류·외부 메타 수집
         "workers.tasks.tmdb_cache",        # TMDB 로컬 캐시 백필·일일 증분
         "workers.tasks.discovery_tasks",   # Phase C SEED 발굴
+        "workers.websearch_tasks",         # Phase D WebSearch SEED 발굴
     ],
 )
 
@@ -78,6 +79,12 @@ celery_app.conf.update(
             "task": "workers.tasks.discovery_tasks.discover_tmdb",
             "schedule": crontab(hour=6, minute=0, day_of_week=0),
             "kwargs": {"mode": "trending_week"},
+        },
+        # Phase D WebSearch SEED 발굴 — 매일 04:30 KST (trending 5쿼리, 안전 마진)
+        "discover-websearch-trending": {
+            "task": "discover.websearch_trending",
+            "schedule": crontab(hour=4, minute=30),
+            "options": {"expires": 3600},
         },
     },
     task_routes={

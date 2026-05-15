@@ -42,6 +42,7 @@ from api.programming.metadata.models.tmdb_cache import (
     TmdbSyncSource,
     TmdbSyncStatus,
     WebSearchCache,
+    WebSearchQuotaLog,
 )
 from api.meta_core.models.intelligence import (
     MetadataCandidate,
@@ -69,7 +70,7 @@ __all__ = [
     # tmdb cache + web search cache
     "TmdbMovieCache", "TmdbTvCache", "TmdbPersonCache",
     "TmdbSyncLog", "TmdbSyncSource", "TmdbSyncStatus",
-    "WebSearchCache",
+    "WebSearchCache", "WebSearchQuotaLog",
     # meta intelligence
     "MetadataCandidate", "MatchEdge", "FieldSuggestion", "FieldResolution", "SeedCandidate",
     # phase c seed

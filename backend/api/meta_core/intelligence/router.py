@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 
 from shared.database import get_db
 from api.meta_core.gap import analyze_gap
-from api.meta_core.aggregator import llm_merge_synopses
+from api.meta_core.aggregator import llm_merge_synopses, aggregate_content
+from api.meta_core.web_search import check_bulk_allowed
+from api.meta_core.web_search.errors import BulkQuotaError
 from api.meta_core.models.intelligence import FieldResolution, FieldSuggestion, MatchEdge
 from api.programming.metadata.models.content import Content
 
@@ -333,8 +335,34 @@ def bulk_accept(
     body: BulkAcceptRequest,
     db: Session = Depends(get_db),
 ):
-    """여러 필드 일괄 accept (reject 포함 불가)."""
+    """여러 필드 일괄 accept (reject 포함 불가).
+
+    enable_web_search=true 시 WebSearch 기반 suggestions 추가 (bulk guard 적용).
+    """
+    from shared.quota_manager import QuotaManager
+
     _require_content(content_id, db)
+
+    # Bulk guard (enable_web_search=true 시만 체크)
+    if body.enable_web_search:
+        try:
+            quota_mgr = QuotaManager()
+            check_bulk_allowed(
+                expected_calls=len(body.fields),
+                provider="brave",
+                daily_limit=60,
+                quota_manager=quota_mgr,
+            )
+        except BulkQuotaError as e:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Bulk WebSearch rejected: {e.detail}",
+            )
+
+    # enable_web_search=true 시 aggregator로 WebSearch suggestions 추가
+    if body.enable_web_search:
+        aggregate_content(content_id, db, enable_web_search=True)
+
     results = []
     now = datetime.now(timezone.utc)
 
