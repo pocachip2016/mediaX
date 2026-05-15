@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
-import { metadataApi, imageMetaApi, posterRecommendApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, resolvePosterUrl } from "@/lib/api"
+import { metadataApi, imageMetaApi, posterRecommendApi, damApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, type DamAssetsOut, resolvePosterUrl } from "@/lib/api"
 import { SourceBadge } from "@/components/source-badge"
 import { MetadataDiffPanel } from "@/components/contents/MetadataDiffPanel"
 import { MetadataEnrichPanel } from "@/components/contents/MetadataEnrichPanel"
@@ -65,7 +65,8 @@ export default function ContentDetailPage() {
   const [activeTab, setActiveTab] = useState<TabName>("text")
   const [selectedSynopsis, setSelectedSynopsis] = useState<"cp" | "ai" | "tmdb" | "manual">("ai")
   const [changelog, setChangelog] = useState<any>(null)
-  const [damAssets, setDamAssets] = useState<any>(null)
+  const [damAssets, setDamAssets] = useState<DamAssetsOut | null>(null)
+  const [damRetry, setDamRetry] = useState(0)
   const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
 
@@ -103,14 +104,15 @@ export default function ContentDetailPage() {
     }
   }, [activeTab, contentId])
 
-  // Load dam assets when assets tab becomes active
+  // Load dam assets when assets tab becomes active (or retry button clicked)
   useEffect(() => {
     if (activeTab === "assets") {
-      metadataApi.getDamAssets(contentId)
+      setDamAssets(null)
+      damApi.getAssetsByContent(contentId)
         .then(setDamAssets)
         .catch(() => setDamAssets({ content_id: contentId, assets: [], dam_available: false }))
     }
-  }, [activeTab, contentId])
+  }, [activeTab, contentId, damRetry])
 
   // Load meta recommendations on mount (mock fallback when backend unavailable)
   useEffect(() => {
@@ -834,26 +836,48 @@ export default function ContentDetailPage() {
 
           {activeTab === "assets" && (
             <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-slate-900">Dam Assets</h3>
+                <button
+                  onClick={() => setDamRetry((n) => n + 1)}
+                  className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                >
+                  <RotateCcw className="h-3 w-3" /> 새로고침
+                </button>
+              </div>
               {!damAssets ? (
                 <p className="text-slate-500 text-sm text-center py-8">로딩 중...</p>
               ) : !damAssets.dam_available ? (
-                <p className="text-amber-600 text-sm text-center py-8">Dam API에 연결할 수 없습니다.</p>
+                <div className="text-center py-8 space-y-2">
+                  <p className="text-amber-600 text-sm">DAM 미가용 — 연결을 확인하세요.</p>
+                  <button
+                    onClick={() => setDamRetry((n) => n + 1)}
+                    className="text-xs px-3 py-1.5 rounded border border-amber-200 text-amber-700 hover:bg-amber-50 transition-colors"
+                  >
+                    재시도
+                  </button>
+                </div>
               ) : damAssets.assets.length === 0 ? (
-                <p className="text-slate-500 text-sm text-center py-8">매핑된 에셋이 없습니다.</p>
+                <p className="text-slate-500 text-sm text-center py-8">연결된 Dam 에셋 없음</p>
               ) : (
                 <div className="grid grid-cols-3 gap-4">
-                  {damAssets.assets.map((asset: any) => (
-                    <div key={asset.asset_id} className="border rounded-lg overflow-hidden">
-                      <img
-                        src={asset.thumbnail_url}
-                        alt={asset.filename}
-                        className="w-full h-32 object-cover bg-slate-100"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                      />
-                      <div className="p-2">
+                  {damAssets.assets.map((asset) => (
+                    <div key={asset.asset_id} className="border border-slate-200 rounded-lg overflow-hidden hover:border-blue-300 transition-colors">
+                      <div className="h-32 bg-slate-100 overflow-hidden flex items-center justify-center">
+                        <img
+                          src={asset.thumbnail_url}
+                          alt={asset.filename}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                        />
+                      </div>
+                      <div className="p-2 space-y-0.5">
                         <p className="text-xs font-medium truncate">{asset.filename}</p>
+                        {asset.status && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{asset.status}</span>
+                        )}
                         {asset.confidence != null && (
-                          <p className="text-xs text-slate-500">{(asset.confidence * 100).toFixed(0)}% match</p>
+                          <p className="text-[10px] text-slate-400">{(asset.confidence * 100).toFixed(0)}% match</p>
                         )}
                       </div>
                     </div>

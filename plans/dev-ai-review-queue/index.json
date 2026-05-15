@@ -70,7 +70,9 @@
       "id": "5",
       "title": "Dam Link Display 연결",
       "description": "기존 GET /api/meta-core/contents/{id}/dam-assets 사용 (신규 백엔드 없음). damApi.getAssetsByContent 추가. 상세 페이지 assets 카드 + Dam 미가용 fallback. 후보 카드에 'Link to Dam' 자리만 (실호출은 Later).",
-      "status": "pending",
+      "status": "completed",
+      "summary": "damApi.getAssetsByContent 추가(lib/api.ts) + [id]/page.tsx damAssets any→DamAssetsOut 타입 교체 + damRetry 재시도 버튼 + 로딩/미가용/빈/썸네일 4상태 분기. VisualAssetCandidatePanel Link to Dam title 'Phase later' 갱신. typecheck 0 errors",
+      "completed_at": "2026-05-16T09:00:00+09:00",
       "files": ["step5.md"],
       "created_at": "2026-05-15T00:00:00+09:00"
     },
@@ -78,7 +80,9 @@
       "id": "6",
       "title": "Bulk Review Summary 보강",
       "description": "상단 summary 6칸 확정 + 다중 필터 조합. bulk apply는 metadata_status=clean AND poster_status=poster_ok AND risk_level=low 조건만 활성. 가드 단위테스트.",
-      "status": "pending",
+      "status": "completed",
+      "summary": "Summary 6칸 클릭 필터 토글 + 다중 차원 chip 필터(metadata/poster/risk/input AND 조합) + 행 체크박스 다중 선택 + Bulk Apply 가드(clean+poster_ok+low만 활성, 위배건 수/ID 표시) + reviewQueueGuard.ts 순수 함수 분리. typecheck 0 errors",
+      "completed_at": "2026-05-16T10:00:00+09:00",
       "files": ["step6.md"],
       "created_at": "2026-05-15T00:00:00+09:00"
     },

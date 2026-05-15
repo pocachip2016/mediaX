@@ -1070,3 +1070,10 @@ export const posterRecommendApi = {
       body: JSON.stringify({ image_id: imageId } satisfies PosterSelectRequest),
     }),
 }
+
+// ── DAM API ───────────────────────────────────────────────
+
+export const damApi = {
+  getAssetsByContent: (contentId: number) =>
+    request<DamAssetsOut>(`/api/meta-core/contents/${contentId}/dam-assets`),
+}

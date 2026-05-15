@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-ai-review-queue Steps 5–6 대기 (Step 5: Dam Link Display, Step 6: Bulk Review Summary)
+- [ ] content-register Steps 2–3 대기 (Step 2: 3탭 패널(글자/이미지/영상), Step 3: [id]/?enrich=true 진입점)
 
 ## Next (이번 마일스톤 — Dam 연동)
 - [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
@@ -20,6 +20,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-ai-review-queue Steps 5–6 — Dam Link Display(damApi+4상태) + Bulk Summary 보강(다중 필터+선택+Bulk Apply 가드) (2026-05-16)
 - [x] dev-ai-review-queue Steps 1–4, 7 — unified review queue API(30 tests) + Review Queue 리스트 + MetadataDiffPanel + MetadataEnrichPanel 2패널 + VisualAssetCandidatePanel (2026-05-16)
 - [x] dev-meta-recommendations-ui — Missing 배지 + 추천 패널(auto_fill + conflict 2단 비교 + AI 종합) + 백엔드 /recommendations 엔드포인트 (2026-05-15)
 - [x] dev-flexible-meta-pipeline Step 5a~5d — DB 정리 + 크롤러 cast/director 추출 + CSV 12열 + Watcha 237건 재업로드 + credits E2E 검증 (2026-05-15)

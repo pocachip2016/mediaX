@@ -1694,6 +1694,85 @@ print('  ✓ Watcha 0건 / 더미 0건 확인')
     echo "=== PASS ==="
     ;;
 
+  ai-review-queue-5)
+    echo "=== ai-review-queue-5: Dam Link Display ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- damApi export ---"
+    grep -q "export const damApi" "$CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ damApi exported" \
+      || (echo "  ✗ damApi missing" && exit 1)
+    echo "--- DamAssetsOut type used ---"
+    grep -q "DamAssetsOut" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ DamAssetsOut type in page" \
+      || (echo "  ✗ DamAssetsOut missing in page" && exit 1)
+    echo "--- retry button ---"
+    grep -q "damRetry" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ damRetry state present" \
+      || (echo "  ✗ damRetry missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  content-register-1)
+    echo "=== content-register-1: 등록 페이지 Hero 카드 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- new/page.tsx exists ---"
+    [ -f "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" ] \
+      && echo "  ✓ new/page.tsx exists" \
+      || (echo "  ✗ new/page.tsx missing" && exit 1)
+    echo "--- ContentForm removed ---"
+    grep -q "ContentForm" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && (echo "  ✗ ContentForm still imported" && exit 1) \
+      || echo "  ✓ ContentForm removed"
+    echo "--- poster upload zone ---"
+    grep -q 'aspect-\[2/3\]' "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ aspect-[2/3] poster zone present" \
+      || (echo "  ✗ aspect-[2/3] missing" && exit 1)
+    echo "--- enrich redirect ---"
+    grep -q 'enrich=true' "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ enrich=true redirect present" \
+      || (echo "  ✗ enrich=true redirect missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-6)
+    echo "=== ai-review-queue-6: Bulk Review Summary 보강 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- guard function exists ---"
+    [ -f "$CMS/apps/web/lib/reviewQueueGuard.ts" ] \
+      && echo "  ✓ reviewQueueGuard.ts exists" \
+      || (echo "  ✗ reviewQueueGuard.ts missing" && exit 1)
+    echo "--- guard function exports ---"
+    grep -q "checkBulkApplyGuard" "$CMS/apps/web/lib/reviewQueueGuard.ts" \
+      && echo "  ✓ checkBulkApplyGuard exported" \
+      || (echo "  ✗ checkBulkApplyGuard missing" && exit 1)
+    echo "--- review page multi-filter ---"
+    grep -q "FilterState" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ FilterState type present" \
+      || (echo "  ✗ FilterState missing" && exit 1)
+    grep -q "checkBulkApplyGuard" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ guard used in page" \
+      || (echo "  ✗ guard not used in page" && exit 1)
+    grep -q "toggleDimension" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ multi-dimension filter toggle present" \
+      || (echo "  ✗ toggleDimension missing" && exit 1)
+    grep -q "handleBulkApply" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ bulk apply handler present" \
+      || (echo "  ✗ handleBulkApply missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
   ai-review-queue-7)
     echo "=== ai-review-queue-7: MetadataEnrichPanel 2패널 ==="
     CMS="$SCRIPT_DIR/../mediaX-CMS"
@@ -1782,7 +1861,7 @@ print('  ✓ Watcha 0건 / 더미 0건 확인')
 
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-7"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3"
     exit 1
     ;;
 esac

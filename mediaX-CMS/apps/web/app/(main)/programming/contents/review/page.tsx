@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AlertCircle, RefreshCw } from "lucide-react"
+import { AlertCircle, CheckSquare, RefreshCw, Square } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import {
   metadataApi,
@@ -10,6 +10,7 @@ import {
   type AiReviewQueueSummary,
   type PaginatedAiReviewQueue,
 } from "@/lib/api"
+import { checkBulkApplyGuard } from "@/lib/reviewQueueGuard"
 
 // ── Mock 폴백 ─────────────────────────────────────────────
 
@@ -39,18 +40,34 @@ const MOCK_DATA: PaginatedAiReviewQueue = {
   items: MOCK_ITEMS, summary: MOCK_SUMMARY, total: 12, page: 1, size: 50,
 }
 
-// ── 상수 ─────────────────────────────────────────────────
+// ── 필터 상태 ─────────────────────────────────────────────
 
-type FilterChip = "all" | "missing" | "conflict" | "dam_match" | "external_only" | "high"
+type FilterState = {
+  metadata_status: AiReviewQueueRow["metadata_status"] | null
+  poster_status: AiReviewQueueRow["poster_status"] | null
+  risk_level: AiReviewQueueRow["risk_level"] | null
+  input_type: AiReviewQueueRow["input_type"] | null
+}
 
-const CHIPS: Array<{ key: FilterChip; label: string }> = [
-  { key: "all",          label: "전체" },
-  { key: "missing",      label: "Missing" },
-  { key: "conflict",     label: "Conflict" },
-  { key: "dam_match",    label: "Dam Match" },
-  { key: "external_only", label: "External Only" },
-  { key: "high",         label: "High Risk" },
-]
+const EMPTY_FILTER: FilterState = {
+  metadata_status: null, poster_status: null, risk_level: null, input_type: null,
+}
+
+function filterToParams(f: FilterState): Parameters<typeof metadataApi.getAiReviewQueue>[0] {
+  return {
+    ...(f.metadata_status && { metadata_status: f.metadata_status }),
+    ...(f.poster_status   && { poster_status: f.poster_status }),
+    ...(f.risk_level      && { risk_level: f.risk_level }),
+    ...(f.input_type      && { input_type: f.input_type }),
+    include_dam: true,
+  }
+}
+
+function isEmptyFilter(f: FilterState) {
+  return !f.metadata_status && !f.poster_status && !f.risk_level && !f.input_type
+}
+
+// ── 배지 클래스 ────────────────────────────────────────────
 
 const META_STATUS_CLASS: Record<AiReviewQueueRow["metadata_status"], string> = {
   missing:     "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -77,32 +94,26 @@ const INPUT_LABEL: Record<AiReviewQueueRow["input_type"], string> = {
   bulk: "Bulk", manual: "Manual", existing: "Existing",
 }
 
-function chipToApiParams(chip: FilterChip): Parameters<typeof metadataApi.getAiReviewQueue>[0] {
-  if (chip === "missing")      return { metadata_status: "missing",   include_dam: true }
-  if (chip === "conflict")     return { metadata_status: "conflict",  include_dam: true }
-  if (chip === "dam_match")    return { poster_status:   "dam_match_found", include_dam: true }
-  if (chip === "external_only") return { poster_status:  "external_only", include_dam: true }
-  if (chip === "high")         return { risk_level:      "high",      include_dam: true }
-  return { include_dam: true }
-}
-
 function formatDate(iso: string) { return iso.slice(0, 10) }
 
 // ── 메인 ─────────────────────────────────────────────────
 
 export default function AiReviewQueuePage() {
   const router = useRouter()
-  const [chip, setChip] = useState<FilterChip>("all")
+  const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER)
   const [data, setData] = useState<PaginatedAiReviewQueue | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isMock, setIsMock] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
 
-  async function load(activeChip: FilterChip) {
+  async function load(f: FilterState) {
     setLoading(true)
     setError(null)
+    setSelected(new Set())
     try {
-      const result = await metadataApi.getAiReviewQueue(chipToApiParams(activeChip))
+      const result = await metadataApi.getAiReviewQueue(filterToParams(f))
       setData(result)
       setIsMock(false)
     } catch {
@@ -113,9 +124,63 @@ export default function AiReviewQueuePage() {
     }
   }
 
-  useEffect(() => { load(chip) }, [chip])
+  useEffect(() => { load(filter) }, [filter])
+
+  function toggleDimension<K extends keyof FilterState>(key: K, value: FilterState[K]) {
+    setFilter(prev => ({ ...prev, [key]: prev[key] === value ? null : value }))
+  }
+
+  function setSummaryFilter(partial: Partial<FilterState>) {
+    setFilter(prev => {
+      const next = { ...EMPTY_FILTER, ...partial }
+      const alreadyActive = (Object.keys(partial) as (keyof FilterState)[]).every(
+        k => prev[k] === partial[k]
+      )
+      return alreadyActive ? EMPTY_FILTER : next
+    })
+  }
 
   const summary = data?.summary ?? MOCK_SUMMARY
+  const items = data?.items ?? []
+
+  // ── 선택 / Bulk Apply ──────────────────────────────────
+  const allSelected = items.length > 0 && items.every(r => selected.has(r.content_id))
+  const selectedRows = items.filter(r => selected.has(r.content_id))
+  const guardResult = checkBulkApplyGuard(selectedRows)
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(items.map(r => r.content_id)))
+    }
+  }
+
+  function toggleRow(id: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  async function handleBulkApply() {
+    if (!guardResult.allowed) return
+    setBulkLoading(true)
+    setError(null)
+    try {
+      await metadataApi.bulkApprove({ content_ids: [...selected], reviewer: "operator" })
+      await load(filter)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "일괄 승인 실패")
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const bulkTooltip = !guardResult.allowed && guardResult.violatingIds.length > 0
+    ? `위배 ${guardResult.violatingIds.length}건: ${guardResult.violatingIds.join(", ")}`
+    : undefined
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
@@ -126,7 +191,7 @@ export default function AiReviewQueuePage() {
           <p className="text-sm text-muted-foreground">메타데이터·포스터·DAM 통합 검수 대기열</p>
         </div>
         <button
-          onClick={() => load(chip)}
+          onClick={() => load(filter)}
           className="p-1.5 rounded-lg hover:bg-accent transition-colors"
           title="새로고침"
         >
@@ -134,50 +199,156 @@ export default function AiReviewQueuePage() {
         </button>
       </div>
 
-      {/* Summary 1행 */}
-      <div className="flex flex-wrap gap-2 mb-4 p-3 rounded-lg border border-border bg-muted/30 text-sm">
-        <SummaryCell label="Total"       value={summary.total}       />
-        <SummaryCell label="Missing"     value={summary.missing}     cls="text-amber-600 dark:text-amber-400" />
-        <SummaryCell label="Conflict"    value={summary.conflict}    cls="text-red-600 dark:text-red-400" />
-        <SummaryCell label="Needs Poster" value={summary.needs_poster} cls="text-violet-600 dark:text-violet-400" />
-        <SummaryCell label="Dam Match"   value={summary.dam_match}   cls="text-teal-600 dark:text-teal-400" />
-        <SummaryCell label="High Risk"   value={summary.high_risk}   cls="text-red-700 dark:text-red-400 font-semibold" />
+      {/* Summary 1행 (클릭 = 필터 토글) */}
+      <div className="flex flex-wrap gap-0 mb-4 rounded-lg border border-border bg-muted/30 text-sm divide-x divide-border overflow-hidden">
+        <SummaryCell
+          label="Total" value={summary.total}
+          active={isEmptyFilter(filter)}
+          onClick={() => setFilter(EMPTY_FILTER)}
+        />
+        <SummaryCell
+          label="Missing" value={summary.missing} cls="text-amber-600 dark:text-amber-400"
+          active={filter.metadata_status === "missing"}
+          onClick={() => setSummaryFilter({ metadata_status: "missing" })}
+        />
+        <SummaryCell
+          label="Conflict" value={summary.conflict} cls="text-red-600 dark:text-red-400"
+          active={filter.metadata_status === "conflict"}
+          onClick={() => setSummaryFilter({ metadata_status: "conflict" })}
+        />
+        <SummaryCell
+          label="Needs Poster" value={summary.needs_poster} cls="text-violet-600 dark:text-violet-400"
+          active={filter.poster_status === "needs_selection"}
+          onClick={() => setSummaryFilter({ poster_status: "needs_selection" })}
+        />
+        <SummaryCell
+          label="Dam Match" value={summary.dam_match} cls="text-teal-600 dark:text-teal-400"
+          active={filter.poster_status === "dam_match_found"}
+          onClick={() => setSummaryFilter({ poster_status: "dam_match_found" })}
+        />
+        <SummaryCell
+          label="High Risk" value={summary.high_risk} cls="text-red-700 dark:text-red-400 font-semibold"
+          active={filter.risk_level === "high"}
+          onClick={() => setSummaryFilter({ risk_level: "high" })}
+        />
         {isMock && (
-          <span className="ml-auto self-center text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-            Mock 데이터
-          </span>
+          <span className="ml-auto self-center text-xs px-3 text-amber-700">Mock</span>
         )}
       </div>
 
-      {/* Filter chips */}
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {CHIPS.map(c => (
-          <button
-            key={c.key}
-            onClick={() => setChip(c.key)}
-            className={cn(
-              "px-3 py-1 rounded-full text-xs font-medium transition-colors",
-              chip === c.key
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:bg-accent"
-            )}
+      {/* Filter chips — 다중 차원 */}
+      <div className="flex flex-wrap items-center gap-1 mb-3">
+        <Chip active={isEmptyFilter(filter)} onClick={() => setFilter(EMPTY_FILTER)}>전체</Chip>
+
+        <Divider />
+
+        <span className="text-[10px] text-muted-foreground px-1">메타</span>
+        {(["missing", "conflict", "enhancement", "clean"] as const).map(v => (
+          <Chip
+            key={v}
+            active={filter.metadata_status === v}
+            onClick={() => toggleDimension("metadata_status", v)}
           >
-            {c.label}
-          </button>
+            {v.charAt(0).toUpperCase() + v.slice(1)}
+          </Chip>
+        ))}
+
+        <Divider />
+
+        <span className="text-[10px] text-muted-foreground px-1">포스터</span>
+        {([
+          ["needs_selection", "Needs Sel."],
+          ["external_only",   "External"],
+          ["dam_match_found", "Dam Match"],
+        ] as const).map(([v, label]) => (
+          <Chip
+            key={v}
+            active={filter.poster_status === v}
+            onClick={() => toggleDimension("poster_status", v)}
+          >
+            {label}
+          </Chip>
+        ))}
+
+        <Divider />
+
+        <span className="text-[10px] text-muted-foreground px-1">리스크</span>
+        {(["low", "medium", "high"] as const).map(v => (
+          <Chip
+            key={v}
+            active={filter.risk_level === v}
+            onClick={() => toggleDimension("risk_level", v)}
+          >
+            {v.charAt(0).toUpperCase() + v.slice(1)}
+          </Chip>
+        ))}
+
+        <Divider />
+
+        <span className="text-[10px] text-muted-foreground px-1">입력</span>
+        {(["bulk", "manual", "existing"] as const).map(v => (
+          <Chip
+            key={v}
+            active={filter.input_type === v}
+            onClick={() => toggleDimension("input_type", v)}
+          >
+            {INPUT_LABEL[v]}
+          </Chip>
         ))}
       </div>
 
-      {/* 테이블 */}
+      {/* 선택 툴바 */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 mb-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/20 text-sm">
+          <span className="text-primary font-medium">{selected.size}개 선택됨</span>
+          <div title={bulkTooltip}>
+            <button
+              onClick={handleBulkApply}
+              disabled={!guardResult.allowed || bulkLoading}
+              className={cn(
+                "px-3 py-1 rounded text-xs font-medium transition-colors",
+                guardResult.allowed
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-muted text-muted-foreground cursor-not-allowed"
+              )}
+            >
+              {bulkLoading ? "승인 중…" : "선택 일괄 승인"}
+            </button>
+          </div>
+          {!guardResult.allowed && guardResult.violatingIds.length > 0 && (
+            <span className="text-xs text-destructive">
+              위배 {guardResult.violatingIds.length}건 포함 (clean + poster_ok + low만 가능)
+            </span>
+          )}
+          <button
+            onClick={() => setSelected(new Set())}
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+          >
+            선택 해제
+          </button>
+        </div>
+      )}
+
+      {/* 오류 */}
       {error && (
         <div className="flex items-center gap-2 text-sm text-destructive mb-3">
           <AlertCircle className="h-4 w-4" /> {error}
         </div>
       )}
 
+      {/* 테이블 */}
       <div className="rounded-lg border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr>
+              <th className="px-2 py-2 w-8">
+                <button onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
+                  {allSelected
+                    ? <CheckSquare className="h-3.5 w-3.5" />
+                    : <Square className="h-3.5 w-3.5" />
+                  }
+                </button>
+              </th>
               <th className="text-left px-3 py-2 font-medium text-muted-foreground">Title</th>
               <th className="text-left px-2 py-2 font-medium text-muted-foreground w-20">Input</th>
               <th className="text-left px-2 py-2 font-medium text-muted-foreground w-28">Metadata</th>
@@ -192,25 +363,34 @@ export default function AiReviewQueuePage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={9} className="text-center py-10 text-muted-foreground text-sm">
+                <td colSpan={10} className="text-center py-10 text-muted-foreground text-sm">
                   <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-1" />
                   로딩 중...
                 </td>
               </tr>
             )}
-            {!loading && data?.items.length === 0 && (
+            {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={9} className="text-center py-10 text-muted-foreground text-sm">
+                <td colSpan={10} className="text-center py-10 text-muted-foreground text-sm">
                   해당 조건의 검수 항목이 없습니다.
                 </td>
               </tr>
             )}
-            {!loading && data?.items.map(row => (
+            {!loading && items.map(row => (
               <tr
                 key={row.content_id}
                 onClick={() => router.push(`/programming/contents/${row.content_id}`)}
-                className="border-t border-border hover:bg-accent/40 cursor-pointer transition-colors"
+                className={cn(
+                  "border-t border-border hover:bg-accent/40 cursor-pointer transition-colors",
+                  selected.has(row.content_id) && "bg-primary/5"
+                )}
               >
+                <td className="px-2 py-1.5 text-center" onClick={e => { e.stopPropagation(); toggleRow(row.content_id) }}>
+                  {selected.has(row.content_id)
+                    ? <CheckSquare className="h-3.5 w-3.5 text-primary mx-auto" />
+                    : <Square className="h-3.5 w-3.5 text-muted-foreground mx-auto" />
+                  }
+                </td>
                 <td className="px-3 py-1.5">
                   <span className="font-medium truncate max-w-[240px] block">{row.title}</span>
                   <span className="text-xs text-muted-foreground">{row.content_type}</span>
@@ -254,7 +434,6 @@ export default function AiReviewQueuePage() {
         </table>
       </div>
 
-      {/* 페이지 정보 */}
       {data && data.total > data.size && (
         <p className="text-xs text-muted-foreground mt-2 text-right">
           {data.items.length} / {data.total}건
@@ -274,11 +453,43 @@ function Badge({ cls, children }: { cls: string; children: React.ReactNode }) {
   )
 }
 
-function SummaryCell({ label, value, cls }: { label: string; value: number; cls?: string }) {
+function SummaryCell({
+  label, value, cls, active, onClick,
+}: {
+  label: string; value: number; cls?: string; active: boolean; onClick(): void
+}) {
   return (
-    <span className="flex items-center gap-1.5 px-2">
-      <span className="text-muted-foreground">{label}</span>
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 px-3 py-2.5 transition-colors text-sm",
+        active
+          ? "bg-primary/10 text-foreground"
+          : "hover:bg-muted/60 text-muted-foreground",
+      )}
+    >
+      <span>{label}</span>
       <span className={cn("font-semibold tabular-nums", cls)}>{value}</span>
-    </span>
+    </button>
   )
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick(): void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors",
+        active
+          ? "bg-primary text-primary-foreground"
+          : "bg-muted text-muted-foreground hover:bg-accent"
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Divider() {
+  return <span className="text-border text-xs select-none px-0.5">│</span>
 }

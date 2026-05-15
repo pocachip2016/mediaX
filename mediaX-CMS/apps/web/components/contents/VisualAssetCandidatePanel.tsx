@@ -204,7 +204,7 @@ function PosterCard({
             {candidate.source === "dam" && (
               <button
                 disabled
-                title="Step 5에서 구현 예정"
+                title="Phase later — DAM 직접 연결 API 구현 예정"
                 className="w-full text-[10px] px-1 py-0.5 bg-slate-50 text-slate-300 rounded cursor-not-allowed"
               >
                 Link to Dam
