@@ -30,7 +30,11 @@ export const docsNav: NavSection[] = [
         href: "/programming/contents",
         items: [
           { title: "콘텐츠 목록", href: "/programming/contents", label: "NEW" },
+          { title: "콘텐츠 등록", href: "/programming/contents/new", label: "NEW" },
+          { title: "일괄 업로드", href: "/programming/contents/upload", label: "NEW" },
+          { title: "외부 검색", href: "/programming/contents/external", label: "NEW" },
           { title: "처리 현황", href: "/programming/contents/pipeline", label: "NEW" },
+          { title: "AI Review Queue", href: "/programming/contents/review", label: "NEW" },
         ],
       },
       {

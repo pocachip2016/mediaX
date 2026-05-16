@@ -3,7 +3,7 @@
  * Base URL: NEXT_PUBLIC_API_URL (기본 http://localhost:8000)
  */
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+export const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export function resolvePosterUrl(url: string | null | undefined): string | null {
   if (!url) return null
@@ -63,8 +63,39 @@ export interface MetadataOut {
   reviewed_at: string | null
 }
 
+export interface PersonOut {
+  id: number
+  name_ko: string
+  name_en: string | null
+  tmdb_person_id: number | null
+}
+
+export interface ContentCreditOut {
+  id: number
+  person: PersonOut
+  role: string
+  character_name: string | null
+  cast_order: number | null
+  source: string | null
+}
+
+export interface GenreOut {
+  id: number
+  code: string
+  name_ko: string
+}
+
+export interface ContentGenreOut {
+  genre: GenreOut
+  is_primary: boolean
+  source: string | null
+}
+
 export interface ContentDetail extends ContentOut {
   metadata_record: MetadataOut | null
+  genres: ContentGenreOut[]
+  credits: ContentCreditOut[]
+  external_sources: ExternalSourceOut[]
 }
 
 export interface PaginatedContents {
@@ -259,6 +290,29 @@ export interface CreateFromSourcesOut {
   status: string
 }
 
+// ── 메타 보강 추천 타입 ───────────────────────────────────
+
+export interface SourceFieldRec {
+  source_type: string
+  source_id: number
+  value: string
+  confidence: number
+}
+
+export interface FieldRecommendation {
+  field: string
+  status: "auto" | "conflict"
+  recommendations: SourceFieldRec[]
+  ai_synthesis: SourceFieldRec | null
+}
+
+export interface RecommendationsOut {
+  content_id: number
+  missing_fields: string[]
+  auto_fill: FieldRecommendation[]
+  conflicts: FieldRecommendation[]
+}
+
 // ── API 함수 ──────────────────────────────────────────────
 
 export const metadataApi = {
@@ -367,6 +421,29 @@ export const metadataApi = {
 
   getBatchJob: (jobId: number) =>
     request<BatchJobOut>(`/api/programming/metadata/upload/batch/${jobId}`),
+
+  // ── AI Review Queue ───────────────────────────────────────
+  getAiReviewQueue: (params?: {
+    status?: string
+    input_type?: string
+    metadata_status?: string
+    poster_status?: string
+    risk_level?: string
+    include_dam?: boolean
+    page?: number
+    size?: number
+  }) => {
+    const q = new URLSearchParams()
+    if (params?.status) q.set("status", params.status)
+    if (params?.input_type) q.set("input_type", params.input_type)
+    if (params?.metadata_status) q.set("metadata_status", params.metadata_status)
+    if (params?.poster_status) q.set("poster_status", params.poster_status)
+    if (params?.risk_level) q.set("risk_level", params.risk_level)
+    if (params?.include_dam != null) q.set("include_dam", String(params.include_dam))
+    if (params?.page) q.set("page", String(params.page))
+    if (params?.size) q.set("size", String(params.size))
+    return request<PaginatedAiReviewQueue>(`/api/programming/metadata/ai-review-queue?${q}`)
+  },
 
   // ── dev-ui-api-wiring: 18개 신규 함수 ─────────────────────
 
@@ -506,6 +583,11 @@ export const metadataApi = {
 
   getDamAssets: (contentId: number) =>
     request<DamAssetsOut>(`/api/meta-core/contents/${contentId}/dam-assets`),
+
+  getRecommendations: (contentId: number) =>
+    request<RecommendationsOut>(
+      `/api/programming/metadata/contents/${contentId}/recommendations`
+    ),
 }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
@@ -936,6 +1018,39 @@ export interface PosterSelectRequest {
   image_id: number
 }
 
+// ── AI Review Queue 타입 ──────────────────────────────────
+
+export type AiReviewQueueRow = {
+  content_id: number
+  title: string
+  content_type: string
+  input_type: "bulk" | "manual" | "existing"
+  content_status: string
+  metadata_status: "missing" | "conflict" | "enhancement" | "clean"
+  poster_status: "poster_ok" | "needs_selection" | "dam_match_found" | "external_only" | "no_candidate"
+  dam_match_count: number
+  risk_level: "low" | "medium" | "high"
+  confidence: number
+  updated_at: string
+}
+
+export type AiReviewQueueSummary = {
+  total: number
+  missing: number
+  conflict: number
+  needs_poster: number
+  dam_match: number
+  high_risk: number
+}
+
+export type PaginatedAiReviewQueue = {
+  items: AiReviewQueueRow[]
+  summary: AiReviewQueueSummary
+  total: number
+  page: number
+  size: number
+}
+
 const _posterBase = (contentId: number) =>
   `/api/programming/metadata/contents/${contentId}`
 
@@ -954,4 +1069,11 @@ export const posterRecommendApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_id: imageId } satisfies PosterSelectRequest),
     }),
+}
+
+// ── DAM API ───────────────────────────────────────────────
+
+export const damApi = {
+  getAssetsByContent: (contentId: number) =>
+    request<DamAssetsOut>(`/api/meta-core/contents/${contentId}/dam-assets`),
 }

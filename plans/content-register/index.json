@@ -1,0 +1,40 @@
+{
+  "id": "content-register",
+  "title": "content-register — 신규 콘텐츠 등록 흐름",
+  "description": "Hero card(기본 정보) + 3탭 패널(보조 자산)으로 신규 VOD 콘텐츠 등록. Step 1: hero card(포스터+기본메타), Step 2: 3탭 패널(글자/이미지/영상), Step 3: [id]/?enrich=true 진입점.",
+  "status": "completed",
+  "created_at": "2026-05-16T11:00:00+09:00",
+  "updated_at": "2026-05-16T11:45:00+09:00",
+  "steps": [
+    {
+      "id": "1",
+      "title": "Hero card — 포스터 + 기본 메타 입력폼",
+      "description": "좌: 포스터 드롭존(aspect 2:3). 우: 제목(필수) + 원제목 + 장르태그(Enter/쉼표 추가) + 유형(select, 기본 movie) + 제작연도 + CP사(필수) + 런타임 + 국가 + 감독 + 주연 + 줄거리. 유효성: title, cp_name 필수(touched 후 빨강).",
+      "status": "completed",
+      "summary": "포스터 드롭존(FileReader preview) + 폼 필드(FormState 10개) + 장르 태그 입력(Enter/쉼표/blur 이벤트) + 색상(touched red) + '등록'(saving state) '취소' 버튼. typecheck 0 errors, E2E 미포함.",
+      "completed_at": "2026-05-16T01:00:00+09:00",
+      "files": ["step1.md"],
+      "created_at": "2026-05-16T00:00:00+09:00"
+    },
+    {
+      "id": "2",
+      "title": "3탭 패널 — 글자/이미지/영상 선택 입력",
+      "description": "Hero card 하단에 탭 내비 추가. 글자: extended_synopsis(6행 textarea) + catchphrase(1줄) + keywords(태그 입력). 이미지: stills 드롭존(max 5장, preview grid) + background_image(16:9 drop). 영상: vod_path(path input) + trailer_path + format(select: MP4/TS/HLS) + resolution(select: 4K/1080p/720p). POST body 병합.",
+      "status": "completed",
+      "summary": "activeTab state + TabNav + 글자 탭(extended_synopsis textarea, catchphrase input, keywords 태그) + 이미지 탭(stills preview grid max 5장, background 16:9 drop) + 영상 탭(vodPath, trailerPath, format/resolution select) + handleSubmit 확장. typecheck 0 errors, verify.sh content-register-2 통과.",
+      "completed_at": "2026-05-16T11:30:00+09:00",
+      "files": ["step2.md"],
+      "created_at": "2026-05-16T11:00:00+09:00"
+    },
+    {
+      "id": "3",
+      "title": "[id]/?enrich=true 진입점 — AI 보강 패널 표시",
+      "description": "POST 성공 후 /programming/contents/{id}?enrich=true로 리다이렉트. 상세 페이지에서 enrich query param 감지 → MetadataEnrichPanel 자동 활성.",
+      "status": "completed",
+      "summary": "useSearchParams import + enrich query param 감지 useEffect + setShowEnrich(true) 자동 활성. verify.sh content-register-3 추가 및 통과.",
+      "completed_at": "2026-05-16T11:45:00+09:00",
+      "files": ["step3.md"],
+      "created_at": "2026-05-16T11:00:00+09:00"
+    }
+  ]
+}

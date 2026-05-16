@@ -1,16 +1,21 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
-  ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown,
+  ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown, Sparkles,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
-import { metadataApi, imageMetaApi, posterRecommendApi, type ContentOut, type ImageMetaOut, type PosterCandidateOut, resolvePosterUrl } from "@/lib/api"
+import { metadataApi, imageMetaApi, posterRecommendApi, damApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, type DamAssetsOut, resolvePosterUrl } from "@/lib/api"
+import { SourceBadge } from "@/components/source-badge"
+import { MetadataDiffPanel } from "@/components/contents/MetadataDiffPanel"
+import { MetadataEnrichPanel } from "@/components/contents/MetadataEnrichPanel"
+import { VisualAssetCandidatePanel } from "@/components/contents/VisualAssetCandidatePanel"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
+
 
 const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
   waiting: { label: "대기", emoji: "⏳", color: "bg-slate-100 text-slate-600" },
@@ -42,21 +47,34 @@ function TabCountBadge({ tab }: { tab: "sources" | "ai" }) {
   return <span className="text-xs font-medium text-slate-500 ml-2">{count}</span>
 }
 
+function MissingBadge() {
+  return (
+    <span className="text-xs text-slate-400 border border-dashed border-slate-200 rounded px-1.5 py-0.5">
+      Missing
+    </span>
+  )
+}
+
 export default function ContentDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const contentId = Number(params.id)
   
-  const [content, setContent] = useState<ContentOut | null>(null)
+  const [content, setContent] = useState<ContentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabName>("text")
   const [selectedSynopsis, setSelectedSynopsis] = useState<"cp" | "ai" | "tmdb" | "manual">("ai")
   const [changelog, setChangelog] = useState<any>(null)
-  const [damAssets, setDamAssets] = useState<any>(null)
+  const [damAssets, setDamAssets] = useState<DamAssetsOut | null>(null)
+  const [damRetry, setDamRetry] = useState(0)
   const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
-  const [posterRecommending, setPosterRecommending] = useState(false)
-  const [posterSelecting, setPosterSelecting] = useState<number | null>(null)
+
+  const [castExpanded, setCastExpanded] = useState(false)
+  const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
+  const [recDismissed, setRecDismissed] = useState(false)
+  const [showEnrich, setShowEnrich] = useState(false)
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -71,6 +89,13 @@ export default function ContentDetailPage() {
     }
     fetchContent()
   }, [contentId])
+
+  // Auto-enable EnrichPanel when enrich=true query param present
+  useEffect(() => {
+    if (searchParams.get("enrich") === "true") {
+      setShowEnrich(true)
+    }
+  }, [searchParams])
 
   // Load changelog when ai tab becomes active
   useEffect(() => {
@@ -87,14 +112,60 @@ export default function ContentDetailPage() {
     }
   }, [activeTab, contentId])
 
-  // Load dam assets when assets tab becomes active
+  // Load dam assets when assets tab becomes active (or retry button clicked)
   useEffect(() => {
     if (activeTab === "assets") {
-      metadataApi.getDamAssets(contentId)
+      setDamAssets(null)
+      damApi.getAssetsByContent(contentId)
         .then(setDamAssets)
         .catch(() => setDamAssets({ content_id: contentId, assets: [], dam_available: false }))
     }
-  }, [activeTab, contentId])
+  }, [activeTab, contentId, damRetry])
+
+  // Load meta recommendations on mount (mock fallback when backend unavailable)
+  useEffect(() => {
+    metadataApi.getRecommendations(contentId).then(setRecommendations).catch(() => {
+      setRecommendations({
+        content_id: contentId,
+        missing_fields: ["cast", "synopsis", "runtime", "country"],
+        auto_fill: [
+          {
+            field: "cast",
+            status: "auto",
+            recommendations: [{ source_type: "watcha", source_id: 1, value: "김설현 · 오정세 · 유재명 외 12명", confidence: 1.0 }],
+            ai_synthesis: null,
+          },
+          {
+            field: "runtime",
+            status: "auto",
+            recommendations: [{ source_type: "tmdb", source_id: 2, value: "132분", confidence: 0.94 }],
+            ai_synthesis: null,
+          },
+          {
+            field: "country",
+            status: "auto",
+            recommendations: [{ source_type: "tmdb", source_id: 2, value: "대한민국", confidence: 0.94 }],
+            ai_synthesis: null,
+          },
+        ],
+        conflicts: [
+          {
+            field: "synopsis",
+            status: "conflict",
+            recommendations: [
+              { source_type: "watcha", source_id: 1, value: "가난한 박씨 가족은 부잣집에 하나 둘씩 취업하며 묘한 공생 관계를 형성해간다.", confidence: 0.5 },
+              { source_type: "tmdb", source_id: 2, value: "A poor family schemes to become employed by a wealthy Park family and infiltrates their home.", confidence: 0.94 },
+            ],
+            ai_synthesis: {
+              source_type: "ai", source_id: 99,
+              value: "경제적으로 어려운 박씨 일가는 재벌 박 사장 가족의 집에 한 명씩 취업하며 공생 관계를 형성해가지만, 숨겨진 비밀이 드러나면서 예기치 못한 사건이 벌어진다.",
+              confidence: 0.79,
+            },
+          },
+        ],
+      })
+    })
+  }, [contentId])
 
   if (loading) {
     return <div className="p-6 text-center text-slate-600">로드 중...</div>
@@ -102,6 +173,48 @@ export default function ContentDetailPage() {
 
   if (!content) {
     return <div className="p-6 text-center text-slate-600">콘텐츠를 찾을 수 없습니다.</div>
+  }
+
+  // Handler for recommendation apply
+  const handleApplyRec = async (rec: FieldRecommendation, sourceRec: SourceFieldRec) => {
+    try {
+      if (sourceRec.source_type === "ai") {
+        await metadataApi.promoteAIResult(contentId, sourceRec.source_id)
+      } else {
+        await metadataApi.applyExternalFields(contentId, sourceRec.source_id, [rec.field])
+      }
+      const [updated, updatedRecs] = await Promise.all([
+        metadataApi.getContent(contentId),
+        metadataApi.getRecommendations(contentId),
+      ])
+      setContent(updated)
+      setRecommendations(updatedRecs)
+    } catch (err) {
+      console.error("apply rec failed", err)
+    }
+  }
+
+  const handleApplyAllAuto = async () => {
+    if (!recommendations) return
+    for (const rec of recommendations.auto_fill) {
+      const top = rec.recommendations[0]
+      if (top) await handleApplyRec(rec, top)
+    }
+  }
+
+  const handleApplyMultiple = async (targets: Array<{ rec: FieldRecommendation; source: SourceFieldRec }>) => {
+    for (const { rec, source } of targets) {
+      await handleApplyRec(rec, source)
+    }
+  }
+
+  const handleRegenerate = async () => {
+    try {
+      await metadataApi.triggerEnrich(contentId)
+      alert("AI 재분석 요청이 전송됐습니다. 잠시 후 새로고침하세요.")
+    } catch {
+      alert("재분석 요청에 실패했습니다.")
+    }
   }
 
   // Handler for partialReprocess (AI 재처리)
@@ -169,76 +282,270 @@ export default function ContentDetailPage() {
     }
   }
 
-  const mockQualityScore = 82
   const statusInfo = (STATUS_BADGE[content.status] ?? STATUS_BADGE.waiting)!
+  const qualityScore = content.quality_score ?? 0
+  const posterSrc = resolvePosterUrl(content.poster_url)
+  const contentTypeLabel =
+    content.content_type === "movie" ? "영화"
+    : content.content_type === "series" ? "시리즈"
+    : content.content_type === "season" ? "시즌"
+    : "에피소드"
+
+  const directors = content.credits.filter(
+    (c) => c.role.toLowerCase().includes("director") || c.role === "감독"
+  )
+  const leads = content.credits
+    .filter((c) => ["actor", "cast", "주연", "출연"].includes(c.role.toLowerCase()))
+    .sort((a, b) => (a.cast_order ?? 99) - (b.cast_order ?? 99))
+    .slice(0, 3)
+  const synopsis =
+    content.metadata_record?.final_synopsis ||
+    content.metadata_record?.ai_synopsis ||
+    content.metadata_record?.cp_synopsis ||
+    null
+
+  const recCurrentValues: Record<string, string | null> = {
+    synopsis,
+    cast: leads.map((c) => c.person.name_ko).join(" · ") || null,
+    runtime: content.runtime_minutes ? `${content.runtime_minutes}분` : null,
+    country: content.country ?? null,
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* Header */}
-      <div className="mb-6 bg-white rounded-lg border border-slate-200 p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-start gap-4">
-            <Link href="/programming/contents" className="text-slate-400 hover:text-slate-600 mt-1">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{content.title}</h1>
-              {content.original_title && (
-                <p className="text-slate-600 text-sm mt-1">{content.original_title}</p>
+      <div className="mb-6">
+      <div className="bg-white rounded-lg border border-slate-200 p-6">
+        <div className="flex gap-6">
+          {/* 포스터 (2:3 비율) */}
+          <div className="flex-shrink-0 w-44">
+            <div className="aspect-[2/3] rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center shadow-sm">
+              {posterSrc ? (
+                <img src={posterSrc} alt={content.title} className="w-full h-full object-cover" />
+              ) : (
+                <Film className="h-12 w-12 text-slate-300" />
               )}
-              <p className="text-slate-500 text-sm mt-2">
-                {content.content_type === "movie" ? "영화" : content.content_type === "series" ? "시리즈" : content.content_type} ·
-                {content.cp_name ? ` ${content.cp_name} ·` : ""} {content.production_year || ""}
-              </p>
             </div>
           </div>
-          <div className="text-right">
-            <div className={cn("inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium", statusInfo.color)}>
-              {statusInfo.emoji} {statusInfo.label}
-            </div>
-            <p className="text-slate-500 text-xs mt-2">ID: #{content.id}</p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-4 mb-4 pb-4 border-b border-slate-200">
-          <div className="flex-1">
-            <p className="text-xs text-slate-500 mb-1">품질 점수</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
-                <div className="bg-amber-500 h-full" style={{ width: `${mockQualityScore}%` }} />
+          {/* 메타 정보 */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            {/* 제목 */}
+            <div className="flex items-start gap-3 min-w-0 mb-2">
+              <Link href="/programming/contents" className="text-slate-400 hover:text-slate-600 mt-1 flex-shrink-0">
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold text-slate-900 leading-tight">{content.title}</h1>
+                {content.original_title && (
+                  <p className="text-slate-500 text-sm mt-0.5">{content.original_title}</p>
+                )}
               </div>
-              <span className="font-bold text-sm text-amber-700">{mockQualityScore}</span>
+            </div>
+
+            {/* 장르 칩 */}
+            {content.genres.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {content.genres.map((g) => (
+                  <span
+                    key={g.genre.id}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium bg-slate-50 border border-slate-200",
+                      g.is_primary && "border-blue-300 bg-blue-50 text-blue-800",
+                    )}
+                  >
+                    {g.genre.name_ko}
+                    {g.source && <SourceBadge source={g.source} />}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* 기본 메타 필드 */}
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600 mb-3">
+              <span className="inline-flex items-center gap-1">
+                <span className="text-slate-400">유형</span> {contentTypeLabel}
+              </span>
+              {content.production_year && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-slate-400">📅</span> {content.production_year}
+                </span>
+              )}
+              {content.cp_name && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-slate-400">🏢</span> {content.cp_name}
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1">
+                <span className="text-slate-400">⏱</span>
+                {content.runtime_minutes ? `${content.runtime_minutes}분` : <MissingBadge />}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="text-slate-400">🌐</span>
+                {content.country || <MissingBadge />}
+              </span>
+            </div>
+
+            {/* 감독 / 주연 / 줄거리 */}
+            <div className="space-y-1.5 mb-3 text-sm">
+              <div className="flex gap-2 items-center">
+                <span className="text-slate-400 w-10 flex-shrink-0">감독</span>
+                {directors.length > 0
+                  ? <span className="text-slate-800">{directors.map((d) => d.person.name_ko).join(" · ")}</span>
+                  : <MissingBadge />}
+              </div>
+              <div className="flex gap-2 items-center">
+                <span className="text-slate-400 w-10 flex-shrink-0">주연</span>
+                {leads.length > 0
+                  ? <span className="text-slate-800">{leads.map((l) => l.person.name_ko).join(" · ")}</span>
+                  : <MissingBadge />}
+              </div>
+              <div className="flex gap-2 items-start">
+                <span className="text-slate-400 w-10 flex-shrink-0 mt-0.5">줄거리</span>
+                {synopsis
+                  ? <p className="text-slate-700 leading-snug line-clamp-2">{synopsis}</p>
+                  : <MissingBadge />}
+              </div>
+            </div>
+
+            {/* 검수 상태 · 품질 점수 · 액션 버튼 */}
+            <div className="mt-auto pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-3 mb-2.5">
+                <div className={cn("inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium", statusInfo.color)}>
+                  {statusInfo.emoji} {statusInfo.label}
+                </div>
+                <span className="text-slate-400 text-xs">#{content.id}</span>
+                <div className="flex-1 flex items-center gap-2 ml-2">
+                  <div className="flex-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-amber-500 h-full" style={{ width: `${qualityScore}%` }} />
+                  </div>
+                  <span className="font-bold text-sm text-amber-700 w-8 text-right">{qualityScore}</span>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Link
+                  href={`/programming/contents/${content.id}/edit`}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm"
+                >
+                  ✏️ 편집
+                </Link>
+                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200 text-sm">
+                  <Check className="h-4 w-4" />
+                  승인
+                </button>
+                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200 text-sm">
+                  <X className="h-4 w-4" />
+                  반려
+                </button>
+                <button onClick={handlePartialReprocess} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
+                  <RotateCcw className="h-4 w-4" />
+                  AI 재처리
+                </button>
+                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 text-sm">
+                  <Eye className="h-4 w-4" />
+                  외부 재매칭
+                </button>
+                <button onClick={handleLockFields} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+                  🔒 잠금
+                </button>
+                <button onClick={handleRequestPreviewClip} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
+                  <Film className="h-4 w-4" />
+                  Preview clip
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2">
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200 text-sm">
-            <Check className="h-4 w-4" />
-            승인
-          </button>
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200 text-sm">
-            <X className="h-4 w-4" />
-            반려
-          </button>
-          <button onClick={handlePartialReprocess} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
-            <RotateCcw className="h-4 w-4" />
-            AI 재처리
-          </button>
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 text-sm">
-            <Eye className="h-4 w-4" />
-            외부 재매칭
-          </button>
-          <button onClick={handleLockFields} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
-            🔒 잠금
-          </button>
-          <button onClick={handleRequestPreviewClip} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
-            <Film className="h-4 w-4" />
-            Preview clip
-          </button>
         </div>
       </div>
+
+      {/* 추천 패널 */}
+      {recommendations && !recDismissed && (recommendations.auto_fill.length > 0 || recommendations.conflicts.length > 0) && (
+        <div className="mt-4 space-y-2">
+          {/* 뷰 토글 */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowEnrich((v) => !v)}
+              className={cn(
+                "flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors",
+                showEnrich
+                  ? "border-blue-300 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:text-blue-600"
+              )}
+            >
+              <Sparkles className="h-3 w-3" />
+              {showEnrich ? "테이블 보기" : "AI Enrich"}
+            </button>
+          </div>
+
+          {showEnrich ? (
+            <MetadataEnrichPanel
+              recommendations={recommendations}
+              currentValues={recCurrentValues}
+              onApply={handleApplyRec}
+              onApplyAll={handleApplyMultiple}
+              onRegenerate={handleRegenerate}
+              onDismiss={() => setRecDismissed(true)}
+            />
+          ) : (
+            <MetadataDiffPanel
+              recommendations={recommendations}
+              currentValues={recCurrentValues}
+              onDismiss={() => setRecDismissed(true)}
+              onApply={handleApplyRec}
+              onApplyAll={handleApplyAllAuto}
+              onEditManually={(field) => console.log("edit manually:", field)}
+            />
+          )}
+        </div>
+      )}
+      </div>
+
+      {/* 출연진 섹션 */}
+      {content.credits.length > 0 && (() => {
+        const sorted = [...content.credits].sort((a, b) => {
+          if (a.cast_order == null && b.cast_order == null) return 0
+          if (a.cast_order == null) return 1
+          if (b.cast_order == null) return -1
+          return a.cast_order - b.cast_order
+        })
+        const PREVIEW = 8
+        const visible = castExpanded ? sorted : sorted.slice(0, PREVIEW)
+        return (
+          <div className="mb-6 bg-white rounded-lg border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-slate-900">출연진 ({content.credits.length})</h2>
+              {sorted.length > PREVIEW && (
+                <button
+                  onClick={() => setCastExpanded((v) => !v)}
+                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  {castExpanded ? "접기" : "전체 보기"}
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", castExpanded && "rotate-180")} />
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
+              {visible.map((credit) => (
+                <div key={credit.id} className="flex flex-col items-center gap-1.5 text-center">
+                  <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-semibold text-sm flex-shrink-0">
+                    {credit.person.name_ko.charAt(0)}
+                  </div>
+                  <div className="w-full">
+                    <p className="text-xs font-medium text-slate-800 truncate leading-tight">{credit.person.name_ko}</p>
+                    <p className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
+                      {credit.character_name ?? credit.role}
+                    </p>
+                    {credit.source && (
+                      <div className="mt-1 flex justify-center">
+                        <SourceBadge source={credit.source} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Tabs */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -268,21 +575,19 @@ export default function ContentDetailPage() {
               <div>
                 <h3 className="font-semibold text-slate-900 mb-3">시놉시스</h3>
                 <div className="grid grid-cols-3 gap-4">
+                  {/* CP 시놉시스 */}
                   <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
-                    <div className="text-xs font-semibold text-slate-600 mb-2">
-                      <span className="inline-block px-2 py-0.5 rounded bg-slate-200 text-slate-700">[CP]</span>
-                      <span className="ml-2">trust 100</span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <SourceBadge source="cp" score={100} />
                     </div>
                     <p className="text-sm text-slate-500">(없음)</p>
                     <input type="radio" name="synopsis" disabled className="mt-3" />
                   </div>
 
+                  {/* AI 시놉시스 */}
                   <div className={cn("border-2 rounded-lg p-4", selectedSynopsis === "ai" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white")}>
-                    <div className="text-xs font-semibold text-slate-600 mb-2 flex items-center justify-between">
-                      <span>
-                        <span className="inline-block px-2 py-0.5 rounded bg-purple-100 text-purple-700">[AI]</span>
-                        <span className="ml-2">score 89</span>
-                      </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <SourceBadge source="ai" score={89} />
                       <span className="inline-block px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">자동</span>
                     </div>
                     <p className="text-sm text-slate-700 mb-3">가난한 가족이 부유한 가족의 집에 침투하면서...</p>
@@ -298,10 +603,10 @@ export default function ContentDetailPage() {
                     </div>
                   </div>
 
+                  {/* TMDB 시놉시스 */}
                   <div className={cn("border-2 rounded-lg p-4", selectedSynopsis === "tmdb" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white")}>
-                    <div className="text-xs font-semibold text-slate-600 mb-2">
-                      <span className="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-700">[TMDB]</span>
-                      <span className="ml-2">match .94</span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <SourceBadge source="tmdb" score={0.94} />
                     </div>
                     <p className="text-sm text-slate-700 mb-3">A poor family schemes to become employed by a wealthy...</p>
                     <div className="mt-3">
@@ -325,12 +630,26 @@ export default function ContentDetailPage() {
               <div>
                 <h3 className="font-semibold text-slate-900 mb-3">장르</h3>
                 <div className="flex gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm">
-                    드라마 <span className="text-xs">✓ TMDB·.91</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm">
-                    스릴러 <span className="text-xs">✓ AI·.84</span>
-                  </span>
+                  {content.genres.length > 0 ? (
+                    content.genres.map((g) => (
+                      <span key={g.genre.id} className={cn(
+                        "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-slate-50 border border-slate-200",
+                        g.is_primary && "border-blue-300 bg-blue-50 text-blue-800",
+                      )}>
+                        {g.genre.name_ko}
+                        {g.source && <SourceBadge source={g.source} />}
+                      </span>
+                    ))
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-200 bg-slate-50 text-sm">
+                        드라마 <SourceBadge source="tmdb" score={0.91} />
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-200 bg-slate-50 text-sm">
+                        스릴러 <SourceBadge source="ai" score={0.84} />
+                      </span>
+                    </>
+                  )}
                   <button className="px-3 py-1 rounded-full border border-dashed border-slate-300 text-slate-600 text-sm hover:bg-slate-50">
                     + 추가
                   </button>
@@ -370,81 +689,27 @@ export default function ContentDetailPage() {
                     const typeImages = imageMeta.images.filter((img) => img.image_type === type)
 
                     if (type === "poster") {
-                      const displayImages = posterCandidates ?? typeImages.map((img) => ({
+                      const displayCandidates: PosterCandidateOut[] = posterCandidates ?? typeImages.map((img) => ({
                         id: img.id, url: img.url, source: img.source ?? "", is_primary: false,
-                        width: img.width, height: img.height,
+                        width: img.width ?? undefined, height: img.height ?? undefined,
                       }))
+                      const primaryId = displayCandidates.find((c) => c.is_primary)?.id ?? null
                       return (
                         <div key="poster">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-xs font-semibold text-slate-500 uppercase">poster</h4>
-                            <button
-                              onClick={async () => {
-                                setPosterRecommending(true)
-                                try {
-                                  await posterRecommendApi.recommend(contentId)
-                                  const updated = await posterRecommendApi.getCandidates(contentId)
-                                  setPosterCandidates(updated)
-                                } finally {
-                                  setPosterRecommending(false)
-                                }
-                              }}
-                              disabled={posterRecommending}
-                              className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 disabled:opacity-50 transition-colors"
-                            >
-                              {posterRecommending ? "조회 중…" : "TMDB 추천 받기"}
-                            </button>
-                          </div>
-                          {displayImages.length === 0 ? (
-                            <div className="border border-dashed border-slate-200 rounded-lg aspect-[3/4] w-24 flex items-center justify-center">
-                              <Film className="h-6 w-6 text-slate-300" />
-                            </div>
-                          ) : (
-                            <div className="flex gap-3 flex-wrap">
-                              {displayImages.map((img) => {
-                                const src = resolvePosterUrl(img.url)
-                                return (
-                                  <div key={img.id} className={cn(
-                                    "relative border rounded-lg overflow-hidden transition-colors w-24",
-                                    img.is_primary ? "border-blue-400 ring-1 ring-blue-300" : "border-slate-200 hover:border-blue-300",
-                                  )}>
-                                    <div className="aspect-[3/4] bg-slate-100 flex items-center justify-center">
-                                      {src ? (
-                                        <Image src={src} alt="poster" width={96} height={128} unoptimized className="object-cover w-full h-full" />
-                                      ) : (
-                                        <Film className="h-6 w-6 text-slate-300" />
-                                      )}
-                                    </div>
-                                    {img.is_primary && (
-                                      <div className="absolute top-1 left-1 bg-blue-500 text-white text-[10px] font-bold px-1 py-0.5 rounded leading-tight">
-                                        primary
-                                      </div>
-                                    )}
-                                    <div className="p-1.5 space-y-1">
-                                      <div className="text-xs text-slate-600 truncate font-medium">{img.source ?? "—"}</div>
-                                      {!img.is_primary && posterCandidates && (
-                                        <button
-                                          onClick={async () => {
-                                            setPosterSelecting(img.id)
-                                            try {
-                                              const updated = await posterRecommendApi.selectPrimary(contentId, img.id)
-                                              setPosterCandidates(updated)
-                                            } finally {
-                                              setPosterSelecting(null)
-                                            }
-                                          }}
-                                          disabled={posterSelecting === img.id}
-                                          className="w-full text-[10px] px-1 py-0.5 bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-600 rounded transition-colors disabled:opacity-50"
-                                        >
-                                          {posterSelecting === img.id ? "…" : "이걸로"}
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
+                          <VisualAssetCandidatePanel
+                            contentId={contentId}
+                            candidates={displayCandidates}
+                            primaryId={primaryId}
+                            onRecommend={async () => {
+                              await posterRecommendApi.recommend(contentId)
+                              const updated = await posterRecommendApi.getCandidates(contentId)
+                              setPosterCandidates(updated)
+                            }}
+                            onSelectPrimary={async (imageId) => {
+                              const updated = await posterRecommendApi.selectPrimary(contentId, imageId)
+                              setPosterCandidates(updated)
+                            }}
+                          />
                         </div>
                       )
                     }
@@ -579,26 +844,48 @@ export default function ContentDetailPage() {
 
           {activeTab === "assets" && (
             <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-slate-900">Dam Assets</h3>
+                <button
+                  onClick={() => setDamRetry((n) => n + 1)}
+                  className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                >
+                  <RotateCcw className="h-3 w-3" /> 새로고침
+                </button>
+              </div>
               {!damAssets ? (
                 <p className="text-slate-500 text-sm text-center py-8">로딩 중...</p>
               ) : !damAssets.dam_available ? (
-                <p className="text-amber-600 text-sm text-center py-8">Dam API에 연결할 수 없습니다.</p>
+                <div className="text-center py-8 space-y-2">
+                  <p className="text-amber-600 text-sm">DAM 미가용 — 연결을 확인하세요.</p>
+                  <button
+                    onClick={() => setDamRetry((n) => n + 1)}
+                    className="text-xs px-3 py-1.5 rounded border border-amber-200 text-amber-700 hover:bg-amber-50 transition-colors"
+                  >
+                    재시도
+                  </button>
+                </div>
               ) : damAssets.assets.length === 0 ? (
-                <p className="text-slate-500 text-sm text-center py-8">매핑된 에셋이 없습니다.</p>
+                <p className="text-slate-500 text-sm text-center py-8">연결된 Dam 에셋 없음</p>
               ) : (
                 <div className="grid grid-cols-3 gap-4">
-                  {damAssets.assets.map((asset: any) => (
-                    <div key={asset.asset_id} className="border rounded-lg overflow-hidden">
-                      <img
-                        src={asset.thumbnail_url}
-                        alt={asset.filename}
-                        className="w-full h-32 object-cover bg-slate-100"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                      />
-                      <div className="p-2">
+                  {damAssets.assets.map((asset) => (
+                    <div key={asset.asset_id} className="border border-slate-200 rounded-lg overflow-hidden hover:border-blue-300 transition-colors">
+                      <div className="h-32 bg-slate-100 overflow-hidden flex items-center justify-center">
+                        <img
+                          src={asset.thumbnail_url}
+                          alt={asset.filename}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                        />
+                      </div>
+                      <div className="p-2 space-y-0.5">
                         <p className="text-xs font-medium truncate">{asset.filename}</p>
+                        {asset.status && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{asset.status}</span>
+                        )}
                         {asset.confidence != null && (
-                          <p className="text-xs text-slate-500">{(asset.confidence * 100).toFixed(0)}% match</p>
+                          <p className="text-[10px] text-slate-400">{(asset.confidence * 100).toFixed(0)}% match</p>
                         )}
                       </div>
                     </div>

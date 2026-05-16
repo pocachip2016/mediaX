@@ -47,7 +47,7 @@ from shared.database import get_db
 from api.programming.metadata import service
 from api.programming.metadata.models import ContentStatus, ContentType, ContentBatchJob
 from api.programming.metadata.schemas import (
-    ContentCreate, ContentOut, ContentDetail, PaginatedContents,
+    ContentCreate, ContentUpdate, ContentOut, ContentDetail, PaginatedContents,
     MetadataReviewAction, AIGenerateRequest, AIGenerateResponse,
     DashboardStats, CpEmailLogOut,
     PaginatedStagingItems, StagingItem, BulkActionRequest, PipelineStatus,
@@ -65,6 +65,8 @@ from api.programming.metadata.schemas import (
     ContentChangelogOut, LockFieldsRequest,
     EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
     PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
+    RecommendationsOut,
+    PaginatedAiReviewQueue,
 )
 from api.programming.metadata.models import CpEmailLog
 from api.programming.metadata import poster_recommend
@@ -119,7 +121,21 @@ def get_content(content_id: int, db: Session = Depends(get_db)):
     content = service.get_content(db, content_id)
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    return ContentDetail.model_validate(content)
+    out = ContentDetail.model_validate(content)
+    out.poster_url = service._primary_poster_url(content)
+    if content.metadata_record:
+        out.quality_score = content.metadata_record.quality_score
+    return out
+
+
+@router.put("/contents/{content_id}", response_model=ContentOut)
+def update_content(content_id: int, data: ContentUpdate, db: Session = Depends(get_db)):
+    """수동 수정 — 입력 필드를 manual source로 저장 후 resolve_metadata 재실행"""
+    try:
+        content = service.update_content(db, content_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return ContentOut.model_validate(content)
 
 
 @router.post("/contents/{content_id}/process")
@@ -274,6 +290,24 @@ def select_poster(content_id: int, req: PosterSelectRequest, db: Session = Depen
         .order_by(ContentImage.is_primary.desc(), ContentImage.id.asc())
         .all()
     )
+
+    from shared.config import settings
+    from workers.tasks.metadata import send_dam_webhook
+    if settings.DAM_POSTER_INGEST_URL:
+        selected = next((img for img in images if img.is_primary), None)
+        if selected:
+            from datetime import datetime, timezone
+            send_dam_webhook.delay(
+                event_type="poster_primary_set",
+                content_id=content_id,
+                title=content.title,
+                content_type=content.content_type.value if hasattr(content.content_type, "value") else str(content.content_type),
+                occurred_at=datetime.now(timezone.utc).isoformat(),
+                poster_url=selected.url,
+                poster_source=selected.source or "tmdb",
+                image_id=selected.id,
+            )
+
     return [PosterCandidateOut.model_validate(img) for img in images]
 
 
@@ -284,6 +318,12 @@ def get_content_hierarchy(content_id: int, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=404, detail="Content not found")
     return item
+
+
+@router.get("/contents/{content_id}/recommendations", response_model=RecommendationsOut)
+def get_recommendations(content_id: int, db: Session = Depends(get_db)):
+    """빈 메타 필드 감지 + 외부소스·AI 추천값 반환 (메타 보강 제안 패널용)"""
+    return service.get_content_recommendations(db, content_id)
 
 
 # ── 파이프라인 현황 ────────────────────────────────────────
@@ -326,20 +366,34 @@ async def batch_upload(
     # CSV 파싱 (Excel은 추후 openpyxl 연동)
     rows = []
     try:
+        def _extract_row(get_fn) -> dict:
+            """공통 필드 추출 — CSV/Excel 모두 사용"""
+            return {
+                "title": get_fn(["title", "제목"]),
+                "production_year": _safe_int(get_fn(["production_year", "제작연도"])),
+                "content_type": _normalize_content_type(get_fn(["content_type", "타입"]) or "movie"),
+                "cp_name": get_fn(["cp_name", "CP사"]) or cp_name,
+                "synopsis": get_fn(["synopsis", "시놉시스"]),
+                "cast": get_fn(["cast", "출연진"]),
+                "directors": get_fn(["directors", "감독"]),
+                "genres": get_fn(["genres", "장르"]),
+                "country": get_fn(["country", "제작국가"]),
+                "runtime": _safe_int(get_fn(["runtime", "런타임"])),
+                "rating_age": get_fn(["rating_age", "시청등급"]),
+                "poster_url": get_fn(["poster_url", "포스터URL"]) or None,
+            }
+
         if file.filename.lower().endswith(".csv"):
             text = content_bytes.decode("utf-8-sig", errors="replace")
             reader = csv.DictReader(io.StringIO(text))
             for row in reader:
-                rows.append({
-                    "title": row.get("title") or row.get("제목") or "",
-                    "production_year": _safe_int(row.get("production_year") or row.get("제작연도")),
-                    "content_type": _normalize_content_type(
-                        row.get("content_type") or row.get("타입") or "movie"
-                    ),
-                    "cp_name": row.get("cp_name") or row.get("CP사") or cp_name,
-                    "cp_synopsis": row.get("synopsis") or row.get("시놉시스") or "",
-                    "poster_url": row.get("poster_url") or row.get("포스터URL") or None,
-                })
+                def _csv_get(col_names, _row=row):
+                    for n in col_names:
+                        v = _row.get(n)
+                        if v:
+                            return v.strip()
+                    return ""
+                rows.append(_extract_row(_csv_get))
         else:
             # Excel 지원 — openpyxl 없으면 에러 메시지 반환
             try:
@@ -349,20 +403,13 @@ async def batch_upload(
                 headers = [str(c.value or "").strip() for c in next(ws.iter_rows(max_row=1))]
                 header_map = {h: i for i, h in enumerate(headers)}
                 for row_cells in ws.iter_rows(min_row=2, values_only=True):
-                    def _get(col_names):
+                    def _excel_get(col_names, _cells=row_cells, _hm=header_map):
                         for n in col_names:
-                            idx = header_map.get(n)
-                            if idx is not None and row_cells[idx]:
-                                return str(row_cells[idx])
+                            idx = _hm.get(n)
+                            if idx is not None and _cells[idx]:
+                                return str(_cells[idx]).strip()
                         return ""
-                    rows.append({
-                        "title": _get(["title", "제목"]),
-                        "production_year": _safe_int(_get(["production_year", "제작연도"])),
-                        "content_type": _normalize_content_type(_get(["content_type", "타입"]) or "movie"),
-                        "cp_name": _get(["cp_name", "CP사"]) or cp_name,
-                        "cp_synopsis": _get(["synopsis", "시놉시스"]),
-                        "poster_url": _get(["poster_url", "포스터URL"]) or None,
-                    })
+                    rows.append(_extract_row(_excel_get))
             except ImportError:
                 raise HTTPException(
                     status_code=422,
@@ -744,6 +791,31 @@ async def api_get_changelog(
     db: Session = Depends(get_db),
 ):
     return await service.get_changelog(db, content_id)
+
+
+@router.get("/ai-review-queue", response_model=PaginatedAiReviewQueue, summary="AI 검수 큐 — 메타+포스터+Dam 통합")
+def api_get_ai_review_queue(
+    status: Optional[str] = None,
+    input_type: Optional[str] = None,
+    metadata_status: Optional[str] = None,
+    poster_status: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    include_dam: bool = False,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return service.build_ai_review_queue(
+        db,
+        status=status,
+        input_type=input_type,
+        metadata_status=metadata_status,
+        poster_status=poster_status,
+        risk_level=risk_level,
+        include_dam=include_dam,
+        page=page,
+        size=size,
+    )
 
 
 @router.post("/contents/{content_id}/lock", summary="필드 잠금")

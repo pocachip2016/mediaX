@@ -17,6 +17,7 @@ import difflib
 import imaplib
 import email
 import logging
+import os
 import httpx
 from email.header import decode_header
 from datetime import datetime, timedelta
@@ -415,6 +416,91 @@ async def _async_sync_tmdb(db, api_key: str) -> dict:
     return {"total": len(unmapped), "updated": updated, "skipped": skipped, "failed": failed}
 
 
+@celery_app.task(name="workers.tasks.metadata.backfill_tmdb_details")
+def backfill_tmdb_details(batch: int = 100):
+    """기존 TMDB 매핑 레코드의 runtime/country/credits 백필 (TMDB detail 재조회)"""
+    db = SessionLocal()
+    try:
+        api_key = os.environ.get("TMDB_API_KEY", "")
+        if not api_key:
+            logger.warning("[backfill_tmdb] TMDB_API_KEY 없음")
+            return {"error": "no api key"}
+        stats = asyncio.run(_async_backfill_tmdb(db, api_key, batch))
+        logger.info(f"[backfill_tmdb] 완료: {stats}")
+        return stats
+    finally:
+        db.close()
+
+
+async def _async_backfill_tmdb(db, api_key: str, batch: int) -> dict:
+    from api.programming.metadata.models import (
+        Content, ContentType, ExternalMetaSource, ExternalSourceType,
+    )
+
+    targets = (
+        db.query(Content, ExternalMetaSource)
+        .join(
+            ExternalMetaSource,
+            (ExternalMetaSource.content_id == Content.id) &
+            (ExternalMetaSource.source_type == ExternalSourceType.tmdb),
+        )
+        .filter(Content.content_type.in_([ContentType.movie, ContentType.series]))
+        .filter(Content.runtime_minutes.is_(None))
+        .limit(batch)
+        .all()
+    )
+
+    updated = failed = 0
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for content, ext_src in targets:
+            try:
+                tmdb_id = ext_src.external_id
+                is_series = content.content_type == ContentType.series
+                detail_url = (
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}"
+                    if is_series
+                    else f"https://api.themoviedb.org/3/movie/{tmdb_id}"
+                )
+                resp = await client.get(
+                    detail_url,
+                    params={"api_key": api_key, "language": "ko-KR", "append_to_response": "credits"},
+                )
+                if resp.status_code != 200:
+                    logger.warning(f"[backfill_tmdb] content_id={content.id} TMDB {resp.status_code}")
+                    failed += 1
+                    continue
+                detail = resp.json()
+
+                if not content.runtime_minutes:
+                    runtime = (
+                        detail.get("runtime")
+                        or (detail.get("episode_run_time") or [None])[0]
+                    )
+                    if runtime:
+                        content.runtime_minutes = int(runtime)
+
+                if not content.country:
+                    countries = (
+                        [c.get("iso_3166_1") for c in detail.get("production_countries", [])]
+                        or detail.get("origin_country", [])
+                    )
+                    if countries:
+                        content.country = countries[0]
+
+                ext_src.raw_json = detail
+                _save_credits(content.id, detail.get("credits", {}), db)
+
+                db.commit()
+                updated += 1
+                await asyncio.sleep(0.1)  # TMDB rate limit
+            except Exception as exc:
+                logger.warning(f"[backfill_tmdb] content_id={content.id} 실패: {exc}")
+                db.rollback()
+                failed += 1
+
+    return {"total": len(targets), "updated": updated, "failed": failed}
+
+
 @celery_app.task(name="workers.tasks.metadata.reeval_quality_scores")
 def reeval_quality_scores():
     """메타 품질 재평가 배치 (매일 01:00)"""
@@ -586,6 +672,23 @@ async def _tmdb_search_and_save(content, db, api_key: str) -> dict | None:
                     raw_json=detail,
                     matched_at=datetime.utcnow(),
                 ))
+
+            # Content 필드 보강 (runtime_minutes / country) — 기존 값 우선 보존
+            if not content.runtime_minutes:
+                runtime = (
+                    detail.get("runtime")  # movie
+                    or (detail.get("episode_run_time") or [None])[0]  # tv
+                )
+                if runtime:
+                    content.runtime_minutes = int(runtime)
+
+            if not content.country:
+                countries = (
+                    [c.get("iso_3166_1") for c in detail.get("production_countries", [])]
+                    or detail.get("origin_country", [])
+                )
+                if countries:
+                    content.country = countries[0]
 
             # 포스터 이미지 저장 — service.add_content_image() 와 동일 규약 (멱등 + is_primary)
             # commit 분리: 워커 트랜잭션 원자성을 위해 헬퍼 대신 인라인 처리
@@ -843,25 +946,32 @@ def check_missing_episodes():
     created = 0
     try:
         from api.programming.metadata.models import (
-            Content, ContentType, ContentMetadata,
-            ExternalMetaSource, ExternalSourceType, ContentStatus,
+            Content, ContentType,
+            ExternalMetaSource, ExternalSourceType,
         )
-        # TMDB 매핑된 시리즈 조회
-        series_list = (
-            db.query(Content)
+        # TMDB 매핑된 시리즈 조회 (ExternalMetaSource 기준, 중복 방지)
+        rows = (
+            db.query(Content, ExternalMetaSource)
+            .join(
+                ExternalMetaSource,
+                (ExternalMetaSource.content_id == Content.id) &
+                (ExternalMetaSource.source_type == ExternalSourceType.tmdb),
+            )
             .filter(Content.content_type == ContentType.series)
-            .join(Content.metadata_record)
-            .filter(ContentMetadata.tmdb_id.isnot(None))
             .limit(50)
             .all()
         )
-        for series in series_list:
-            meta = series.metadata_record
-            if not meta or not meta.tmdb_id:
+        seen_ids: set[int] = set()
+        for series, ext_source in rows:
+            if series.id in seen_ids:
+                continue
+            seen_ids.add(series.id)
+            tmdb_id = ext_source.external_id
+            if not tmdb_id:
                 continue
             try:
                 resp = httpx.get(
-                    f"https://api.themoviedb.org/3/tv/{meta.tmdb_id}",
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}",
                     params={"api_key": settings.TMDB_API_KEY, "language": "ko-KR"},
                     timeout=10.0,
                 )
@@ -1110,13 +1220,94 @@ def backfill_kobis(start_year: int = 1990, end_year: int = 1999):
         db.close()
 
 
+# ── Dam poster catch-up ───────────────────────────────────
+
+@celery_app.task(name="workers.tasks.metadata.sync_primary_posters_to_dam")
+def sync_primary_posters_to_dam():
+    """
+    Dam 포스터 catch-up Beat task (매일 06:00 KST).
+    is_primary=True인 poster 이미지를 전수 조회해 Dam에 재발송.
+    Dam 쪽에서 image_id 기준 중복 처리 — 안전하게 여러 번 호출 가능.
+    """
+    if not settings.DAM_POSTER_INGEST_URL:
+        logger.info("[dam_poster_catchup] DAM_POSTER_INGEST_URL 미설정. 스킵.")
+        return {"skipped": True}
+
+    from api.programming.metadata.models import ContentImage, ImageType, Content
+    db = SessionLocal()
+    queued = 0
+    try:
+        rows = (
+            db.query(ContentImage, Content)
+            .join(Content, ContentImage.content_id == Content.id)
+            .filter(
+                ContentImage.image_type == ImageType.poster,
+                ContentImage.is_primary == True,  # noqa: E712
+                ContentImage.url.isnot(None),
+            )
+            .all()
+        )
+        occurred_at = datetime.utcnow().isoformat()
+        for image, content in rows:
+            send_dam_webhook.delay(
+                event_type="poster_primary_set",
+                content_id=content.id,
+                title=content.title,
+                content_type=(
+                    content.content_type.value
+                    if hasattr(content.content_type, "value")
+                    else str(content.content_type)
+                ),
+                occurred_at=occurred_at,
+                poster_url=image.url,
+                poster_source=image.source or "tmdb",
+                image_id=image.id,
+            )
+            queued += 1
+
+        logger.info(f"[dam_poster_catchup] {queued}건 Dam 재발송 큐 등록")
+        return {"queued": queued}
+    except Exception as exc:
+        logger.error(f"[dam_poster_catchup] 실패: {exc}")
+        return {"error": str(exc)}
+    finally:
+        db.close()
+
+
 # ── Dam changefeed webhook ─────────────────────────────────
 
 @celery_app.task(name="workers.tasks.metadata.send_dam_webhook")
 def send_dam_webhook(event_type: str, content_id: int, title: str,
-                     content_type: str, occurred_at: str):
-    """Dam에 Content 변경 이벤트 발신 (best-effort). DAM_WEBHOOK_URL 미설정 시 스킵."""
-    url = getattr(settings, "DAM_WEBHOOK_URL", "")
+                     content_type: str, occurred_at: str,
+                     poster_url: str | None = None,
+                     poster_source: str | None = None,
+                     image_id: int | None = None):
+    """Dam에 Content 변경 이벤트 발신 (best-effort).
+    poster_primary_set 이벤트 시 DAM_POSTER_INGEST_URL로 포스터 등록 요청.
+    """
+    if event_type == "poster_primary_set":
+        url = settings.DAM_POSTER_INGEST_URL
+        if not url:
+            return {"skipped": True, "reason": "DAM_POSTER_INGEST_URL not set"}
+        try:
+            resp = httpx.post(
+                url,
+                json={
+                    "content_id": content_id,
+                    "image_id": image_id,
+                    "poster_url": poster_url,
+                    "poster_source": poster_source or "tmdb",
+                    "title": title,
+                },
+                timeout=10.0,
+            )
+            logger.info(f"[dam_poster_ingest] content_id={content_id} image_id={image_id} → {resp.status_code}")
+            return {"status": resp.status_code}
+        except Exception as exc:
+            logger.warning(f"[dam_poster_ingest] 발신 실패 content_id={content_id}: {exc}")
+            return {"error": str(exc)}
+
+    url = settings.DAM_WEBHOOK_URL
     if not url:
         return {"skipped": True}
     try:

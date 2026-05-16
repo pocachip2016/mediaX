@@ -13,6 +13,7 @@ celery_app = Celery(
         "workers.tasks.metadata",          # 메타 AI 분류·외부 메타 수집
         "workers.tasks.tmdb_cache",        # TMDB 로컬 캐시 백필·일일 증분
         "workers.tasks.discovery_tasks",   # Phase C SEED 발굴
+        "workers.websearch_tasks",         # Phase D WebSearch SEED 발굴
     ],
 )
 
@@ -23,7 +24,8 @@ celery_app.conf.update(
     timezone="Asia/Seoul",
     beat_scheduler="redbeat.RedBeatScheduler",
     redbeat_redis_url=settings.REDIS_URL,
-    redbeat_lock_timeout=5 * 60,  # 5분 — 락 만료 후 재획득
+    redbeat_lock_timeout=10 * 60,  # 10분 — loop interval(60s)의 10배
+    beat_max_loop_interval=60,     # 60s마다 lock 갱신 (기본 300s에서 단축)
     beat_schedule={
         "poll-cp-emails": {
             "task": "workers.tasks.metadata.poll_cp_emails",
@@ -78,6 +80,17 @@ celery_app.conf.update(
             "schedule": crontab(hour=6, minute=0, day_of_week=0),
             "kwargs": {"mode": "trending_week"},
         },
+        # Phase D WebSearch SEED 발굴 — 매일 04:30 KST (trending 5쿼리, 안전 마진)
+        "discover-websearch-trending": {
+            "task": "discover.websearch_trending",
+            "schedule": crontab(hour=4, minute=30),
+            "options": {"expires": 3600},
+        },
+        # Dam 포스터 catch-up — 매일 06:00 KST (webhook 누락 건 재발송, image_id 멱등)
+        "sync-primary-posters-to-dam": {
+            "task": "workers.tasks.metadata.sync_primary_posters_to_dam",
+            "schedule": crontab(hour=6, minute=0),
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},
@@ -87,5 +100,7 @@ celery_app.conf.update(
         "workers.tasks.ingest.*":                {"queue": "ingest"},
         "workers.tasks.analytics.*":             {"queue": "analytics"},
         "workers.tasks.metadata.*":              {"queue": "metadata"},
+        "workers.tasks.tmdb_cache.*":            {"queue": "metadata"},
+        "workers.tasks.discovery_tasks.*":       {"queue": "metadata"},
     },
 )

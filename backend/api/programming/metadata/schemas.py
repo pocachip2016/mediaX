@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from api.programming.metadata.models import ContentType, ContentStatus, MetaSource
@@ -24,6 +24,20 @@ class ContentCreate(BaseModel):
     episode_number: Optional[int] = None
 
 
+class ContentUpdate(BaseModel):
+    """PUT /contents/{id} — 수동 수정. 입력된 필드만 manual source로 external_meta_sources에 저장."""
+    title: Optional[str] = None
+    synopsis: Optional[str] = None
+    cast: Optional[str] = None        # "배우1, 배우2, ..." 쉼표 구분
+    directors: Optional[str] = None  # "감독1, 감독2, ..."
+    genres: Optional[str] = None     # "드라마, 판타지, ..."
+    country: Optional[str] = None
+    runtime: Optional[int] = None    # 분 단위
+    rating_age: Optional[str] = None
+    poster_url: Optional[str] = None
+    production_year: Optional[int] = None
+
+
 class ContentOut(BaseModel):
     id: int
     title: str
@@ -33,6 +47,7 @@ class ContentOut(BaseModel):
     cp_name: Optional[str]
     production_year: Optional[int]
     runtime_minutes: Optional[int]
+    country: Optional[str] = None
     created_at: datetime
     quality_score: Optional[float] = None
     poster_url: Optional[str] = None
@@ -40,8 +55,47 @@ class ContentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PersonOut(BaseModel):
+    id: int
+    name_ko: str
+    name_en: Optional[str] = None
+    tmdb_person_id: Optional[int] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ContentCreditOut(BaseModel):
+    id: int
+    person: PersonOut
+    role: str
+    character_name: Optional[str] = None
+    cast_order: Optional[int] = None
+    source: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class GenreOut(BaseModel):
+    id: int
+    code: str
+    name_ko: str
+
+    model_config = {"from_attributes": True}
+
+
+class ContentGenreOut(BaseModel):
+    genre: GenreOut
+    is_primary: bool = False
+    source: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class ContentDetail(ContentOut):
     metadata_record: Optional[MetadataOut] = None
+    genres: list[ContentGenreOut] = Field(default_factory=list)
+    credits: list[ContentCreditOut] = Field(default_factory=list)
+    external_sources: list[ExternalSourceOut] = Field(default_factory=list)
 
 
 # ── Metadata ──────────────────────────────────────────────
@@ -200,6 +254,32 @@ class BatchUploadRow(BaseModel):
     poster_url: Optional[str] = None
     parse_status: str = "ok"   # ok | warning | error
     parse_message: Optional[str] = None
+
+
+# ── 메타 보강 추천 ────────────────────────────────────────
+
+class SourceFieldRec(BaseModel):
+    """단일 소스·단일 필드 추천값"""
+    source_type: str    # "tmdb" | "watcha" | "kobis" | "ai"
+    source_id: int      # ExternalMetaSource.id 또는 ContentAIResult.id
+    value: str          # 추출된 값 (문자열화)
+    confidence: float   # 0.0~1.0
+
+
+class FieldRecommendation(BaseModel):
+    """필드 하나에 대한 추천 묶음"""
+    field: str                          # "cast" | "synopsis" | "runtime" | "country" | "genres"
+    status: str                         # "auto" (소스 일치) | "conflict" (소스 불일치)
+    recommendations: list[SourceFieldRec]
+    ai_synthesis: Optional[SourceFieldRec] = None  # 충돌 시 is_final=True AI 결과
+
+
+class RecommendationsOut(BaseModel):
+    """GET /contents/{id}/recommendations 응답"""
+    content_id: int
+    missing_fields: list[str]
+    auto_fill: list[FieldRecommendation]    # 단일 소스 또는 소스 일치 → 자동 채택 가능
+    conflicts: list[FieldRecommendation]    # 복수 소스 불일치 → 운영자 선택 필요
 
 
 class BatchUploadPreview(BaseModel):
@@ -696,3 +776,36 @@ class PosterRecommendResponse(BaseModel):
 class PosterSelectRequest(BaseModel):
     """POST /poster/select 요청"""
     image_id: int
+
+
+# ── AI Review Queue ───────────────────────────────────────────────────────────
+
+class AiReviewQueueRow(BaseModel):
+    content_id: int
+    title: str
+    content_type: str
+    input_type: Literal["bulk", "manual", "existing"]
+    content_status: str
+    metadata_status: Literal["missing", "conflict", "enhancement", "clean"]
+    poster_status: Literal["poster_ok", "needs_selection", "external_only", "dam_match_found", "no_candidate"]
+    dam_match_count: int = 0
+    risk_level: Literal["low", "medium", "high"]
+    confidence: float
+    updated_at: datetime
+
+
+class AiReviewQueueSummary(BaseModel):
+    total: int
+    missing: int
+    conflict: int
+    needs_poster: int
+    dam_match: int
+    high_risk: int
+
+
+class PaginatedAiReviewQueue(BaseModel):
+    items: list[AiReviewQueueRow]
+    summary: AiReviewQueueSummary
+    total: int
+    page: int
+    size: int

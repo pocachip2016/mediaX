@@ -1,0 +1,28 @@
+{
+  "task": "dev-dam-poster-ingest",
+  "title": "Design AX → DAM 포스터 자동 등록",
+  "description": "mediaX primary 포스터 지정 시 webhook으로 Dam에 자동 등록. image_id 기준 idempotent.",
+  "steps": [
+    {
+      "id": "P.1",
+      "title": "Dam: DB 마이그레이션 + ingest API",
+      "status": "completed",
+      "summary": "poster_ingest_log 테이블 + POST /api/ingest/poster + GET /api/ingest/poster/status/{image_id} + docker-compose write 볼륨",
+      "completed_at": "2026-05-16T00:00:00+09:00"
+    },
+    {
+      "id": "P.2",
+      "title": "mediaX: webhook 확장 + select_poster 트리거",
+      "status": "completed",
+      "summary": "send_dam_webhook에 poster_url/poster_source/image_id 파라미터 추가 + poster_primary_set 분기 → DAM_POSTER_INGEST_URL 발송 + select_poster 트리거",
+      "completed_at": "2026-05-16T00:00:00+09:00"
+    },
+    {
+      "id": "P.3",
+      "title": "mediaX: Beat catch-up + 마무리",
+      "status": "completed",
+      "summary": "sync_primary_posters_to_dam Beat task (매일 06:00 KST) + celery_app Beat 등록 + plans/index.json + TODO 갱신",
+      "completed_at": "2026-05-16T00:00:00+09:00"
+    }
+  ]
+}

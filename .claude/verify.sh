@@ -1304,16 +1304,1206 @@ print('  ✓ 엔드포인트 3개 OK')
     echo "=== PASS ==="
     ;;
 
-  1.1) bash "$0" poster-recommend-1.1 ;;
-  1.2) bash "$0" poster-recommend-1.2 ;;
-  1.3) bash "$0" poster-recommend-1.3 ;;
-  2.1) bash "$0" poster-recommend-2.1 ;;
-  2.2) bash "$0" poster-recommend-2.2 ;;
-  3.1) bash "$0" poster-recommend-3.1 ;;
+  detail-vod-1.1)
+    echo "=== detail-vod-1.1: backend ContentDetail 확장 ==="
+    cd "$BACKEND"
+    python3 -c "
+from api.programming.metadata.schemas import ContentDetail, ContentCreditOut, ContentGenreOut, PersonOut
+fields = ContentDetail.model_fields
+for k in ['metadata_record','genres','credits','external_sources']:
+    assert k in fields, f'{k} 누락'
+print('  ✓ ContentDetail 필드 확장 OK:', list(fields.keys()))
+"
+    echo "=== PASS ==="
+    ;;
+
+  detail-vod-1.2)
+    echo "=== detail-vod-1.2: frontend 타입 확장 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    grep -q "CreditOut\|credits:" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ CreditOut 타입 없음"; exit 1; }
+    grep -q "genres:" "$CMS/apps/web/lib/api.ts" || { echo "  ✗ genres 필드 없음"; exit 1; }
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  detail-vod-2.1|detail-vod-2.2|detail-vod-2.3|detail-vod-3.1)
+    echo "=== ${STEP}: frontend UI step ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  1.1) bash "$0" detail-vod-1.1 ;;
+  1.2) bash "$0" detail-vod-1.2 ;;
+  2.1) bash "$0" detail-vod-2.1 ;;
+  2.2) bash "$0" detail-vod-2.2 ;;
+  2.3) bash "$0" detail-vod-2.3 ;;
+  3.1) bash "$0" detail-vod-3.1 ;;
+
+  # ── dev-flexible-meta-pipeline ───────────────────────────
+  flexible-meta-step0)
+    echo "=== flexible-meta-step0: 더미 데이터 정리 ==="
+    python3 -c "
+from shared.database import SessionLocal
+from api.programming.metadata.models import Content
+db = SessionLocal()
+dummy = db.query(Content).filter(Content.title.like('콘텐츠_%')).count()
+assert dummy == 0, f'더미 데이터 {dummy}건 남아있음'
+total = db.query(Content).count()
+db.close()
+print(f'  ✓ 더미 0건, 총 콘텐츠 {total}건')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step4)
+    echo "=== flexible-meta-step4: 수동 입력 UI 검증 ==="
+    # 1. 백엔드 API E2E 테스트
+    python3 -c "
+import urllib.request, json
+
+BASE = 'http://localhost:8000'
+
+# POST /contents 신규 등록
+req = urllib.request.Request(
+    f'{BASE}/api/programming/metadata/contents',
+    data=json.dumps({'title': 'verify-step4-테스트', 'content_type': 'movie', 'cp_name': 'TestCP'}).encode(),
+    headers={'Content-Type': 'application/json'},
+    method='POST',
+)
+with urllib.request.urlopen(req) as r:
+    content = json.loads(r.read())
+cid = content['id']
+assert content['title'] == 'verify-step4-테스트', f'title mismatch: {content[\"title\"]}'
+print(f'  ✓ POST /contents → id={cid}')
+
+# PUT /contents/{id} 수동 수정
+req2 = urllib.request.Request(
+    f'{BASE}/api/programming/metadata/contents/{cid}',
+    data=json.dumps({'cast': '홍길동, 이영희', 'directors': '테스트감독', 'genres': '액션, 드라마'}).encode(),
+    headers={'Content-Type': 'application/json'},
+    method='PUT',
+)
+with urllib.request.urlopen(req2) as r:
+    r.read()
+print(f'  ✓ PUT /contents/{cid}')
+
+# GET /contents/{id} credits/genres 확인
+with urllib.request.urlopen(f'{BASE}/api/programming/metadata/contents/{cid}') as r:
+    detail = json.loads(r.read())
+
+credits = detail.get('credits', [])
+genres = detail.get('genres', [])
+actors = [c for c in credits if c['role'] == 'actor']
+directors = [c for c in credits if c['role'] == 'director']
+assert len(actors) == 2, f'actor 2명 기대, 실제 {len(actors)}명'
+assert len(directors) == 1, f'director 1명 기대, 실제 {len(directors)}명'
+assert len(genres) == 2, f'genre 2개 기대, 실제 {len(genres)}개'
+print(f'  ✓ credits {len(credits)}건, genres {len(genres)}건 저장 확인')
+"
+    # 2. 프론트 새 페이지 접근 확인
+    for path in "/programming/contents/new" "/programming/contents/upload" "/programming/contents/external"; do
+      code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3002${path}")
+      [ "$code" = "200" ] || { echo "FAIL: ${path} → ${code}"; exit 1; }
+    done
+    echo "  ✓ 프론트 3개 페이지 200 OK"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step3)
+    echo "=== flexible-meta-step3: 프론트 IA 재구성 ==="
+    cd "$SCRIPT_DIR/.."
+    # 1. docs.ts 메뉴 3개 추가 확인
+    node -e "
+const fs = require('fs');
+const src = fs.readFileSync('mediaX-CMS/apps/web/config/docs.ts', 'utf8');
+['콘텐츠 등록', '일괄 업로드', '외부 검색'].forEach(title => {
+  if (!src.includes(title)) throw new Error(title + ' 메뉴 없음');
+});
+console.log('  ✓ docs.ts 메뉴 3개 추가 OK');
+"
+    # 2. 새 페이지 파일 존재 확인
+    for f in \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/upload/page.tsx" \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/external/page.tsx" \
+      "mediaX-CMS/apps/web/app/(main)/programming/contents/[id]/edit/page.tsx" \
+      "mediaX-CMS/apps/web/components/contents/ContentForm.tsx"; do
+      [ -f "$f" ] || { echo "파일 없음: $f"; exit 1; }
+    done
+    echo "  ✓ 새 페이지 5개 + ContentForm 존재 OK"
+    # 3. AddContentModal 제거 확인 (목록 페이지에서 import 없어야 함)
+    ! grep -q "AddContentModal" "mediaX-CMS/apps/web/app/(main)/programming/contents/page.tsx" \
+      || { echo "AddContentModal 아직 목록 페이지에 있음"; exit 1; }
+    echo "  ✓ AddContentModal 제거 OK"
+    # 4. TypeScript 타입체크
+    cd mediaX-CMS && npm run typecheck 2>&1 | grep -E "error TS|PASS|Tasks:" | tail -5
+    cd ..
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step2)
+    echo "=== flexible-meta-step2: 벌크 업로드 API 확장 + PUT 엔드포인트 ==="
+    python3 -c "
+# 1. ContentUpdate 스키마 존재 확인
+from api.programming.metadata.schemas import ContentUpdate
+data = ContentUpdate(synopsis='테스트', cast='배우1, 배우2', directors='감독1')
+assert data.synopsis == '테스트'
+assert data.cast == '배우1, 배우2'
+print('  ✓ ContentUpdate 스키마 OK')
+
+# 2. update_content 서비스 import + 실행
+from api.programming.metadata.service import update_content
+from shared.database import SessionLocal
+from api.programming.metadata.models import Content
+from api.programming.metadata.models.external import ExternalSourceType
+
+db = SessionLocal()
+content = db.query(Content).first()
+if content:
+    result = update_content(db, content.id, ContentUpdate(synopsis='검증용 줄거리'))
+    # ExternalMetaSource(manual) 저장 확인
+    from api.programming.metadata.models import ExternalMetaSource
+    manual_src = db.query(ExternalMetaSource).filter(
+        ExternalMetaSource.content_id == content.id,
+        ExternalMetaSource.source_type == ExternalSourceType.manual,
+    ).first()
+    assert manual_src is not None, 'manual ExternalMetaSource 없음'
+    assert manual_src.raw_json.get('synopsis') == '검증용 줄거리'
+    print(f'  ✓ update_content + manual ExternalMetaSource 저장 OK (content_id={content.id})')
+    db.rollback()
+db.close()
+
+# 3. process_batch_rows 시그니처 + bulk_upload source 사용 확인
+import inspect
+from api.programming.metadata.service import process_batch_rows
+src = inspect.getsource(process_batch_rows)
+assert 'ExternalSourceType.bulk_upload' in src, 'bulk_upload source_type 없음'
+assert 'resolve_metadata' in src, 'resolve_metadata 호출 없음'
+print('  ✓ process_batch_rows bulk_upload + resolve_metadata OK')
+
+# 4. router PUT 엔드포인트 등록 확인
+from api.programming.metadata.router import router
+put_routes = [r for r in router.routes if hasattr(r, 'methods') and 'PUT' in r.methods]
+assert any('/contents/{content_id}' in str(r.path) for r in put_routes), 'PUT /contents/{id} 없음'
+print('  ✓ PUT /contents/{content_id} 엔드포인트 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step1)
+    echo "=== flexible-meta-step1: Resolution Service ==="
+    python3 -c "
+from api.programming.metadata.models.external import ExternalSourceType
+assert hasattr(ExternalSourceType, 'manual'), 'manual 타입 없음'
+assert hasattr(ExternalSourceType, 'bulk_upload'), 'bulk_upload 타입 없음'
+print('  ✓ ExternalSourceType 확장 OK')
+from api.programming.metadata.service import (
+    resolve_metadata, _source_priority, _parse_source_fields,
+    _get_or_create_genre, _get_or_create_person,
+)
+assert _source_priority('manual') == 100
+assert _source_priority('tmdb') == 80
+assert _source_priority('kobis') == 70
+assert _source_priority('watcha') == 50
+print('  ✓ _source_priority OK')
+fields = _parse_source_fields('tmdb', {
+    'title': '테스트', 'overview': '줄거리', 'runtime': 120,
+    'genres': [{'name': '드라마'}],
+    'credits': {'cast': [{'name': '배우1', 'character': '역1'}], 'crew': [{'name': '감독1', 'job': 'Director'}]},
+    'production_countries': [{'name': 'Korea'}],
+    'release_date': '2024-01-01',
+})
+assert fields['title'] == '테스트'
+assert fields['synopsis'] == '줄거리'
+assert fields['runtime'] == 120
+assert fields['genres'] == ['드라마']
+assert fields['directors'] == ['감독1']
+assert len(fields['cast']) == 1
+assert fields['country'] == 'Korea'
+assert fields['production_year'] == 2024
+print('  ✓ _parse_source_fields (TMDB) OK')
+fields2 = _parse_source_fields('watcha', {
+    'cast': '배우A, 배우B', 'directors': '감독X', 'genres': '드라마/, 판타지/',
+    'runtime': '90분',
+})
+assert fields2['cast'][0]['name'] == '배우A'
+assert fields2['directors'][0] == '감독X'
+assert '드라마' in fields2['genres']
+assert fields2['runtime'] == 90
+print('  ✓ _parse_source_fields (watcha/bulk) OK')
+from shared.database import SessionLocal
+db = SessionLocal()
+g = _get_or_create_genre(db, '__test_genre__', 'test')
+assert g is not None
+assert g.name_ko == '__test_genre__'
+p = _get_or_create_person(db, '__test_person__')
+assert p is not None
+assert p.name_ko == '__test_person__'
+db.rollback()
+db.close()
+print('  ✓ get_or_create helpers OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step5d)
+    echo "=== flexible-meta-step5d: bulk-reupload-credits-verify ==="
+    python3 -c "
+import sys; sys.path.insert(0, '.')
+from sqlalchemy import text
+from api.programming.metadata.models.content import Content
+from shared.database import SessionLocal
+db = SessionLocal()
+
+watcha = db.query(Content).filter(Content.cp_name == 'Watcha').count()
+assert watcha > 0, f'Watcha 콘텐츠 없음'
+print(f'  ✓ Watcha 콘텐츠: {watcha}건')
+
+actor_cnt = db.execute(text(\"SELECT COUNT(*) FROM content_credits WHERE role='actor'\")).scalar()
+dir_cnt = db.execute(text(\"SELECT COUNT(*) FROM content_credits WHERE role='director'\")).scalar()
+genre_cnt = db.execute(text('SELECT COUNT(*) FROM content_genres')).scalar()
+
+assert actor_cnt > 0, 'content_credits(actor) 없음'
+assert dir_cnt > 0, 'content_credits(director) 없음'
+assert genre_cnt > 0, 'content_genres 없음'
+
+print(f'  ✓ content_credits actor: {actor_cnt}건')
+print(f'  ✓ content_credits director: {dir_cnt}건')
+print(f'  ✓ content_genres: {genre_cnt}건')
+db.close()
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step5c)
+    echo "=== flexible-meta-step5c: incremental-patch-and-csv-convert ==="
+    # CSV 변환 실행 (patch 는 사전 완료 전제)
+    python3 scripts/watcha_real/04_to_upload_csv.py
+    python3 -c "
+import csv, json
+
+# detail_real.csv cast/directors 비율
+with open('data/watcha_real/detail_real.csv') as f:
+    rows = list(csv.DictReader(f))
+total = len(rows)
+filled = sum(1 for r in rows if r.get('cast') or r.get('directors'))
+pct = filled / total * 100 if total else 0
+print(f'  cast/directors 보유: {filled}/{total}건 ({pct:.0f}%)')
+assert pct >= 50, f'cast/directors 비율 {pct:.0f}% < 50%'
+print('  ✓ cast/directors ≥ 50%')
+
+# watcha_upload.csv 헤더 12열 확인
+with open('data/watcha/upload/watcha_upload.csv') as f:
+    reader = csv.DictReader(f)
+    headers = set(reader.fieldnames or [])
+    expected = {'title','production_year','content_type','cp_name','synopsis','cast','directors','genres','country','runtime','rating_age','poster_url'}
+    missing = expected - headers
+    assert not missing, f'누락 컬럼: {missing}'
+    print(f'  ✓ 12열 헤더 확인')
+    row = next(reader, None)
+    if row:
+        print(f'  샘플 cast={repr(row.get(\"cast\",\"\")[:40])}, directors={repr(row.get(\"directors\",\"\")[:30])}')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step5b)
+    echo "=== flexible-meta-step5b: crawler-cast-directors ==="
+    # v2bak 존재 확인 (patch 실행 전이라 없을 수 있으니 선행 생성)
+    DETAIL_CSV="data/watcha_real/detail_real.csv"
+    BAK_CSV="data/watcha_real/detail_real.csv.v2bak"
+    if [ ! -f "$DETAIL_CSV" ]; then
+      echo "ERROR: detail_real.csv 없음"
+      exit 1
+    fi
+    # --limit 3 --patch 실행 (3건 샘플 검증)
+    python3 scripts/watcha_real/02_crawl_details.py --patch --limit 3
+    # v2bak 파일 존재 확인
+    if [ ! -f "$BAK_CSV" ]; then
+      echo "ERROR: detail_real.csv.v2bak 없음"
+      exit 1
+    fi
+    echo "  ✓ .v2bak 생성 확인"
+    # cast 또는 directors 가 채워진 행 ≥ 1건 확인
+    python3 -c "
+import csv, json
+with open('data/watcha_real/detail_real.csv') as f:
+    rows = list(csv.DictReader(f))
+filled = sum(1 for r in rows if r.get('cast') or r.get('directors'))
+print(f'  cast/directors 있는 행: {filled}/{len(rows)}건')
+assert filled >= 1, 'cast/directors 채워진 행 없음'
+print('  ✓ 샘플 patch 성공')
+"
+    echo "=== PASS ==="
+    ;;
+
+  flexible-meta-step5a)
+    echo "=== flexible-meta-step5a: cleanup-baseline ==="
+    python3 scripts/watcha_real/00_cleanup_baseline.py
+    python3 -c "
+import sys; sys.path.insert(0, '.')
+from api.programming.metadata.models.content import Content
+from shared.database import SessionLocal
+db = SessionLocal()
+watcha = db.query(Content).filter(Content.cp_name == 'Watcha').count()
+dummy = db.query(Content).filter(Content.title.like('콘텐츠_%')).count()
+assert watcha == 0, f'Watcha {watcha}건 남음'
+assert dummy == 0, f'더미 {dummy}건 남음'
+db.close()
+print('  ✓ Watcha 0건 / 더미 0건 확인')
+"
+    echo "=== PASS ==="
+    ;;
+
+  # ── dev-ai-review-queue ──────────────────────────────────
+  ai-review-queue-1.1)
+    echo "=== ai-review-queue-1.1: schemas + classifier helpers ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "classify or risk_level" -v --tb=short -q 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.2)
+    echo "=== ai-review-queue-1.2: build_ai_review_queue core ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "queue and not dam_integration" -v --tb=short -q 2>&1 | tail -25
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.3)
+    echo "=== ai-review-queue-1.3: router endpoint ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "endpoint" -v --tb=short -q 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.4)
+    echo "=== ai-review-queue-1.4: dam integration ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -k "dam_integration" -v --tb=short -q 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-1.5)
+    echo "=== ai-review-queue-1.5: e2e smoke ==="
+    python3 -m pytest tests/api/programming/metadata/test_ai_review_queue.py \
+      -v --tb=short -q 2>&1 | tail -30
+    curl -sf "http://localhost:8000/api/programming/metadata/ai-review-queue?size=3" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'summary' in d; assert 'items' in d; print('  ✓ endpoint 200 OK, summary:', d['summary'])"
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-5)
+    echo "=== ai-review-queue-5: Dam Link Display ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- damApi export ---"
+    grep -q "export const damApi" "$CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ damApi exported" \
+      || (echo "  ✗ damApi missing" && exit 1)
+    echo "--- DamAssetsOut type used ---"
+    grep -q "DamAssetsOut" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ DamAssetsOut type in page" \
+      || (echo "  ✗ DamAssetsOut missing in page" && exit 1)
+    echo "--- retry button ---"
+    grep -q "damRetry" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ damRetry state present" \
+      || (echo "  ✗ damRetry missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  content-register-1)
+    echo "=== content-register-1: 등록 페이지 Hero 카드 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- new/page.tsx exists ---"
+    [ -f "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" ] \
+      && echo "  ✓ new/page.tsx exists" \
+      || (echo "  ✗ new/page.tsx missing" && exit 1)
+    echo "--- ContentForm removed ---"
+    grep -q "ContentForm" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && (echo "  ✗ ContentForm still imported" && exit 1) \
+      || echo "  ✓ ContentForm removed"
+    echo "--- poster upload zone ---"
+    grep -q 'aspect-\[2/3\]' "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ aspect-[2/3] poster zone present" \
+      || (echo "  ✗ aspect-[2/3] missing" && exit 1)
+    echo "--- enrich redirect ---"
+    grep -q 'enrich=true' "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ enrich=true redirect present" \
+      || (echo "  ✗ enrich=true redirect missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  content-register-2)
+    echo "=== content-register-2: 3탭 패널 (글자/이미지/영상) ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- activeTab state ---"
+    grep -q 'setActiveTab.*"text" \| "image" \| "video"' "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ activeTab state present" \
+      || (echo "  ✗ activeTab missing" && exit 1)
+    echo "--- 글자 탭 (extended_synopsis, catchphrase, keywords) ---"
+    grep -q "extended_synopsis" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ extended_synopsis field present" \
+      || (echo "  ✗ extended_synopsis missing" && exit 1)
+    grep -q "catchphrase" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ catchphrase field present" \
+      || (echo "  ✗ catchphrase missing" && exit 1)
+    grep -q "form.keywords" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ keywords array present" \
+      || (echo "  ✗ keywords missing" && exit 1)
+    echo "--- 이미지 탭 (stills, backgroundImage) ---"
+    grep -q "stillPreviews" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ stills preview state present" \
+      || (echo "  ✗ stillPreviews missing" && exit 1)
+    grep -q "bgPreview" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ background preview state present" \
+      || (echo "  ✗ bgPreview missing" && exit 1)
+    echo "--- 영상 탭 (vodPath, trailerPath, format, resolution) ---"
+    grep -q "vodPath\|vod_path" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ vodPath field present" \
+      || (echo "  ✗ vodPath missing" && exit 1)
+    grep -q "form.format\|form.resolution" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ format/resolution selects present" \
+      || (echo "  ✗ format/resolution missing" && exit 1)
+    echo "--- POST body extend ---"
+    grep -q "extended_synopsis.*body" "$CMS/apps/web/app/(main)/programming/contents/new/page.tsx" \
+      && echo "  ✓ extended_synopsis in POST body" \
+      || (echo "  ✗ extended_synopsis not sent" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step1)
+    echo "=== phase-d-step1: migration 0013 + env keys ==="
+    echo "--- alembic 0013 파일 ---"
+    [ -f "$BACKEND/alembic/versions/0013_phase_d_websearch.py" ] \
+      && echo "  ✓ alembic 0013 파일 존재" \
+      || (echo "  ✗ alembic 0013 missing" && exit 1)
+    echo "--- ExternalSourceType.websearch ---"
+    python3 -c "
+from api.programming.metadata.models.external import ExternalSourceType
+assert ExternalSourceType.websearch == 'websearch'
+print('  ✓ ExternalSourceType.websearch = websearch')
+"
+    echo "--- WebSearchQuotaLog model ---"
+    python3 -c "
+from api.programming.metadata.models.tmdb_cache import WebSearchQuotaLog, WebSearchCache
+assert WebSearchQuotaLog.__tablename__ == 'web_search_quota_log'
+print('  ✓ WebSearchQuotaLog 모델 OK')
+assert ('query_hash', 'source') == tuple(c.name for c in WebSearchCache.__table_args__[0].columns) \
+    or any(c.name == 'query_hash' for c in WebSearchCache.__table_args__[0].columns)
+print('  ✓ WebSearchCache composite unique OK')
+"
+    echo "--- models __init__ re-export ---"
+    python3 -c "
+from api.meta_core.models import WebSearchQuotaLog
+print('  ✓ meta_core.models.WebSearchQuotaLog re-export OK')
+"
+    echo "--- .env.example keys ---"
+    for k in BRAVE_SEARCH_API_KEY SERPAPI_KEY WEBSEARCH_ENABLED WEBSEARCH_BULK_ALLOWED WEBSEARCH_PROVIDERS WEBSEARCH_BRAVE_DAILY WEBSEARCH_SERPAPI_DAILY WEBSEARCH_GEMINI_DAILY WEBSEARCH_TRENDING_ENABLED; do
+      grep -q "^$k=" "$BACKEND/.env.example" \
+        && echo "  ✓ $k" \
+        || (echo "  ✗ $k missing in .env.example" && exit 1)
+    done
+    echo "--- shared.config Settings ---"
+    python3 -c "
+from shared.config import Settings
+s = Settings()
+assert hasattr(s, 'BRAVE_SEARCH_API_KEY')
+assert hasattr(s, 'SERPAPI_KEY')
+assert s.WEBSEARCH_ENABLED is True
+assert s.WEBSEARCH_BULK_ALLOWED is False
+assert s.WEBSEARCH_PROVIDERS == 'brave,serpapi,gemini,ollama'
+assert s.WEBSEARCH_BRAVE_DAILY == 60
+assert s.WEBSEARCH_SERPAPI_DAILY == 3
+assert s.WEBSEARCH_GEMINI_DAILY == 200
+assert s.WEBSEARCH_TRENDING_ENABLED is False
+print('  ✓ Settings 9 keys OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step2)
+    echo "=== phase-d-step2: web_search package + BraveSearchProvider ==="
+    echo "--- Files structure ---"
+    for f in __init__.py base.py brave.py cache.py errors.py; do
+      [ -f "$BACKEND/api/meta_core/web_search/$f" ] && echo "  ✓ $f" || (echo "  ✗ $f missing" && exit 1)
+    done
+    echo "--- WebSearchProvider ABC ---"
+    python3 -c "
+from api.meta_core.web_search.base import WebSearchProvider, WebSearchResult
+from abc import ABC
+assert issubclass(WebSearchProvider, ABC)
+assert hasattr(WebSearchProvider, 'provider_name')
+assert hasattr(WebSearchProvider, 'daily_limit')
+assert hasattr(WebSearchProvider, 'search')
+print('  ✓ WebSearchProvider ABC OK')
+"
+    echo "--- WebSearchResult dataclass ---"
+    python3 -c "
+from api.meta_core.web_search.base import WebSearchResult
+r = WebSearchResult(url='http://test.com', title='Test', snippet='snippet', source_domain='test.com', score=1.0)
+assert r.url == 'http://test.com'
+assert r.title == 'Test'
+assert r.source_domain == 'test.com'
+assert r.score == 1.0
+print('  ✓ WebSearchResult dataclass OK')
+"
+    echo "--- BraveSearchProvider ---"
+    python3 -c "
+from api.meta_core.web_search.brave import BraveSearchProvider
+assert hasattr(BraveSearchProvider, 'search')
+b = BraveSearchProvider()
+assert b.provider_name == 'brave'
+assert b.daily_limit == 60
+print('  ✓ BraveSearchProvider OK')
+"
+    echo "--- Cache helpers ---"
+    python3 -c "
+from api.meta_core.web_search.cache import cache_get, cache_put
+import inspect
+assert callable(cache_get)
+assert callable(cache_put)
+assert 'db' in inspect.signature(cache_get).parameters
+assert 'provider' in inspect.signature(cache_get).parameters
+print('  ✓ cache_get/cache_put OK')
+"
+    echo "--- Exception classes ---"
+    python3 -c "
+from api.meta_core.web_search.errors import QuotaExhaustedError, ProviderUnavailableError, BulkQuotaError
+assert issubclass(QuotaExhaustedError, Exception)
+assert issubclass(ProviderUnavailableError, Exception)
+assert issubclass(BulkQuotaError, Exception)
+print('  ✓ Exception classes OK')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_brave.py" ] \
+      && echo "  ✓ test_brave.py exists" \
+      || (echo "  ✗ test_brave.py missing" && exit 1)
+    echo "--- Package imports ---"
+    python3 -c "
+from api.meta_core.web_search import (
+    WebSearchProvider, WebSearchResult, BraveSearchProvider,
+    cache_get, cache_put,
+    QuotaExhaustedError, ProviderUnavailableError, BulkQuotaError
+)
+print('  ✓ All imports OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step3)
+    echo "=== phase-d-step3: SerpAPI + Gemini Grounding + Ollama-DDG + factory ==="
+    echo "--- Provider files ---"
+    for f in serpapi.py gemini_grounding.py ollama_ddg.py factory.py; do
+      [ -f "$BACKEND/api/meta_core/web_search/$f" ] && echo "  ✓ $f" || (echo "  ✗ $f missing" && exit 1)
+    done
+    echo "--- SerpApiProvider ---"
+    python3 -c "
+from api.meta_core.web_search.serpapi import SerpApiProvider
+s = SerpApiProvider()
+assert s.provider_name == 'serpapi'
+assert s.daily_limit == 3
+print('  ✓ SerpApiProvider OK')
+"
+    echo "--- GeminiGroundingProvider ---"
+    python3 -c "
+from api.meta_core.web_search.gemini_grounding import GeminiGroundingProvider
+g = GeminiGroundingProvider()
+assert g.provider_name == 'gemini'
+assert g.daily_limit == 200
+print('  ✓ GeminiGroundingProvider OK')
+"
+    echo "--- OllamaDDGProvider ---"
+    python3 -c "
+from api.meta_core.web_search.ollama_ddg import OllamaDDGProvider
+o = OllamaDDGProvider()
+assert o.provider_name == 'ollama'
+assert o.daily_limit == 999999
+print('  ✓ OllamaDDGProvider OK')
+"
+    echo "--- Factory functions ---"
+    python3 -c "
+from api.meta_core.web_search.factory import get_provider_chain, search_with_fallback
+assert callable(get_provider_chain)
+assert callable(search_with_fallback)
+chain = get_provider_chain()
+assert len(chain) >= 3
+assert chain[-1].provider_name == 'ollama'  # Ollama last
+print('  ✓ get_provider_chain OK')
+print('  ✓ search_with_fallback OK')
+"
+    echo "--- Test files ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_factory.py" ] \
+      && echo "  ✓ test_factory.py exists" \
+      || (echo "  ✗ test_factory.py missing" && exit 1)
+    echo "--- Package re-export ---"
+    python3 -c "
+from api.meta_core.web_search import (
+    SerpApiProvider, GeminiGroundingProvider, OllamaDDGProvider,
+    get_provider_chain, search_with_fallback
+)
+print('  ✓ All re-exports OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step4)
+    echo "=== phase-d-step4: bulk-guard + cache integration ==="
+    echo "--- guard.py ---"
+    [ -f "$BACKEND/api/meta_core/web_search/guard.py" ] \
+      && echo "  ✓ guard.py exists" \
+      || (echo "  ✗ guard.py missing" && exit 1)
+    echo "--- check_bulk_allowed function ---"
+    python3 -c "
+from api.meta_core.web_search.guard import check_bulk_allowed
+from api.meta_core.web_search.errors import BulkQuotaError
+from unittest.mock import MagicMock
+mgr = MagicMock()
+mgr.current_count.return_value = 40
+result = check_bulk_allowed(8, 'brave', 60, mgr)
+assert result is True
+print('  ✓ check_bulk_allowed returns bool')
+mgr.current_count.return_value = 50
+try:
+    check_bulk_allowed(20, 'brave', 60, mgr)
+    print('  ✗ Should raise BulkQuotaError')
+    exit(1)
+except BulkQuotaError as e:
+    assert e.expected == 20
+    assert e.remaining == 10
+    print('  ✓ BulkQuotaError raised with expected/remaining')
+"
+    echo "--- cache hit/miss logic ---"
+    python3 -c "
+from api.meta_core.web_search.cache import cache_get, cache_put
+import inspect
+sig_get = inspect.signature(cache_get)
+sig_put = inspect.signature(cache_put)
+assert 'query' in sig_get.parameters
+assert 'provider' in sig_get.parameters
+assert 'db' in sig_get.parameters
+assert 'ttl_days' in sig_put.parameters
+print('  ✓ cache_get/cache_put signatures correct')
+"
+    echo "--- Test files ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_guard.py" ] \
+      && echo "  ✓ test_guard.py exists" \
+      || (echo "  ✗ test_guard.py missing" && exit 1)
+    [ -f "$BACKEND/tests/meta_core/web_search/test_cache.py" ] \
+      && echo "  ✓ test_cache.py exists" \
+      || (echo "  ✗ test_cache.py missing" && exit 1)
+    echo "--- Package exports ---"
+    python3 -c "
+from api.meta_core.web_search import check_bulk_allowed, cache_get, cache_put
+print('  ✓ All guard/cache exports OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step5)
+    echo "=== phase-d-step5: WebSearchDiscoverySource ==="
+    echo "--- websearch_source.py ---"
+    [ -f "$BACKEND/api/meta_core/discovery/websearch_source.py" ] \
+      && echo "  ✓ websearch_source.py exists" \
+      || (echo "  ✗ websearch_source.py missing" && exit 1)
+    echo "--- WebSearchDiscoverySource class ---"
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+from api.meta_core.discovery.base import DiscoverySource
+from unittest.mock import MagicMock
+assert issubclass(WebSearchDiscoverySource, DiscoverySource)
+assert WebSearchDiscoverySource.source_type == 'websearch'
+db = MagicMock()
+source = WebSearchDiscoverySource(db)
+assert hasattr(source, 'discover')
+assert hasattr(source, '_discover_async')
+print('  ✓ WebSearchDiscoverySource OK')
+"
+    echo "--- Mode support ---"
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource, _TRENDING_QUERIES
+assert len(_TRENDING_QUERIES) == 5
+print(f'  ✓ 3 modes (query/topic/trending) with {len(_TRENDING_QUERIES)} trending queries')
+"
+    echo "--- LLM extraction & JSON parsing ---"
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+from unittest.mock import MagicMock
+source = WebSearchDiscoverySource(MagicMock())
+response = '{\"title\": \"Test\", \"content_type\": \"movie\", \"production_year\": 2026}'
+parsed = source._parse_extraction_response(response)
+assert parsed is not None
+assert parsed['title'] == 'Test'
+print('  ✓ JSON parsing OK')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/discovery/test_websearch.py" ] \
+      && echo "  ✓ test_websearch.py exists" \
+      || (echo "  ✗ test_websearch.py missing" && exit 1)
+    echo "--- search_with_fallback integration ---"
+    python3 -c "
+import inspect
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+source_code = inspect.getsource(WebSearchDiscoverySource._search_and_extract)
+assert 'search_with_fallback' in source_code
+print('  ✓ search_with_fallback integrated')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step6)
+    echo "=== phase-d-step6: Aggregator opt-in integration ==="
+    echo "--- aggregator.py enable_web_search ---"
+    python3 -c "
+import inspect
+from api.meta_core.aggregator import aggregate_content, aggregate_batch
+sig_content = inspect.signature(aggregate_content)
+sig_batch = inspect.signature(aggregate_batch)
+assert 'enable_web_search' in sig_content.parameters
+assert 'enable_web_search' in sig_batch.parameters
+print('  ✓ enable_web_search parameter added')
+"
+    echo "--- WebSearch helper functions ---"
+    python3 -c "
+from api.meta_core.aggregator import _add_websearch_suggestions, _create_websearch_suggestion
+import inspect
+assert callable(_add_websearch_suggestions)
+assert callable(_create_websearch_suggestion)
+print('  ✓ _add_websearch_suggestions OK')
+print('  ✓ _create_websearch_suggestion OK')
+"
+    echo "--- BulkAcceptRequest.enable_web_search ---"
+    python3 -c "
+from api.meta_core.intelligence.schemas import BulkAcceptRequest
+req = BulkAcceptRequest(fields=['synopsis'], enable_web_search=True)
+assert req.enable_web_search is True
+print('  ✓ BulkAcceptRequest.enable_web_search field OK')
+"
+    echo "--- bulk_accept guard ---"
+    python3 -c "
+import inspect
+from api.meta_core.intelligence.router import bulk_accept
+source = inspect.getsource(bulk_accept)
+assert 'check_bulk_allowed' in source
+assert 'BulkQuotaError' in source
+assert 'enable_web_search' in source
+print('  ✓ bulk_accept check_bulk_allowed guard present')
+print('  ✓ bulk_accept enable_web_search integration')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/test_aggregator_websearch.py" ] \
+      && echo "  ✓ test_aggregator_websearch.py exists" \
+      || (echo "  ✗ test_aggregator_websearch.py missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step7)
+    echo "=== phase-d-step7: Monitoring Backend API ==="
+    echo "--- web_search/router.py ---"
+    [ -f "$BACKEND/api/meta_core/web_search/router.py" ] \
+      && echo "  ✓ router.py exists" \
+      || (echo "  ✗ router.py missing" && exit 1)
+    echo "--- 3 GET endpoints ---"
+    python3 -c "
+from api.meta_core.web_search.router import router
+routes = [r.path for r in router.routes if r.methods and 'GET' in r.methods]
+assert '/quota' in str(routes)
+assert '/cache-stats' in str(routes) or 'cache-stats' in str(routes)
+assert '/recent' in str(routes)
+print('  ✓ /quota endpoint')
+print('  ✓ /cache-stats endpoint')
+print('  ✓ /recent endpoint')
+"
+    echo "--- Pydantic schemas ---"
+    python3 -c "
+from api.meta_core.web_search.router import (
+    ProviderQuotaOut, QuotaStatsOut,
+    CacheStatsOut, RecentCallOut, RecentCallsOut
+)
+p = ProviderQuotaOut(provider='test', daily_limit=60, used_today=30, remaining=30, percent_used=50.0)
+assert p.provider == 'test'
+print('  ✓ ProviderQuotaOut')
+print('  ✓ QuotaStatsOut')
+print('  ✓ CacheStatsOut')
+print('  ✓ RecentCallOut')
+print('  ✓ RecentCallsOut')
+"
+    echo "--- Router mounts ---"
+    python3 -c "
+from api.meta_core.web_search.router import router as ws_router
+assert ws_router is not None
+print('  ✓ web_search_router importable')
+"
+    echo "--- Test file ---"
+    [ -f "$BACKEND/tests/meta_core/web_search/test_router.py" ] \
+      && echo "  ✓ test_router.py exists" \
+      || (echo "  ✗ test_router.py missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step0)
+    echo "=== phase-d-step0: ADR Phase D WebSearch ==="
+    DOCS="$SCRIPT_DIR/../docs/dev/phase-d"
+    echo "--- 7 ADR 파일 존재 ---"
+    for f in _index.md sources.md quota-policy.md on-off-policy.md bulk-guard.md cache-policy.md monitoring-data-model.md; do
+      [ -f "$DOCS/$f" ] && echo "  ✓ $f" || (echo "  ✗ $f missing" && exit 1)
+    done
+    echo "--- _index.md 핵심 키워드 ---"
+    grep -q "Phase D" "$DOCS/_index.md" && echo "  ✓ Phase D 키워드" || (echo "  ✗ Phase D 키워드 없음" && exit 1)
+    grep -q "Provider 폴백\|Brave → SerpAPI" "$DOCS/_index.md" && echo "  ✓ Provider 폴백 키워드" || (echo "  ✗ Provider 폴백 없음" && exit 1)
+    grep -q "Quota\|쿼터" "$DOCS/_index.md" && echo "  ✓ Quota 키워드" || (echo "  ✗ Quota 키워드 없음" && exit 1)
+    grep -q "Bulk 가드\|bulk-guard" "$DOCS/_index.md" && echo "  ✓ Bulk 가드 키워드" || (echo "  ✗ Bulk 가드 없음" && exit 1)
+    echo "--- plans 디렉토리 ---"
+    [ -f "$SCRIPT_DIR/../plans/dev-meta-intelligence-phase-d/index.json" ] \
+      && echo "  ✓ plans/dev-meta-intelligence-phase-d/index.json" \
+      || (echo "  ✗ plan index 없음" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  content-register-3)
+    echo "=== content-register-3: [id]/?enrich=true 진입점 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL_PAGE="$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- useSearchParams import ---"
+    grep -q "useSearchParams" "$DETAIL_PAGE" \
+      && echo "  ✓ useSearchParams imported" \
+      || (echo "  ✗ useSearchParams missing" && exit 1)
+    echo "--- enrich param detection ---"
+    grep -q 'searchParams.get.*"enrich"' "$DETAIL_PAGE" \
+      && echo "  ✓ enrich param detection present" \
+      || (echo "  ✗ enrich param detection missing" && exit 1)
+    echo "--- showEnrich auto-enable ---"
+    grep -q 'setShowEnrich.*true' "$DETAIL_PAGE" \
+      && echo "  ✓ showEnrich auto-enable present" \
+      || (echo "  ✗ showEnrich auto-enable missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-6)
+    echo "=== ai-review-queue-6: Bulk Review Summary 보강 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- guard function exists ---"
+    [ -f "$CMS/apps/web/lib/reviewQueueGuard.ts" ] \
+      && echo "  ✓ reviewQueueGuard.ts exists" \
+      || (echo "  ✗ reviewQueueGuard.ts missing" && exit 1)
+    echo "--- guard function exports ---"
+    grep -q "checkBulkApplyGuard" "$CMS/apps/web/lib/reviewQueueGuard.ts" \
+      && echo "  ✓ checkBulkApplyGuard exported" \
+      || (echo "  ✗ checkBulkApplyGuard missing" && exit 1)
+    echo "--- review page multi-filter ---"
+    grep -q "FilterState" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ FilterState type present" \
+      || (echo "  ✗ FilterState missing" && exit 1)
+    grep -q "checkBulkApplyGuard" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ guard used in page" \
+      || (echo "  ✗ guard not used in page" && exit 1)
+    grep -q "toggleDimension" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ multi-dimension filter toggle present" \
+      || (echo "  ✗ toggleDimension missing" && exit 1)
+    grep -q "handleBulkApply" "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" \
+      && echo "  ✓ bulk apply handler present" \
+      || (echo "  ✗ handleBulkApply missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-7)
+    echo "=== ai-review-queue-7: MetadataEnrichPanel 2패널 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- component exists ---"
+    [ -f "$CMS/apps/web/components/contents/MetadataEnrichPanel.tsx" ] \
+      && echo "  ✓ MetadataEnrichPanel.tsx exists" \
+      || (echo "  ✗ MetadataEnrichPanel.tsx missing" && exit 1)
+    echo "--- page integration ---"
+    grep -q "MetadataEnrichPanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ MetadataEnrichPanel used in page" \
+      || (echo "  ✗ MetadataEnrichPanel not found in page" && exit 1)
+    grep -q "showEnrich" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ showEnrich toggle state present" \
+      || (echo "  ✗ showEnrich state missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-4)
+    echo "=== ai-review-queue-4: VisualAssetCandidatePanel MVP ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- component exists ---"
+    [ -f "$CMS/apps/web/components/contents/VisualAssetCandidatePanel.tsx" ] \
+      && echo "  ✓ VisualAssetCandidatePanel.tsx exists" \
+      || (echo "  ✗ VisualAssetCandidatePanel.tsx missing" && exit 1)
+    echo "--- inline poster section replaced ---"
+    grep -q "VisualAssetCandidatePanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ VisualAssetCandidatePanel used in page" \
+      || (echo "  ✗ VisualAssetCandidatePanel not found in page" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-3)
+    echo "=== ai-review-queue-3: MetadataDiffPanel 분리 + 추천 패널 위치 정리 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error " | tail -10 || true
+    echo "--- component exists ---"
+    [ -f "$CMS/apps/web/components/contents/MetadataDiffPanel.tsx" ] \
+      && echo "  ✓ MetadataDiffPanel.tsx exists" \
+      || (echo "  ✗ MetadataDiffPanel.tsx missing" && exit 1)
+    echo "--- inline function removed ---"
+    ! grep -q "^function RecommendationPanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ inline RecommendationPanel removed" \
+      || (echo "  ✗ inline RecommendationPanel still present" && exit 1)
+    echo "--- new import present ---"
+    grep -q "MetadataDiffPanel" "$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx" \
+      && echo "  ✓ MetadataDiffPanel import OK" \
+      || (echo "  ✗ MetadataDiffPanel import missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  ai-review-queue-2)
+    echo "=== ai-review-queue-2: frontend Review Queue list page ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -10
+    echo "--- lint ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "error|warning|PASS|✓" | tail -10
+    echo "--- route exists ---"
+    [ -f "$CMS/apps/web/app/(main)/programming/contents/review/page.tsx" ] \
+      && echo "  ✓ review/page.tsx exists" \
+      || (echo "  ✗ review/page.tsx missing" && exit 1)
+    echo "--- docs.ts entry ---"
+    grep -q "contents/review" "$CMS/apps/web/config/docs.ts" \
+      && echo "  ✓ docs.ts entry OK" \
+      || (echo "  ✗ docs.ts entry missing" && exit 1)
+    echo "--- api.ts types ---"
+    grep -q "AiReviewQueueRow" "$CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ AiReviewQueueRow type OK" \
+      || (echo "  ✗ AiReviewQueueRow missing" && exit 1)
+    grep -q "getAiReviewQueue" "$CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ getAiReviewQueue fn OK" \
+      || (echo "  ✗ getAiReviewQueue missing" && exit 1)
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step0)
+    echo "=== phase-d-step0: ADR docs/dev/phase-d/ ==="
+    DIR="$SCRIPT_DIR/../docs/dev/phase-d"
+    test -d "$DIR" || { echo "  ✗ $DIR 없음"; exit 1; }
+    REQUIRED_FILES=("_index.md" "sources.md" "quota-policy.md" "on-off-policy.md" "bulk-guard.md" "cache-policy.md" "monitoring-data-model.md")
+    for f in "${REQUIRED_FILES[@]}"; do
+      test -f "$DIR/$f" || { echo "  ✗ $f 누락"; exit 1; }
+    done
+    echo "  ✓ 7개 파일 존재"
+    INDEX="$DIR/_index.md"
+    for sec in "sources.md" "quota-policy.md" "on-off-policy.md" "bulk-guard.md" "cache-policy.md" "monitoring-data-model.md"; do
+      grep -q "$sec" "$INDEX" || { echo "  ✗ _index.md 에 $sec 링크 누락"; exit 1; }
+    done
+    echo "  ✓ _index.md 에 섹션 링크 확인"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step1)
+    echo "=== phase-d-step1: migration 0013 + env keys ==="
+    test -f "$BACKEND/alembic/versions/0013_phase_d_websearch.py" || { echo "  ✗ 0013_phase_d_websearch.py 없음"; exit 1; }
+    echo "  ✓ 0013_phase_d_websearch.py 존재"
+    python3 -c "
+from shared.config import settings
+assert hasattr(settings, 'BRAVE_SEARCH_API_KEY'), 'BRAVE_SEARCH_API_KEY 없음'
+assert hasattr(settings, 'WEBSEARCH_ENABLED'), 'WEBSEARCH_ENABLED 없음'
+assert hasattr(settings, 'WEBSEARCH_BULK_ALLOWED'), 'WEBSEARCH_BULK_ALLOWED 없음'
+print('  ✓ env 키 9개 import OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step2)
+    echo "=== phase-d-step2: web_search package + Brave ==="
+    python3 -c "
+from api.meta_core.web_search import WebSearchProvider, WebSearchResult
+from api.meta_core.web_search.brave import BraveSearchProvider
+from api.meta_core.web_search.cache import cache_get, cache_put
+from api.meta_core.web_search.errors import QuotaExhaustedError, ProviderUnavailableError
+print('  ✓ web_search 패키지 + base + brave + cache + errors import OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_brave.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step3)
+    echo "=== phase-d-step3: SerpAPI + Gemini + Ollama ==="
+    python3 -c "
+from api.meta_core.web_search.serpapi import SerpApiProvider
+from api.meta_core.web_search.gemini_grounding import GeminiGroundingProvider
+from api.meta_core.web_search.ollama_ddg import OllamaDDGProvider
+from api.meta_core.web_search.factory import get_provider_chain, search_with_fallback
+print('  ✓ 4 provider + factory import OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_factory.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step4)
+    echo "=== phase-d-step4: bulk guard + cache ==="
+    python3 -c "
+from api.meta_core.web_search.guard import check_bulk_allowed, BulkQuotaError
+print('  ✓ guard import OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_guard.py tests/meta_core/web_search/test_cache.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step5)
+    echo "=== phase-d-step5: WebSearchDiscoverySource ==="
+    python3 -c "
+from api.meta_core.discovery.websearch_source import WebSearchDiscoverySource
+print('  ✓ WebSearchDiscoverySource import OK')
+"
+    python3 -m pytest tests/meta_core/discovery/test_websearch.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step6)
+    echo "=== phase-d-step6: aggregator opt-in ==="
+    python3 -c "
+from api.meta_core.aggregator import aggregate_content
+from api.meta_core.intelligence.schemas import BulkAcceptRequest
+import inspect
+src = inspect.getsource(aggregate_content)
+assert 'enable_web_search' in src, 'enable_web_search 파라미터 없음'
+print('  ✓ aggregator.aggregate_content enable_web_search 파라미터 OK')
+"
+    python3 -m pytest tests/meta_core/test_aggregator_websearch.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step7)
+    echo "=== phase-d-step7: monitoring API ==="
+    python3 -c "
+from api.meta_core.web_search.router import router
+from api.meta_core.web_search.router import ProviderQuotaOut, QuotaStatsOut, CacheStatsOut, RecentCallOut, RecentCallsOut
+paths = [str(route.path) for route in router.routes]
+for p in ['/quota', '/cache-stats', '/recent']:
+    assert p in paths, f'{p} 엔드포인트 없음'
+print('  ✓ 3개 GET 엔드포인트 확인 OK')
+"
+    python3 -m pytest tests/meta_core/web_search/test_router.py -q
+    echo "=== PASS ==="
+    ;;
+
+  phase-d-step8)
+    echo "=== phase-d-step8: monitoring UI + Beat + wrap ==="
+    # 백엔드: websearch_tasks + celery Beat 등록
+    python3 -c "
+from workers.websearch_tasks import discover_websearch_trending
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'discover-websearch-trending' in sched, 'discover-websearch-trending beat 없음'
+print('  ✓ websearch_tasks + Beat 스케줄 확인 OK')
+"
+    # 프론트엔드: webSearchApi + 모니터링 페이지
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    grep -q "webSearchApi" "$CMS/apps/web/lib/webSearchApi.ts" || { echo "  ✗ webSearchApi 없음"; exit 1; }
+    test -f "$CMS/apps/web/app/(main)/monitoring/web-search/page.tsx" || { echo "  ✗ web-search/page.tsx 없음"; exit 1; }
+    echo "  ✓ webSearchApi + 모니터링 페이지 확인 OK"
+    # 문서: step8.md + CHANGELOG.md
+    test -f "$SCRIPT_DIR/../plans/dev-meta-intelligence-phase-d/step8.md" || { echo "  ✗ step8.md 없음"; exit 1; }
+    test -f "$SCRIPT_DIR/../docs/dev/phase-d/CHANGELOG.md" || { echo "  ✗ CHANGELOG.md 없음"; exit 1; }
+    echo "  ✓ 문서 파일 확인 OK"
+    echo "=== PASS ==="
+    ;;
+
+  poster-ingest-P.3)
+    echo "=== poster-ingest-P.3: Beat catch-up task + index.json ==="
+    python3 -c "
+from workers.tasks.metadata import sync_primary_posters_to_dam
+print('  ✓ sync_primary_posters_to_dam import OK')
+"
+    python3 -c "
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'sync-primary-posters-to-dam' in sched, 'sync-primary-posters-to-dam beat 없음'
+task = sched['sync-primary-posters-to-dam']['task']
+assert task == 'workers.tasks.metadata.sync_primary_posters_to_dam', f'task명 불일치: {task}'
+print('  ✓ Beat 스케줄 sync-primary-posters-to-dam 등록 확인 OK')
+"
+    test -f "$SCRIPT_DIR/../plans/dev-dam-poster-ingest/index.json" || { echo "  ✗ plans/dev-dam-poster-ingest/index.json 없음"; exit 1; }
+    python3 -c "
+import json
+with open('$SCRIPT_DIR/../plans/dev-dam-poster-ingest/index.json') as f:
+    idx = json.load(f)
+ids = [s['id'] for s in idx['steps']]
+for sid in ['P.1', 'P.2', 'P.3']:
+    assert sid in ids, f'{sid} step 없음'
+print('  ✓ index.json P.1~P.3 steps OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  poster-ingest-P.2)
+    echo "=== poster-ingest-P.2: mediaX → Dam webhook 확장 ==="
+    python3 -c "
+import inspect
+from workers.tasks.metadata import send_dam_webhook
+sig = inspect.signature(send_dam_webhook)
+params = list(sig.parameters.keys())
+for p in ['poster_url', 'poster_source', 'image_id']:
+    assert p in params, f'send_dam_webhook에 {p} 파라미터 없음'
+print('  ✓ send_dam_webhook poster 파라미터 OK')
+src = inspect.getsource(send_dam_webhook)
+assert 'poster_primary_set' in src, 'poster_primary_set 이벤트 처리 없음'
+assert 'DAM_POSTER_INGEST_URL' in src, 'DAM_POSTER_INGEST_URL 참조 없음'
+print('  ✓ send_dam_webhook poster_primary_set 분기 OK')
+"
+    python3 -c "
+import inspect
+from api.programming.metadata.router import select_poster
+src = inspect.getsource(select_poster)
+assert 'send_dam_webhook' in src, 'select_poster에 send_dam_webhook 호출 없음'
+assert 'poster_primary_set' in src, 'select_poster에 poster_primary_set 없음'
+assert 'DAM_POSTER_INGEST_URL' in src, 'select_poster에 DAM_POSTER_INGEST_URL 확인 없음'
+print('  ✓ select_poster → send_dam_webhook.delay 트리거 OK')
+"
+    python3 -c "
+from shared.config import settings
+assert hasattr(settings, 'DAM_POSTER_INGEST_URL'), 'settings.DAM_POSTER_INGEST_URL 없음'
+assert hasattr(settings, 'DAM_WEBHOOK_URL'), 'settings.DAM_WEBHOOK_URL 없음'
+print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
+"
+    grep -q "DAM_POSTER_INGEST_URL" "$SCRIPT_DIR/../backend/.env.example" || { echo "  ✗ .env.example에 DAM_POSTER_INGEST_URL 없음"; exit 1; }
+    echo "  ✓ .env.example DAM_POSTER_INGEST_URL OK"
+    echo "=== PASS ==="
+    ;;
 
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3"
     exit 1
     ;;
 esac

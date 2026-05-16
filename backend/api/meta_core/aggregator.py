@@ -95,9 +95,21 @@ class AggregateReport:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def aggregate_content(content_id: int, db: Session) -> AggregateReport:
-    """pending FieldSuggestion 풀에 Strategy 적용 → FieldResolution + write-back."""
+def aggregate_content(
+    content_id: int, db: Session, enable_web_search: bool = False
+) -> AggregateReport:
+    """pending FieldSuggestion 풀에 Strategy 적용 → FieldResolution + write-back.
+
+    Args:
+        content_id: Content ID
+        db: Database session
+        enable_web_search: True 시 빈 필드(synopsis, cast, director)에 대해 WebSearch 실행
+    """
     report = AggregateReport(content_id=content_id)
+
+    # Step 0: enable_web_search=True 시 WebSearch 기반 suggestions 추가
+    if enable_web_search:
+        _add_websearch_suggestions(content_id, db)
 
     suggestions = (
         db.query(FieldSuggestion)
@@ -139,8 +151,10 @@ def aggregate_content(content_id: int, db: Session) -> AggregateReport:
     return report
 
 
-def aggregate_batch(content_ids: list[int], db: Session) -> list[AggregateReport]:
-    return [aggregate_content(cid, db) for cid in content_ids]
+def aggregate_batch(
+    content_ids: list[int], db: Session, enable_web_search: bool = False
+) -> list[AggregateReport]:
+    return [aggregate_content(cid, db, enable_web_search=enable_web_search) for cid in content_ids]
 
 
 # ── 분류별 결정 ───────────────────────────────────────────────────────────────
@@ -458,3 +472,105 @@ def _map_source_key(key: str) -> ExternalSourceType | None:
         "kmdb_docid": ExternalSourceType.kmdb,
     }
     return mapping.get(key.lower())
+
+
+# ── WebSearch opt-in integration ────────────────────────────────────────────────
+
+def _add_websearch_suggestions(content_id: int, db: Session) -> None:
+    """
+    WebSearch 기반 suggestions 추가 (enable_web_search=True 시).
+
+    대상 필드: synopsis, cast, director (비어있을 때만)
+    """
+    import asyncio
+    from api.programming.metadata.models.content import Content
+    from api.meta_core.web_search import search_with_fallback
+
+    # Step 1: Content 조회
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        logger.warning(f"[websearch] content_id={content_id} not found")
+        return
+
+    # Step 2: 빈 필드 탐지
+    target_fields = []
+    metadata = content.metadata
+    if metadata:
+        if not metadata.synopsis or metadata.synopsis.strip() == "":
+            target_fields.append("synopsis")
+
+    if not target_fields:
+        logger.debug(f"[websearch] content_id={content_id} no empty fields")
+        return
+
+    # Step 3: WebSearch 실행
+    search_query = f"{content.title} {content.production_year or ''} 시놉시스 줄거리".strip()
+
+    try:
+        results, provider = asyncio.run(
+            search_with_fallback(search_query, db, num=5)
+        )
+    except Exception as e:
+        logger.warning(f"[websearch] search_with_fallback failed: {e}")
+        return
+
+    if not results:
+        logger.debug(f"[websearch] no results for {search_query}")
+        return
+
+    # Step 4: LLM 추출 + FieldSuggestion 생성
+    for field_name in target_fields:
+        _create_websearch_suggestion(content_id, field_name, results, db)
+
+
+def _create_websearch_suggestion(
+    content_id: int, field_name: str, search_results, db: Session
+) -> None:
+    """LLM으로 WebSearch 결과 추출 후 FieldSuggestion 생성."""
+    import asyncio
+    from api.programming.metadata.llm import get_provider_chain
+
+    snippet = " ".join(r.snippet for r in search_results[:3])[:500]
+
+    if field_name == "synopsis":
+        prompt = f"웹 검색 결과에서 시놉시스(줄거리)를 한국어 2~3문장으로 요약해줘. 오직 요약만 반환:\n{snippet}"
+    elif field_name == "cast":
+        prompt = f"웹 검색 결과에서 배우 이름을 쉼표로 구분해 나열해줘:\n{snippet}"
+    elif field_name == "director":
+        prompt = f"웹 검색 결과에서 감독 이름을 찾아줘:\n{snippet}"
+    else:
+        return
+
+    async def _run_extraction() -> str:
+        chain = get_provider_chain("gemini")
+        for provider_cls in chain:
+            try:
+                provider = provider_cls()
+                return await provider.generate(prompt)
+            except Exception as e:
+                logger.debug(f"[websearch] {provider_cls.__name__} failed: {e}")
+        return ""
+
+    try:
+        extracted_value = asyncio.run(_run_extraction())
+    except Exception as e:
+        logger.error(f"[websearch] extraction failed: {e}")
+        return
+
+    if not extracted_value or extracted_value.strip() == "":
+        logger.debug(f"[websearch] empty extraction for {field_name}")
+        return
+
+    # FieldSuggestion 생성
+    suggestion = FieldSuggestion(
+        content_id=content_id,
+        field_name=field_name,
+        value_json=extracted_value,
+        source_type=ExternalSourceType.websearch,
+        source_id="websearch",
+        confidence_score=0.5,  # Phase C 정책
+        status="pending",
+    )
+    db.add(suggestion)
+    db.flush()
+    logger.info(f"[websearch] added suggestion: {content_id} {field_name}")

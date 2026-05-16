@@ -14,7 +14,7 @@ import uuid
 
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, Float, Integer,
-    JSON, String, Text, Enum as SAEnum,
+    JSON, String, Text, Enum as SAEnum, UniqueConstraint,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.types import TIMESTAMP
@@ -146,11 +146,35 @@ ExternalSyncLog = TmdbSyncLog
 
 class WebSearchCache(Base):
     __tablename__ = "web_search_cache"
+    __table_args__ = (
+        UniqueConstraint("query_hash", "source", name="ix_web_search_cache_query_hash_source"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    query_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA-256 hex
+    query_hash = Column(String(64), nullable=False, index=True)  # SHA-256 hex
     query = Column(Text, nullable=False)
-    source = Column(String(20), nullable=False)      # "brave" | "serp" | "none"
+    source = Column(String(20), nullable=False)      # provider: brave | serpapi | gemini | ollama
     results_json = Column(JSON)
     fetched_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False, index=True)
+
+
+class WebSearchQuotaLog(Base):
+    """
+    Phase D — provider별 일별 호출 카운터 스냅샷 (Redis → DB).
+
+    Beat 04:00 KST 가 매일 Redis 카운터를 읽어 1행 INSERT.
+    강제 소진 (429 응답) 발생 시점에 exhausted_at 즉시 UPDATE.
+    """
+    __tablename__ = "web_search_quota_log"
+    __table_args__ = (
+        UniqueConstraint("provider", "day_kst", name="uq_web_search_quota_provider_day"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String(20), nullable=False)        # brave | serpapi | gemini | ollama
+    day_kst = Column(String(8), nullable=False)          # YYYYMMDD
+    count = Column(Integer, default=0, nullable=False)
+    limit_at_time = Column(Integer, nullable=True)       # 스냅샷 시점 daily_limit
+    exhausted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    snapshot_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)

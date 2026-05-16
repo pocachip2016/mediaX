@@ -1,0 +1,109 @@
+{
+  "project": "mediaX",
+  "phase": "dev-meta-intelligence-phase-d",
+  "description": "WebSearch 기반 콘텐츠 발굴 + 메타 보강. Phase C 정형 API 4종(TMDB/KOBIS/KMDB/OMDb)으로 잡히지 않는 OTT 단독 작품·신규 인디 작품을 WebSearch로 발굴. 4종 provider(Brave/SerpAPI/Gemini Grounding/Ollama-DDG) 폴백 체인 + QuotaManager 통합 + bulk 가드 + 모니터링 API/UI.",
+  "decisions": {
+    "provider_chain": "Brave → SerpAPI → Gemini Grounding → Ollama+DDG (정확도/비용 균형)",
+    "quota_key_unit": "provider-day (websearch:{provider}:daily:{YYYYMMDD_KST}) — KOBIS/KMDB와 동일 패턴",
+    "cache_ttl": "7일 SHA256 query_hash, provider 컬럼으로 구분 (alembic 0008 기존 테이블 확장)",
+    "bulk_guard": "WEBSEARCH_BULK_ALLOWED env + expected > remaining_quota * 0.5 거부",
+    "on_off_env": "WEBSEARCH_ENABLED, WEBSEARCH_BULK_ALLOWED, WEBSEARCH_PROVIDERS(CSV)",
+    "aggregator_default": "enable_web_search=False — opt-in only (비용 가드)",
+    "confidence_base": "0.50 — Phase C SEED 정책 동일, 인간 검토 필수",
+    "trending_beat": "WEBSEARCH_TRENDING_ENABLED=true 시에만 일 1회 04:30 KST, 5 쿼리 한정"
+  },
+  "dependencies": {
+    "phase_b_completed": ["aggregator", "AbstractLLMProvider chain", "FieldSuggestion"],
+    "phase_c_completed": ["DiscoverySource ABC", "run_discovery", "match_or_create_seed"],
+    "infra_reuse": ["shared/quota_manager.py", "WebSearchCache (alembic 0008)", "ExternalSyncLog"]
+  },
+  "tabget_references": [
+    "TabGet/backend/src/lib/gemini-quota.ts — GeminiRateLimiter Python 포팅",
+    "TabGet/backend/src/lib/serper.ts — SerpAPI 클라이언트 패턴",
+    "TabGet/backend/src/agent/nodes/curate.ts — QuotaExhaustedError graceful break"
+  ],
+  "steps": [
+    {
+      "step": "D.0",
+      "name": "adr-phase-d-websearch",
+      "status": "completed",
+      "scope": "docs/dev/phase-d/_index.md + 6 sub-doc 신설 — provider 비교, 쿼터 정책, on/off 정책, bulk 가드, cache 정책, 모니터링 데이터 모델",
+      "summary": "docs/dev/phase-d/ 신설 — _index(Phase D 위치+두 축의 제약+결정요약+Phase A/B/C 연결도) + sources(4 provider 비교+폴백 순서+한국어 매트릭스) + quota-policy(Redis key+KST 리셋+exhaustNow) + on-off-policy(3 env+경로별 기본값) + bulk-guard(거부 룰 expected>remaining*0.5) + cache-policy(7일 TTL+SHA256+provider 분리) + monitoring-data-model(3 GET API 스키마). 코드 변경 0.",
+      "completed_at": "2026-05-16T12:30:00+09:00",
+      "files": ["step0.md"],
+      "created_at": "2026-05-16T12:00:00+09:00"
+    },
+    {
+      "step": "D.1",
+      "name": "migration-0013-env-keys",
+      "status": "completed",
+      "scope": "alembic 0013 (web_search_cache 인덱스 변경 + web_search_quota_log 테이블) + .env.example 9키 + shared/config.py 등록",
+      "summary": "alembic 0013 신설 — web_search_cache (query_hash, source) composite unique + web_search_quota_log 테이블(provider/day_kst/count/limit_at_time/exhausted_at) + ExternalSourceType.websearch ENUM 확장. WebSearchCache 모델 __table_args__ UniqueConstraint 변경 + WebSearchQuotaLog 모델 신설. .env.example 9키 + shared/config.py 9 설정 등록. verify import + Settings 인스턴스 9키 OK.",
+      "completed_at": "2026-05-16T13:00:00+09:00",
+      "files": ["step1.md"]
+    },
+    {
+      "step": "D.2",
+      "name": "web_search-package-brave",
+      "status": "completed",
+      "scope": "meta_core/web_search/ 패키지(base/brave/cache/errors) + BraveSearchProvider + WebSearchCache helper",
+      "summary": "web_search 패키지 신설 — base.py(WebSearchProvider ABC, WebSearchResult dataclass) + brave.py(BraveSearchProvider httpx 구현, QuotaManager 통합) + cache.py(cache_get/put SHA256 query_hash 기반) + errors.py(QuotaExhaustedError/ProviderUnavailableError/BulkQuotaError) + test_brave.py(6 케이스: 정상/quota_exhausted/429/500/no_key/properties). API key 설정 시 WEBSEARCH_BRAVE_DAILY=60 자동 적용.",
+      "completed_at": "2026-05-16T14:30:00+09:00",
+      "files": ["step2.md"]
+    },
+    {
+      "step": "D.3",
+      "name": "serpapi-gemini-ollama-factory",
+      "status": "completed",
+      "scope": "SerpAPI + Gemini Grounding + Ollama-DDG provider + factory.get_provider_chain + search_with_fallback",
+      "summary": "4 provider 추가 — serpapi.py(SerpAPI 클라이언트, gl=kr&hl=ko) + gemini_grounding.py(Gemini google_search 도구 활용) + ollama_ddg.py(DDG HTML 파싱 + Ollama 요약, 무한 fallback) + factory.py(get_provider_chain CSV 파싱, search_with_fallback 폴백 체인 + cache 통합). 최종 provider 순서: Brave→SerpAPI→Gemini→Ollama. Test: test_factory.py(cache hit, sequential provider 실패/성공, all fail 케이스).",
+      "completed_at": "2026-05-16T15:00:00+09:00",
+      "files": ["step3.md"]
+    },
+    {
+      "step": "D.4",
+      "name": "bulk-guard-cache-integration",
+      "status": "completed",
+      "scope": "guard.py(check_bulk_allowed, BulkQuotaError) + factory cache 통합(hit 시 quota 0)",
+      "summary": "guard.py 신설 — check_bulk_allowed(expected, provider, daily_limit, quota_manager) 구현, rule: expected > remaining*0.5 시 BulkQuotaError 발생. Cache hit 시 quota 미사용 확인 (cache_get DB 조회만). test_guard.py(6 케이스: allowed/rejected/edge threshold/edge+1/multiple providers/error detail) + test_cache.py(6 케이스: hit/miss/expired/put-new/put-update/ttl respect). 50% margin = 동일 날 다른 연산 보호 (100건×4provider=400건 bulk 방어).",
+      "completed_at": "2026-05-16T15:15:00+09:00",
+      "files": ["step4.md"]
+    },
+    {
+      "step": "D.5",
+      "name": "websearch-discovery-source",
+      "status": "completed",
+      "scope": "WebSearchDiscoverySource(query/topic/trending 3 mode) + LLM 구조화 추출 + discovery_tasks.discover_websearch (on-demand)",
+      "summary": "websearch_source.py 신설 — WebSearchDiscoverySource(query/topic/trending 3 mode) + search_with_fallback 통합 + LLM 구조화 추출 (Gemini→Groq→Ollama 폴백). external_id = URL SHA256 prefix(10자). Trending 5개 쿼리 (넷플/디즈니/쿠팡/웨이브/티빙). test_websearch.py(6 케이스: query/topic/trending mode, JSON parsing, 동기 인터페이스). Confidence base 0.5 (Phase C 정책). On-demand only, bulk guard에 의해 자동 차단.",
+      "completed_at": "2026-05-16T15:30:00+09:00",
+      "files": ["step5.md"]
+    },
+    {
+      "step": "D.6",
+      "name": "aggregator-opt-in",
+      "status": "completed",
+      "scope": "aggregate_content(enable_web_search=False) + 단건 API ?include_web_search + bulk 엔드포인트 가드 통합",
+      "summary": "aggregator.py 수정 — aggregate_content/aggregate_batch에 enable_web_search: bool=False 파라미터 추가. _add_websearch_suggestions(빈 필드 탐지+WebSearch) + _create_websearch_suggestion(LLM 추출+FieldSuggestion) 함수 신규. intelligence/router.py: BulkAcceptRequest에 enable_web_search 필드, bulk_accept에 check_bulk_allowed 가드(422 응답) + aggregate_content 호출. test_aggregator_websearch.py(7 케이스: 기본OFF/enable ON/빈필드/결과/추출성공/추출실패/가드). Confidence 0.5 (Phase C 정책), opt-in only.",
+      "completed_at": "2026-05-16T15:45:00+09:00",
+      "files": ["step6.md"]
+    },
+    {
+      "step": "D.7",
+      "name": "monitoring-backend-api",
+      "status": "completed",
+      "scope": "GET /web-search/{quota,cache-stats,recent} 3 엔드포인트 + Pydantic 스키마 + TestClient 테스트",
+      "summary": "web_search/router.py 신설 — GET /quota(provider별 일일 사용량) + /cache-stats(hit rate) + /recent(호출 이력) 3 엔드포인트. 5개 Pydantic 스키마(ProviderQuotaOut/QuotaStatsOut/CacheStatsOut/RecentCallOut/RecentCallsOut). 데이터 소스: QuotaManager(Redis), WebSearchCache(DB), ExternalSyncLog(DB). meta_core/router.py에 web_search_router 마운트. test_router.py(6 케이스: 스키마+응답 구조). Query params: days(1-30, cache), limit(1-100, recent).",
+      "completed_at": "2026-05-16T16:00:00+09:00",
+      "files": ["step7.md"]
+    },
+    {
+      "step": "D.8",
+      "name": "monitoring-ui-beat-wrap",
+      "status": "completed",
+      "scope": "/monitoring/web-search 페이지(4카드+캐시표+최근50) + webSearchApi + Beat trending task + TODO/CHANGELOG/index.json 업데이트",
+      "summary": "webSearchApi TypeScript 클라이언트 + 모니터링 UI(4 provider 쿼터 카드, 캐시 통계표, 최근 호출 테이블, 30초 auto-refresh) + discover_websearch_trending Celery task(매일 04:30 KST, trending 5 쿼리) + Beat 스케줄 등록 + CHANGELOG.md + verify.sh D.8 케이스",
+      "completed_at": "2026-05-16T16:30:00+09:00",
+      "files": ["step8.md"]
+    }
+  ]
+}
