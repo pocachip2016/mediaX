@@ -4,20 +4,19 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
+- [ ] dev-service-distribution Step 1 — iptv-kt-bulk-import (KT 실데이터 확보 조건부)
 
-## Next (이번 마일스톤 — Dam 연동)
-- [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
+## Next (이번 마일스톤)
 
 ## Later (백로그)
-- [ ] dev-service-distribution — ContentDistribution(IPTV/OTT), ServiceCategory, DeviceVariant
+- [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
 - [ ] 1.3 큐레이션 모듈 설계 확정
-
-## Later (백로그)
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-service-distribution Step 0 — distribution-schema (4테이블 모델 + alembic 0014 + GET 3 엔드포인트 + pytest 8 pass) (2026-05-16)
 - [x] dev-dam-poster-ingest P.1~P.3 — Dam poster 자동 등록 파이프라인 완료 (2026-05-16)
 - [x] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (2026-05-16)
 - [x] content-register Steps 1–3 — Hero card + 3탭 패널 + enrich=true 진입점 (2026-05-16)

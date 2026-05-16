@@ -2501,9 +2501,30 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  distribution-step0)
+    echo "=== distribution-step0: ContentDistribution/ServiceCategory/DeviceVariant 스키마 ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 모델 파일 존재 확인 ---"
+    for f in api/distribution/models.py api/distribution/schemas.py api/distribution/service.py api/distribution/router.py; do
+      [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+      echo "  ✓ $f"
+    done
+
+    echo "--- alembic 마이그레이션 파일 확인 ---"
+    [ -f "alembic/versions/0014_distribution_tables.py" ] || { echo "MISSING: 0014_distribution_tables.py"; exit 1; }
+    echo "  ✓ 0014_distribution_tables.py"
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/test_distribution_step0.py -q 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0"
     exit 1
     ;;
 esac
