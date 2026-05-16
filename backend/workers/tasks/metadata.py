@@ -1220,13 +1220,94 @@ def backfill_kobis(start_year: int = 1990, end_year: int = 1999):
         db.close()
 
 
+# ── Dam poster catch-up ───────────────────────────────────
+
+@celery_app.task(name="workers.tasks.metadata.sync_primary_posters_to_dam")
+def sync_primary_posters_to_dam():
+    """
+    Dam 포스터 catch-up Beat task (매일 06:00 KST).
+    is_primary=True인 poster 이미지를 전수 조회해 Dam에 재발송.
+    Dam 쪽에서 image_id 기준 중복 처리 — 안전하게 여러 번 호출 가능.
+    """
+    if not settings.DAM_POSTER_INGEST_URL:
+        logger.info("[dam_poster_catchup] DAM_POSTER_INGEST_URL 미설정. 스킵.")
+        return {"skipped": True}
+
+    from api.programming.metadata.models import ContentImage, ImageType, Content
+    db = SessionLocal()
+    queued = 0
+    try:
+        rows = (
+            db.query(ContentImage, Content)
+            .join(Content, ContentImage.content_id == Content.id)
+            .filter(
+                ContentImage.image_type == ImageType.poster,
+                ContentImage.is_primary == True,  # noqa: E712
+                ContentImage.url.isnot(None),
+            )
+            .all()
+        )
+        occurred_at = datetime.utcnow().isoformat()
+        for image, content in rows:
+            send_dam_webhook.delay(
+                event_type="poster_primary_set",
+                content_id=content.id,
+                title=content.title,
+                content_type=(
+                    content.content_type.value
+                    if hasattr(content.content_type, "value")
+                    else str(content.content_type)
+                ),
+                occurred_at=occurred_at,
+                poster_url=image.url,
+                poster_source=image.source or "tmdb",
+                image_id=image.id,
+            )
+            queued += 1
+
+        logger.info(f"[dam_poster_catchup] {queued}건 Dam 재발송 큐 등록")
+        return {"queued": queued}
+    except Exception as exc:
+        logger.error(f"[dam_poster_catchup] 실패: {exc}")
+        return {"error": str(exc)}
+    finally:
+        db.close()
+
+
 # ── Dam changefeed webhook ─────────────────────────────────
 
 @celery_app.task(name="workers.tasks.metadata.send_dam_webhook")
 def send_dam_webhook(event_type: str, content_id: int, title: str,
-                     content_type: str, occurred_at: str):
-    """Dam에 Content 변경 이벤트 발신 (best-effort). DAM_WEBHOOK_URL 미설정 시 스킵."""
-    url = getattr(settings, "DAM_WEBHOOK_URL", "")
+                     content_type: str, occurred_at: str,
+                     poster_url: str | None = None,
+                     poster_source: str | None = None,
+                     image_id: int | None = None):
+    """Dam에 Content 변경 이벤트 발신 (best-effort).
+    poster_primary_set 이벤트 시 DAM_POSTER_INGEST_URL로 포스터 등록 요청.
+    """
+    if event_type == "poster_primary_set":
+        url = settings.DAM_POSTER_INGEST_URL
+        if not url:
+            return {"skipped": True, "reason": "DAM_POSTER_INGEST_URL not set"}
+        try:
+            resp = httpx.post(
+                url,
+                json={
+                    "content_id": content_id,
+                    "image_id": image_id,
+                    "poster_url": poster_url,
+                    "poster_source": poster_source or "tmdb",
+                    "title": title,
+                },
+                timeout=10.0,
+            )
+            logger.info(f"[dam_poster_ingest] content_id={content_id} image_id={image_id} → {resp.status_code}")
+            return {"status": resp.status_code}
+        except Exception as exc:
+            logger.warning(f"[dam_poster_ingest] 발신 실패 content_id={content_id}: {exc}")
+            return {"error": str(exc)}
+
+    url = settings.DAM_WEBHOOK_URL
     if not url:
         return {"skipped": True}
     try:

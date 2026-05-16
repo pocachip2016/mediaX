@@ -290,6 +290,24 @@ def select_poster(content_id: int, req: PosterSelectRequest, db: Session = Depen
         .order_by(ContentImage.is_primary.desc(), ContentImage.id.asc())
         .all()
     )
+
+    from shared.config import settings
+    from workers.tasks.metadata import send_dam_webhook
+    if settings.DAM_POSTER_INGEST_URL:
+        selected = next((img for img in images if img.is_primary), None)
+        if selected:
+            from datetime import datetime, timezone
+            send_dam_webhook.delay(
+                event_type="poster_primary_set",
+                content_id=content_id,
+                title=content.title,
+                content_type=content.content_type.value if hasattr(content.content_type, "value") else str(content.content_type),
+                occurred_at=datetime.now(timezone.utc).isoformat(),
+                poster_url=selected.url,
+                poster_source=selected.source or "tmdb",
+                image_id=selected.id,
+            )
+
     return [PosterCandidateOut.model_validate(img) for img in images]
 
 

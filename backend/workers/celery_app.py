@@ -86,6 +86,11 @@ celery_app.conf.update(
             "schedule": crontab(hour=4, minute=30),
             "options": {"expires": 3600},
         },
+        # Dam 포스터 catch-up — 매일 06:00 KST (webhook 누락 건 재발송, image_id 멱등)
+        "sync-primary-posters-to-dam": {
+            "task": "workers.tasks.metadata.sync_primary_posters_to_dam",
+            "schedule": crontab(hour=6, minute=0),
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},

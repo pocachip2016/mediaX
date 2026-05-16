@@ -7,7 +7,6 @@
 
 ## Next (이번 마일스톤 — Dam 연동)
 - [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
-- [ ] dev-dam-poster-ingest (Phase 3) — Design AX → DAM 포스터 자동 등록
 
 ## Later (백로그)
 - [ ] dev-service-distribution — ContentDistribution(IPTV/OTT), ServiceCategory, DeviceVariant
@@ -19,6 +18,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-dam-poster-ingest P.1~P.3 — Dam poster 자동 등록 파이프라인 완료 (2026-05-16)
 - [x] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (2026-05-16)
 - [x] content-register Steps 1–3 — Hero card + 3탭 패널 + enrich=true 진입점 (2026-05-16)
 - [x] dev-ai-review-queue Steps 5–6 — Dam Link Display(damApi+4상태) + Bulk Summary 보강(다중 필터+선택+Bulk Apply 가드) (2026-05-16)

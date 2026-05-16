@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
+    # Dam integration
+    DAM_WEBHOOK_URL: str = ""
+    DAM_POSTER_INGEST_URL: str = ""
+
     # IMAP (CP 이메일 폴링)
     IMAP_HOST: str = ""
     IMAP_USER: str = ""

@@ -2439,9 +2439,71 @@ print('  ✓ websearch_tasks + Beat 스케줄 확인 OK')
     echo "=== PASS ==="
     ;;
 
+  poster-ingest-P.3)
+    echo "=== poster-ingest-P.3: Beat catch-up task + index.json ==="
+    python3 -c "
+from workers.tasks.metadata import sync_primary_posters_to_dam
+print('  ✓ sync_primary_posters_to_dam import OK')
+"
+    python3 -c "
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'sync-primary-posters-to-dam' in sched, 'sync-primary-posters-to-dam beat 없음'
+task = sched['sync-primary-posters-to-dam']['task']
+assert task == 'workers.tasks.metadata.sync_primary_posters_to_dam', f'task명 불일치: {task}'
+print('  ✓ Beat 스케줄 sync-primary-posters-to-dam 등록 확인 OK')
+"
+    test -f "$SCRIPT_DIR/../plans/dev-dam-poster-ingest/index.json" || { echo "  ✗ plans/dev-dam-poster-ingest/index.json 없음"; exit 1; }
+    python3 -c "
+import json
+with open('$SCRIPT_DIR/../plans/dev-dam-poster-ingest/index.json') as f:
+    idx = json.load(f)
+ids = [s['id'] for s in idx['steps']]
+for sid in ['P.1', 'P.2', 'P.3']:
+    assert sid in ids, f'{sid} step 없음'
+print('  ✓ index.json P.1~P.3 steps OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  poster-ingest-P.2)
+    echo "=== poster-ingest-P.2: mediaX → Dam webhook 확장 ==="
+    python3 -c "
+import inspect
+from workers.tasks.metadata import send_dam_webhook
+sig = inspect.signature(send_dam_webhook)
+params = list(sig.parameters.keys())
+for p in ['poster_url', 'poster_source', 'image_id']:
+    assert p in params, f'send_dam_webhook에 {p} 파라미터 없음'
+print('  ✓ send_dam_webhook poster 파라미터 OK')
+src = inspect.getsource(send_dam_webhook)
+assert 'poster_primary_set' in src, 'poster_primary_set 이벤트 처리 없음'
+assert 'DAM_POSTER_INGEST_URL' in src, 'DAM_POSTER_INGEST_URL 참조 없음'
+print('  ✓ send_dam_webhook poster_primary_set 분기 OK')
+"
+    python3 -c "
+import inspect
+from api.programming.metadata.router import select_poster
+src = inspect.getsource(select_poster)
+assert 'send_dam_webhook' in src, 'select_poster에 send_dam_webhook 호출 없음'
+assert 'poster_primary_set' in src, 'select_poster에 poster_primary_set 없음'
+assert 'DAM_POSTER_INGEST_URL' in src, 'select_poster에 DAM_POSTER_INGEST_URL 확인 없음'
+print('  ✓ select_poster → send_dam_webhook.delay 트리거 OK')
+"
+    python3 -c "
+from shared.config import settings
+assert hasattr(settings, 'DAM_POSTER_INGEST_URL'), 'settings.DAM_POSTER_INGEST_URL 없음'
+assert hasattr(settings, 'DAM_WEBHOOK_URL'), 'settings.DAM_WEBHOOK_URL 없음'
+print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
+"
+    grep -q "DAM_POSTER_INGEST_URL" "$SCRIPT_DIR/../backend/.env.example" || { echo "  ✗ .env.example에 DAM_POSTER_INGEST_URL 없음"; exit 1; }
+    echo "  ✓ .env.example DAM_POSTER_INGEST_URL OK"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3"
     exit 1
     ;;
 esac
