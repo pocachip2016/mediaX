@@ -21,12 +21,12 @@ import { getReturnPath, getReturnHref } from "@/lib/recommendDerive"
 
 const MOCK_RECOMMENDATIONS: RecommendationsOut = {
   content_id: 0,
-  missing_fields: ["cast", "runtime", "country"],
+  missing_fields: [],
   auto_fill: [
     {
-      field: "cast",
+      field: "genres",
       status: "auto",
-      recommendations: [{ source_type: "watcha", source_id: 1, value: "김설현 · 오정세 · 유재명", confidence: 1.0 }],
+      recommendations: [{ source_type: "tmdb", source_id: 2, value: "드라마/스릴러", confidence: 0.94 }],
       ai_synthesis: null,
     },
     {
@@ -36,6 +36,30 @@ const MOCK_RECOMMENDATIONS: RecommendationsOut = {
         { source_type: "tmdb", source_id: 2, value: "132분", confidence: 0.94 },
         { source_type: "watcha", source_id: 1, value: "132분", confidence: 1.0 },
       ],
+      ai_synthesis: null,
+    },
+    {
+      field: "country",
+      status: "auto",
+      recommendations: [{ source_type: "tmdb", source_id: 2, value: "South Korea", confidence: 0.96 }],
+      ai_synthesis: null,
+    },
+    {
+      field: "production_year",
+      status: "auto",
+      recommendations: [{ source_type: "tmdb", source_id: 2, value: "2019", confidence: 0.99 }],
+      ai_synthesis: null,
+    },
+    {
+      field: "director",
+      status: "auto",
+      recommendations: [{ source_type: "watcha", source_id: 1, value: "봉준호", confidence: 0.98 }],
+      ai_synthesis: null,
+    },
+    {
+      field: "cast",
+      status: "auto",
+      recommendations: [{ source_type: "watcha", source_id: 1, value: "송강호 · 이순신 · 조진웅", confidence: 0.95 }],
       ai_synthesis: null,
     },
   ],
@@ -103,7 +127,13 @@ export default function ContentRecommendDetailPage() {
   useEffect(() => {
     posterRecommendApi
       .getCandidates(contentId)
-      .then(setPosterCandidates)
+      .then((candidates) => {
+        setPosterCandidates(candidates)
+        // 포스터가 없으면 자동으로 AI 추천 가져오기
+        if (!candidates || candidates.length === 0) {
+          posterRecommendApi.recommend(contentId).then((res) => setPosterCandidates(res.candidates))
+        }
+      })
       .catch(() => setPosterCandidates([]))
   }, [contentId])
 
