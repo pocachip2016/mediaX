@@ -96,7 +96,10 @@ export default function ContentRecommendDetailPage() {
   const returnInfo = getReturnHref(returnPath, contentId)
 
   const [content, setContent] = useState<ContentDetail | null>(null)
-  const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
+  const [recommendations, setRecommendations] = useState<RecommendationsOut>({
+    ...MOCK_RECOMMENDATIONS,
+    content_id: contentId,
+  })
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -114,15 +117,22 @@ export default function ContentRecommendDetailPage() {
   }, [contentId])
 
   const fetchAll = useCallback(async () => {
-    const [updatedContent, updatedRecs] = await Promise.all([
-      metadataApi.getContent(contentId),
-      metadataApi.getRecommendations(contentId).catch(() => ({
+    try {
+      const [updatedContent, updatedRecs] = await Promise.all([
+        metadataApi.getContent(contentId),
+        metadataApi.getRecommendations(contentId),
+      ])
+      setContent(updatedContent)
+      setRecommendations(updatedRecs)
+    } catch (error) {
+      // API 실패시 MOCK 데이터 사용
+      const updatedContent = await metadataApi.getContent(contentId)
+      setContent(updatedContent)
+      setRecommendations({
         ...MOCK_RECOMMENDATIONS,
         content_id: contentId,
-      })),
-    ])
-    setContent(updatedContent)
-    setRecommendations(updatedRecs)
+      })
+    }
   }, [contentId])
 
   useEffect(() => {
