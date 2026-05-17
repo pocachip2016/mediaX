@@ -123,7 +123,11 @@ export default function ContentRecommendDetailPage() {
         metadataApi.getRecommendations(contentId),
       ])
       setContent(updatedContent)
-      setRecommendations(updatedRecs)
+      // 개발 단계: 항상 MOCK 사용 (backend API 데이터 구조 불일치 시)
+      const recData = updatedRecs && updatedRecs.auto_fill && updatedRecs.auto_fill.length > 0
+        ? updatedRecs
+        : { ...MOCK_RECOMMENDATIONS, content_id: contentId }
+      setRecommendations(recData)
     } catch (error) {
       // API 실패시 MOCK 데이터 사용
       const updatedContent = await metadataApi.getContent(contentId)
