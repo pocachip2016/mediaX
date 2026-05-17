@@ -452,7 +452,11 @@ def process_batch_rows(
     job: ContentBatchJob,
     rows: list[dict],
 ) -> dict:
-    """파싱된 배치 행 → Content(waiting) + ExternalMetaSource(bulk_upload) → resolve_metadata"""
+    """파싱된 배치 행 → Content(waiting) + ExternalMetaSource(bulk_upload) → resolve_metadata.
+
+    Dedup 규칙: (title, production_year, cp_name) 매칭하는 기존 Content가 있으면
+    신규 생성 안 함. 기존 bulk_upload raw_json에 **빈 값만** 채움 (덮어쓰기 X).
+    """
     from api.programming.metadata.models.external import ExternalSourceType
     from workers.tasks.metadata import process_content_metadata
 
@@ -462,6 +466,7 @@ def process_batch_rows(
 
     success = 0
     failed = 0
+    skipped_duplicates = 0
     errors = []
 
     for i, row in enumerate(rows):
@@ -470,21 +475,8 @@ def process_batch_rows(
             if not title:
                 raise ValueError("제목 없음")
 
-            content = Content(
-                title=title,
-                content_type=ContentType(row.get("content_type") or "movie"),
-                status=ContentStatus.waiting,
-                cp_name=row.get("cp_name") or job.cp_name,
-                production_year=row.get("production_year"),
-            )
-            db.add(content)
-            db.flush()
-
-            meta = ContentMetadata(content_id=content.id, quality_score=0.0)
-            db.add(meta)
-            db.flush()
-
-            # 입력 데이터 전체를 external_meta_sources(bulk_upload)에 raw_json으로 저장
+            cp_name = row.get("cp_name") or job.cp_name
+            production_year = row.get("production_year")
             raw_json = {k: v for k, v in {
                 "title": title,
                 "synopsis": row.get("synopsis") or row.get("cp_synopsis"),
@@ -495,8 +487,61 @@ def process_batch_rows(
                 "runtime": row.get("runtime"),
                 "rating_age": row.get("rating_age"),
                 "poster_url": row.get("poster_url"),
-                "production_year": row.get("production_year"),
+                "production_year": production_year,
             }.items() if v}
+
+            # Dedup: 같은 (title, year, cp) 매칭하는 기존 콘텐츠 조회
+            existing = (
+                db.query(Content)
+                .filter(
+                    Content.title == title,
+                    Content.production_year == production_year,
+                    Content.cp_name == cp_name,
+                )
+                .first()
+            )
+
+            if existing:
+                # 기존 bulk_upload raw_json에 빈 값만 채움
+                ext_src = (
+                    db.query(ExternalMetaSource)
+                    .filter(
+                        ExternalMetaSource.content_id == existing.id,
+                        ExternalMetaSource.source_type == ExternalSourceType.bulk_upload,
+                    )
+                    .first()
+                )
+                if ext_src:
+                    merged = dict(ext_src.raw_json or {})
+                    for k, v in raw_json.items():
+                        if v and not merged.get(k):
+                            merged[k] = v
+                    ext_src.raw_json = merged
+                    ext_src.matched_at = datetime.utcnow()
+                else:
+                    db.add(ExternalMetaSource(
+                        content_id=existing.id,
+                        source_type=ExternalSourceType.bulk_upload,
+                        raw_json=raw_json,
+                        matched_at=datetime.utcnow(),
+                    ))
+                db.flush()
+                skipped_duplicates += 1
+                continue
+
+            content = Content(
+                title=title,
+                content_type=ContentType(row.get("content_type") or "movie"),
+                status=ContentStatus.waiting,
+                cp_name=cp_name,
+                production_year=production_year,
+            )
+            db.add(content)
+            db.flush()
+
+            meta = ContentMetadata(content_id=content.id, quality_score=0.0)
+            db.add(meta)
+            db.flush()
 
             ext_src = ExternalMetaSource(
                 content_id=content.id,
@@ -529,7 +574,12 @@ def process_batch_rows(
     job.parsed_count = len(rows)
     db.commit()
 
-    return {"success": success, "failed": failed, "job_id": job.id}
+    return {
+        "success": success,
+        "failed": failed,
+        "skipped_duplicates": skipped_duplicates,
+        "job_id": job.id,
+    }
 
 
 # ── 글자메타 서비스 ────────────────────────────────────────────────────────────
@@ -2464,31 +2514,50 @@ _SOURCE_DEFAULT_CONFIDENCE = {
 _CAST_ROLES = {"actor", "cast", "주연", "출연", "조연", "단역", "특별출연", "카메오"}
 _DIRECTOR_ROLES = {"director", "감독", "연출"}
 
+_STANDARD_RECOMMENDATION_FIELDS = [
+    "genres", "cast", "director", "synopsis",
+    "runtime", "country", "production_year", "cp_name",
+]
+
+
+def _names_from_list(v) -> str | None:
+    """문자열 또는 list[str|dict] 에서 이름을 추출해 ", ".join."""
+    if not v:
+        return None
+    if isinstance(v, str):
+        return v
+    names: list[str] = []
+    for x in v:
+        if isinstance(x, dict):
+            n = x.get("peopleNm") or x.get("name") or x.get("name_ko") or x.get("name_en")
+            if n:
+                names.append(str(n))
+        else:
+            names.append(str(x))
+    return ", ".join(names) if names else None
+
 
 def _extract_field_from_raw(raw: dict, field: str) -> str | None:
     """raw_json에서 field에 해당하는 값을 문자열로 추출."""
     if field == "cast":
-        v = raw.get("cast")
-        if not v:
-            return None
-        return v if isinstance(v, str) else ", ".join(str(x) for x in v)
+        raw_cast = raw.get("cast") or raw.get("actors")
+        if isinstance(raw_cast, list):
+            raw_cast = raw_cast[:5]
+        return _names_from_list(raw_cast)
     if field == "director":
-        v = raw.get("directors") or raw.get("director")
-        if not v:
-            return None
-        return v if isinstance(v, str) else ", ".join(str(x) for x in v)
+        return _names_from_list(raw.get("directors") or raw.get("director"))
     if field == "synopsis":
         return raw.get("synopsis") or raw.get("cp_synopsis") or raw.get("overview") or None
     if field == "runtime":
         v = raw.get("runtime") or raw.get("runtime_minutes")
         return str(v) if v else None
     if field == "country":
-        v = raw.get("country") or raw.get("origin_country")
+        v = raw.get("country") or raw.get("origin_country") or raw.get("nationAlt") or raw.get("repNationNm")
         if isinstance(v, list):
             return ", ".join(v)
         return str(v) if v else None
     if field == "genres":
-        v = raw.get("genres")
+        v = raw.get("genres") or raw.get("genreAlt")
         if not v:
             return None
         if isinstance(v, list):
@@ -2497,6 +2566,24 @@ def _extract_field_from_raw(raw: dict, field: str) -> str | None:
                 items.append(g["name"] if isinstance(g, dict) else str(g))
             return ", ".join(items)
         return str(v)
+    if field == "production_year":
+        v = raw.get("production_year") or raw.get("prdtYear")
+        if not v:
+            rd = str(raw.get("release_date") or raw.get("openDt") or "")
+            digits = rd.replace("-", "")
+            v = digits[:4] if len(digits) >= 4 else None
+        return str(v) if v else None
+    if field == "cp_name":
+        v = raw.get("cp_name") or raw.get("studio")
+        if not v:
+            companys = raw.get("companys") or raw.get("production_companies")
+            if isinstance(companys, list) and companys:
+                first = companys[0]
+                if isinstance(first, dict):
+                    v = first.get("companyNm") or first.get("name")
+                else:
+                    v = str(first)
+        return str(v) if v else None
     return None
 
 
@@ -2538,9 +2625,6 @@ def get_content_recommendations(db: Session, content_id: int):
     if not content.genres:
         missing.append("genres")
 
-    if not missing:
-        return RecommendationsOut(content_id=content_id, missing_fields=[], auto_fill=[], conflicts=[])
-
     # 외부 소스에서 필드값 수집
     ext_sources = (
         db.query(ExternalMetaSource)
@@ -2548,12 +2632,12 @@ def get_content_recommendations(db: Session, content_id: int):
         .all()
     )
 
-    # field → list[SourceFieldRec]
-    field_recs: dict[str, list[SourceFieldRec]] = {f: [] for f in missing}
+    # field → list[SourceFieldRec] (missing 여부와 무관하게 전체 표준 필드 조회)
+    field_recs: dict[str, list[SourceFieldRec]] = {f: [] for f in _STANDARD_RECOMMENDATION_FIELDS}
     for src in ext_sources:
         raw = src.raw_json or {}
         conf = src.match_confidence or _SOURCE_DEFAULT_CONFIDENCE.get(src.source_type.value if hasattr(src.source_type, 'value') else str(src.source_type), 0.5)
-        for field in missing:
+        for field in _STANDARD_RECOMMENDATION_FIELDS:
             val = _extract_field_from_raw(raw, field)
             if val and val.strip():
                 field_recs[field].append(SourceFieldRec(
@@ -2797,3 +2881,124 @@ def build_ai_review_queue(
         page=page,
         size=size,
     )
+
+
+# ── Enrich External Credits ──────────────────────────────────────────────────
+
+async def _enrich_tmdb_source(
+    src: ExternalMetaSource, content: Content, db: Session, api_key: str
+) -> str:
+    from api.programming.metadata.models import TmdbMovieCache, TmdbTvCache
+    from api.programming.metadata.tmdb_client import TmdbClient
+    from workers.tasks.tmdb_cache import _upsert_movie, _upsert_tv
+
+    if not src.external_id:
+        return "no_id"
+    try:
+        tmdb_id = int(src.external_id)
+    except (ValueError, TypeError):
+        return "no_id"
+
+    is_movie = content.content_type == ContentType.movie
+    cached = db.get(TmdbMovieCache if is_movie else TmdbTvCache, tmdb_id)
+
+    detail: dict | None = None
+    if cached and isinstance(cached.raw_json, dict) and cached.raw_json.get("credits"):
+        detail = cached.raw_json
+    else:
+        try:
+            async with TmdbClient(api_key=api_key) as client:
+                if is_movie:
+                    detail = await client.detail_movie(tmdb_id)
+                    _upsert_movie(db, detail)
+                else:
+                    detail = await client.detail_tv(tmdb_id)
+                    _upsert_tv(db, detail)
+            db.flush()
+        except Exception as exc:
+            logger.warning("[enrich_tmdb] error tmdb_id=%s: %s", tmdb_id, exc)
+            return "error"
+
+    if not detail:
+        return "error"
+
+    credits = detail.get("credits", {})
+    raw = dict(src.raw_json or {})
+    if "cast" not in raw and credits.get("cast"):
+        raw["cast"] = credits["cast"]
+    if "crew" not in raw and credits.get("crew"):
+        raw["crew"] = credits["crew"]
+    if "genres" not in raw and detail.get("genres"):
+        raw["genres"] = detail["genres"]
+    if "runtime" not in raw:
+        rt = detail.get("runtime") or next(iter(detail.get("episode_run_time") or []), None)
+        if rt:
+            raw["runtime"] = rt
+    src.raw_json = raw
+    db.flush()
+    return "ok"
+
+
+def _enrich_kobis_source(
+    src: ExternalMetaSource, db: Session, api_key: str
+) -> str:
+    from api.meta_core.clients.kobis_client import KobisClient, KobisApiKeyMissing
+
+    if not src.external_id:
+        return "no_id"
+    try:
+        client = KobisClient(api_key=api_key)
+        info = client.movie_info(src.external_id)
+    except KobisApiKeyMissing:
+        return "no_key"
+    except Exception as exc:
+        logger.warning("[enrich_kobis] error external_id=%s: %s", src.external_id, exc)
+        return "error"
+
+    if not info:
+        return "no_id"
+
+    raw = dict(src.raw_json or {})
+    if "actors" not in raw and info.get("actors"):
+        raw["actors"] = info["actors"]
+    if "directors" not in raw and info.get("directors"):
+        raw["directors"] = info["directors"]
+    if "companys" not in raw and info.get("companys"):
+        raw["companys"] = info["companys"]
+    if "runtime" not in raw and info.get("showTm"):
+        raw["runtime"] = info["showTm"]
+    src.raw_json = raw
+    db.flush()
+    return "ok"
+
+
+async def enrich_external_credits(content_id: int, db: Session) -> dict:
+    """외부 소스(TMDB/KOBIS)에서 credits 보강."""
+    content = (
+        db.query(Content)
+        .options(selectinload(Content.external_sources))
+        .filter(Content.id == content_id)
+        .first()
+    )
+    if not content:
+        return {"error": f"Content {content_id} not found"}
+
+    tmdb_key = os.getenv("TMDB_API_KEY", "")
+    kobis_key = os.getenv("KOBIS_API_KEY", "")
+    result: dict[str, str] = {}
+
+    for src in (content.external_sources or []):
+        st = src.source_type
+        if st == ExternalSourceType.tmdb:
+            result["tmdb"] = (
+                "no_key" if not tmdb_key
+                else await _enrich_tmdb_source(src, content, db, tmdb_key)
+            )
+        elif st == ExternalSourceType.kobis:
+            result["kobis"] = (
+                "no_key" if not kobis_key
+                else _enrich_kobis_source(src, db, kobis_key)
+            )
+
+    db.commit()
+    return result

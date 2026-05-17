@@ -112,6 +112,7 @@ PUT  /api/programming/metadata/video/{id}             # 영상메타 수정
 POST /api/programming/metadata/video/bulk-complete    # 영상메타 일괄 완료
 GET  /api/programming/metadata/service-readiness      # 글자+이미지+영상 완료 통계
 GET  /api/programming/metadata/tmdb                   # TMDB 매핑 콘텐츠 목록 — 필터: content_type, search(ilike)
+POST /api/programming/metadata/contents/{id}/enrich-credits  # 외부 소스(TMDB/KOBIS) credits 단건 보강
 ```
 
 ## Score Conventions

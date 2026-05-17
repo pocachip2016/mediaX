@@ -862,3 +862,11 @@ async def api_create_from_sources(
     db: Session = Depends(get_db),
 ):
     return await service.create_from_sources(db, req.source_id, req.selected_fields, req.cp_name)
+
+
+@router.post("/contents/{content_id}/enrich-credits", summary="외부 소스에서 credits 보강")
+async def api_enrich_credits(
+    content_id: int,
+    db: Session = Depends(get_db),
+):
+    return await service.enrich_external_credits(content_id, db)
