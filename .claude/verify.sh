@@ -2522,9 +2522,166 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  recommend-step1.3)
+    echo "=== recommend-step1.3: ShortMetaGrid + cells ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$RECOMMEND_DIR/ShortMetaGrid.tsx" ] || { echo "MISSING: ShortMetaGrid.tsx"; exit 1; }
+    [ -f "$RECOMMEND_DIR/cells/MetaCell.tsx" ] || { echo "MISSING: MetaCell.tsx"; exit 1; }
+    [ -f "$RECOMMEND_DIR/cells/DiffCell.tsx" ] || { echo "MISSING: DiffCell.tsx"; exit 1; }
+    [ -f "$RECOMMEND_DIR/cells/RecomCell.tsx" ] || { echo "MISSING: RecomCell.tsx"; exit 1; }
+    echo "  ✓ 4 컴포넌트 존재"
+
+    grep -q "grid-cols-\[200px" "$RECOMMEND_DIR/ShortMetaGrid.tsx" || { echo "MISSING: 3열 grid 레이아웃"; exit 1; }
+    echo "  ✓ 3열 grid 확인"
+
+    grep -q "classifyField" "$RECOMMEND_DIR/ShortMetaGrid.tsx" || { echo "MISSING: classifyField usage"; exit 1; }
+    echo "  ✓ classifyField 사용 확인"
+
+    grep -q "ShortMetaGrid" "$RECOMMEND_PAGE" || { echo "MISSING: ShortMetaGrid in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.4)
+    echo "=== recommend-step1.4: SynopsisRow ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$RECOMMEND_DIR/SynopsisRow.tsx" ] || { echo "MISSING: SynopsisRow.tsx"; exit 1; }
+    echo "  ✓ SynopsisRow.tsx 존재"
+
+    grep -q "ExpandableText" "$RECOMMEND_DIR/SynopsisRow.tsx" || { echo "MISSING: ExpandableText 컴포넌트"; exit 1; }
+    echo "  ✓ ExpandableText 토글 확인"
+
+    grep -q "SynopsisRow" "$RECOMMEND_PAGE" || { echo "MISSING: SynopsisRow in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.5)
+    echo "=== recommend-step1.5: AISummaryBottom ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$RECOMMEND_DIR/AISummaryBottom.tsx" ] || { echo "MISSING: AISummaryBottom.tsx"; exit 1; }
+    echo "  ✓ AISummaryBottom.tsx 존재"
+
+    grep -q "avgConfidence\|avg confidence" "$RECOMMEND_DIR/AISummaryBottom.tsx" || { echo "MISSING: avg confidence gauge"; exit 1; }
+    echo "  ✓ 신뢰도 게이지 확인"
+
+    grep -q "confirmed.length\|auto.length\|conflict.length\|missing.length" "$RECOMMEND_DIR/AISummaryBottom.tsx" || { echo "MISSING: category chips"; exit 1; }
+    echo "  ✓ 4 카테고리 칩 확인"
+
+    grep -q "AISummaryBottom" "$RECOMMEND_PAGE" || { echo "MISSING: AISummaryBottom in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.2)
+    echo "=== recommend-step1.2: PosterRow ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    POSTER_ROW="$MEDIAX_CMS/apps/web/components/contents/recommend/PosterRow.tsx"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$POSTER_ROW" ] || { echo "MISSING: PosterRow.tsx"; exit 1; }
+    echo "  ✓ PosterRow.tsx"
+
+    grep -q "overflow-x-auto\|flex-row" "$POSTER_ROW" || { echo "MISSING: 가로 스크롤 레이아웃"; exit 1; }
+    echo "  ✓ 가로 스크롤 레이아웃 확인"
+
+    grep -q "PosterRow" "$RECOMMEND_PAGE" || { echo "MISSING: PosterRow in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx PosterRow 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.1)
+    echo "=== recommend-step1.1: page-scaffold + StickyActionBar ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+    STICKY_BAR="$MEDIAX_CMS/apps/web/components/contents/recommend/StickyActionBar.tsx"
+
+    [ -f "$RECOMMEND_PAGE" ] || { echo "MISSING: recommend/page.tsx"; exit 1; }
+    echo "  ✓ recommend/page.tsx"
+
+    [ -f "$STICKY_BAR" ] || { echo "MISSING: StickyActionBar.tsx"; exit 1; }
+    echo "  ✓ StickyActionBar.tsx"
+
+    grep -q "useContentReviewActions" "$RECOMMEND_PAGE" || { echo "MISSING: useContentReviewActions usage"; exit 1; }
+    echo "  ✓ hook 사용 확인"
+
+    grep -q "deriveMode\|PageMode\|readonly\|review" "$STICKY_BAR" || { echo "MISSING: mode 분기"; exit 1; }
+    echo "  ✓ mode 분기 확인"
+
+    grep -q "BulkActionModal" "$RECOMMEND_PAGE" || { echo "MISSING: BulkActionModal"; exit 1; }
+    echo "  ✓ BulkActionModal 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.0)
+    echo "=== recommend-step1.0: action-hook + recommendDerive helper ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+
+    [ -f "$MEDIAX_CMS/apps/web/hooks/useContentReviewActions.ts" ] || { echo "MISSING: useContentReviewActions.ts"; exit 1; }
+    echo "  ✓ useContentReviewActions.ts"
+
+    [ -f "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" ] || { echo "MISSING: recommendDerive.ts"; exit 1; }
+    echo "  ✓ recommendDerive.ts"
+
+    grep -q "classifyField" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: classifyField export"; exit 1; }
+    grep -q "reasonSummary" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: reasonSummary export"; exit 1; }
+    grep -q "avgConfidence" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: avgConfidence export"; exit 1; }
+    grep -q "summarizeByKind" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: summarizeByKind export"; exit 1; }
+    echo "  ✓ helper exports OK"
+
+    grep -q "applyRec\|applyAllAuto\|approve\|reject" "$MEDIAX_CMS/apps/web/hooks/useContentReviewActions.ts" || { echo "MISSING: hook actions"; exit 1; }
+    echo "  ✓ hook actions OK"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9"
     exit 1
     ;;
 esac
