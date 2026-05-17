@@ -30,6 +30,12 @@ const MOCK_RECOMMENDATIONS: RecommendationsOut = {
       ai_synthesis: null,
     },
     {
+      field: "cp_name",
+      status: "auto",
+      recommendations: [{ source_type: "watcha", source_id: 1, value: "CJ E&M", confidence: 0.92 }],
+      ai_synthesis: null,
+    },
+    {
       field: "runtime",
       status: "auto",
       recommendations: [
