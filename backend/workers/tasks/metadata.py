@@ -1384,6 +1384,196 @@ def link_kmdb_cache_to_contents():
         db.close()
 
 
+# ── TMDB 캐시 → contents 링크 ─────────────────────────────
+
+@celery_app.task(name="workers.tasks.metadata.link_tmdb_cache_to_contents", max_retries=0)
+def link_tmdb_cache_to_contents():
+    """tmdb_movie_cache / tmdb_tv_cache 를 순회, contents 에 title+year 매칭 후
+    ExternalMetaSource upsert. 매일 07:30 KST Beat. 멱등.
+
+    - 이미 external_meta_sources 에 source_type='tmdb' + 해당 id 가 있으면 스킵
+    - 영화: TmdbMovieCache(id, title, release_date) → ContentType.movie
+    - 시리즈: TmdbTvCache(id, name, first_air_date) → ContentType.series
+    - 정확 매칭: title == Content.title
+    - fuzzy 폴백: prod_year 일치 후보 중 SequenceMatcher >= 0.85
+    """
+    from datetime import datetime
+
+    from api.programming.metadata.models import (
+        Content, ContentType, ExternalMetaSource,
+        ExternalSourceType, TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus,
+    )
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieCache, TmdbTvCache
+    from api.programming.metadata.ai_engine import _upsert_external_source
+
+    db = SessionLocal()
+    try:
+        log = TmdbSyncLog(
+            source=TmdbSyncSource.tmdb_link,
+            external_source=ExternalSourceType.tmdb,
+            status=TmdbSyncStatus.running,
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+
+        # 이미 TMDB가 연결된 content_id 세트 (skip 최적화)
+        linked_content_ids = {
+            row[0]
+            for row in db.query(ExternalMetaSource.content_id)
+            .filter(
+                ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+                ExternalMetaSource.content_id.isnot(None),
+            )
+            .all()
+        }
+
+        inserted = unchanged = errors = 0
+
+        # contents 기준 순회 (캐시 442K 건 전체 로드 대신 contents N건 기준)
+        # ── 영화 ─────────────────────────────────────────────────
+        movie_q = (
+            db.query(Content)
+            .filter(Content.content_type == ContentType.movie, Content.is_deleted == False)  # noqa: E712
+        )
+        log.items_fetched = movie_q.count()
+        db.commit()
+
+        for content in movie_q.yield_per(200):
+            if content.id in linked_content_ids:
+                unchanged += 1
+                continue
+
+            # 정확 매칭
+            cache = (
+                db.query(TmdbMovieCache)
+                .filter(TmdbMovieCache.title == content.title)
+                .first()
+            )
+
+            fuzzy_confidence: float | None = None
+            if not cache and content.production_year:
+                from sqlalchemy import extract
+                candidates = (
+                    db.query(TmdbMovieCache)
+                    .filter(
+                        extract("year", TmdbMovieCache.release_date) == content.production_year
+                    )
+                    .limit(50)
+                    .all()
+                )
+                best_ratio, best_cache = 0.0, None
+                for cand in candidates:
+                    ratio = difflib.SequenceMatcher(None, content.title, cand.title).ratio()
+                    if ratio > best_ratio:
+                        best_ratio, best_cache = ratio, cand
+                if best_ratio >= 0.85:
+                    cache = best_cache
+                    fuzzy_confidence = round(best_ratio, 4)
+
+            if not cache:
+                continue
+
+            try:
+                raw = cache.raw_json or {"tmdb_id": cache.id, "title": cache.title}
+                _upsert_external_source(
+                    db, content.id, ExternalSourceType.tmdb, str(cache.id), raw
+                )
+                if fuzzy_confidence is not None:
+                    src = (
+                        db.query(ExternalMetaSource)
+                        .filter(
+                            ExternalMetaSource.content_id == content.id,
+                            ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+                        )
+                        .first()
+                    )
+                    if src:
+                        src.match_confidence = fuzzy_confidence
+                inserted += 1
+                linked_content_ids.add(content.id)
+            except Exception as exc:
+                logger.warning(f"[tmdb_link] movie content_id={content.id} 처리 실패: {exc}")
+                errors += 1
+
+        # ── 시리즈 ────────────────────────────────────────────────
+        tv_q = (
+            db.query(Content)
+            .filter(Content.content_type == ContentType.series, Content.is_deleted == False)  # noqa: E712
+        )
+        log.items_fetched += tv_q.count()
+
+        for content in tv_q.yield_per(200):
+            if content.id in linked_content_ids:
+                unchanged += 1
+                continue
+
+            cache_tv = (
+                db.query(TmdbTvCache)
+                .filter(TmdbTvCache.name == content.title)
+                .first()
+            )
+
+            fuzzy_confidence = None
+            if not cache_tv and content.production_year:
+                from sqlalchemy import extract
+                candidates = (
+                    db.query(TmdbTvCache)
+                    .filter(
+                        extract("year", TmdbTvCache.first_air_date) == content.production_year
+                    )
+                    .limit(50)
+                    .all()
+                )
+                best_ratio, best_cache = 0.0, None
+                for cand in candidates:
+                    ratio = difflib.SequenceMatcher(None, content.title, cand.name).ratio()
+                    if ratio > best_ratio:
+                        best_ratio, best_cache = ratio, cand
+                if best_ratio >= 0.85:
+                    cache_tv = best_cache
+                    fuzzy_confidence = round(best_ratio, 4)
+
+            if not cache_tv:
+                continue
+
+            try:
+                raw = cache_tv.raw_json or {"tmdb_id": cache_tv.id, "name": cache_tv.name}
+                _upsert_external_source(
+                    db, content.id, ExternalSourceType.tmdb, str(cache_tv.id), raw
+                )
+                if fuzzy_confidence is not None:
+                    src = (
+                        db.query(ExternalMetaSource)
+                        .filter(
+                            ExternalMetaSource.content_id == content.id,
+                            ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+                        )
+                        .first()
+                    )
+                    if src:
+                        src.match_confidence = fuzzy_confidence
+                inserted += 1
+                linked_content_ids.add(content.id)
+            except Exception as exc:
+                logger.warning(f"[tmdb_link] series content_id={content.id} 처리 실패: {exc}")
+                errors += 1
+
+        db.commit()
+
+        log.items_inserted = inserted
+        log.items_unchanged = unchanged
+        log.errors = errors
+        log.status = TmdbSyncStatus.completed if errors == 0 else TmdbSyncStatus.failed
+        log.finished_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(f"[tmdb_link] inserted={inserted} unchanged={unchanged} errors={errors}")
+        return {"inserted": inserted, "unchanged": unchanged, "errors": errors}
+    finally:
+        db.close()
+
+
 # ── Dam poster catch-up ───────────────────────────────────
 
 @celery_app.task(name="workers.tasks.metadata.sync_primary_posters_to_dam")

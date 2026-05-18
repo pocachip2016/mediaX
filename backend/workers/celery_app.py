@@ -105,6 +105,11 @@ celery_app.conf.update(
             "task": "workers.tasks.metadata.link_kmdb_cache_to_contents",
             "schedule": crontab(hour=7, minute=0),
         },
+        # TMDB 캐시 → contents 링크 — 매일 07:30 KST (tmdb_movie_cache/tmdb_tv_cache, idempotent)
+        "link-tmdb-to-contents": {
+            "task": "workers.tasks.metadata.link_tmdb_cache_to_contents",
+            "schedule": crontab(hour=7, minute=30),
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},
