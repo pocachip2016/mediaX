@@ -549,3 +549,74 @@ def daily_new_releases(target_date: str | None = None) -> dict:
         return {"error": str(exc)}
     finally:
         db.close()
+
+
+# ── Quota-aware 역순 백필 Beat tick ───────────────────────────────────────────
+
+_TMDB_DAILY_LIMIT = 40_000
+_TMDB_QUOTA_THRESHOLD = 2_000   # 잔여 < 2000이면 스킵 (연도 1개 ≈ 최대 1500 calls)
+_TMDB_BACKFILL_START_YEAR = 1990
+
+
+@celery_app.task(name="workers.tasks.tmdb_cache.tmdb_quota_backfill_tick")
+def tmdb_quota_backfill_tick() -> dict:
+    """매일 08:30 KST Beat — 최신 연도부터 역순으로 미백필 연도 1개 트리거.
+
+    - TmdbSyncLog(completed) 기준으로 중복 연도 스킵
+    - movie + tv 모두 완료된 연도만 done으로 간주
+    - QuotaManager("tmdb") 잔여 < 2000이면 해당 일 스킵
+    """
+    from shared.quota_manager import QuotaManager
+    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus
+
+    api_key = getattr(settings, "TMDB_API_KEY", "")
+    if not api_key:
+        logger.info("[tmdb-tick] TMDB_API_KEY 없음 — 스킵")
+        return {"skipped": True, "reason": "no_api_key"}
+
+    quota = QuotaManager()
+    remaining = quota.daily_remaining("tmdb", _TMDB_DAILY_LIMIT)
+    if remaining < _TMDB_QUOTA_THRESHOLD:
+        logger.info("[tmdb-tick] quota 잔여 %d < %d — 백필 스킵", remaining, _TMDB_QUOTA_THRESHOLD)
+        return {"skipped": True, "remaining": remaining}
+
+    db = SessionLocal()
+    try:
+        movie_done = {
+            r.target_year for r in
+            db.query(TmdbSyncLog.target_year)
+            .filter(
+                TmdbSyncLog.source == TmdbSyncSource.backfill_movie_year,
+                TmdbSyncLog.status == TmdbSyncStatus.completed,
+                TmdbSyncLog.target_year.isnot(None),
+            ).all()
+        }
+        tv_done = {
+            r.target_year for r in
+            db.query(TmdbSyncLog.target_year)
+            .filter(
+                TmdbSyncLog.source == TmdbSyncSource.backfill_tv_year,
+                TmdbSyncLog.status == TmdbSyncStatus.completed,
+                TmdbSyncLog.target_year.isnot(None),
+            ).all()
+        }
+    finally:
+        db.close()
+
+    done_years = movie_done & tv_done   # movie + tv 모두 완료된 연도만 done
+
+    current_year = date.today().year
+    target_year = None
+    for y in range(current_year, _TMDB_BACKFILL_START_YEAR - 1, -1):
+        if y not in done_years:
+            target_year = y
+            break
+
+    if target_year is None:
+        logger.info("[tmdb-tick] 모든 연도(%d~%d) 백필 완료", _TMDB_BACKFILL_START_YEAR, current_year)
+        return {"skipped": True, "reason": "all_done"}
+
+    logger.info("[tmdb-tick] quota=%d → year=%d 백필 트리거 (movie+tv)", remaining, target_year)
+    backfill_movies.delay(year_from=target_year, year_to=target_year)
+    backfill_tv.delay(year_from=target_year, year_to=target_year)
+    return {"triggered_year": target_year, "remaining": remaining}

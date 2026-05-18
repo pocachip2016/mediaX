@@ -650,6 +650,33 @@ class PaginatedKmdbCache(BaseModel):
     page: int
 
 
+class PaginatedTmdbCache(BaseModel):
+    items: list[TmdbCacheRecentItem]
+    total: int
+    page: int
+
+
+class KobisCacheItem(BaseModel):
+    movie_cd: str
+    title: str
+    title_en: Optional[str]
+    open_dt: Optional[date]
+    prdt_year: Optional[int]
+    rep_genre_nm: Optional[str]
+    rep_nation_nm: Optional[str]
+    first_fetched_at: datetime
+    last_fetched_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PaginatedKobisCache(BaseModel):
+    items: list[KobisCacheItem]
+    total: int
+    page: int
+
+
 # ── dev-api-consolidation: 18개 신규 엔드포인트 스키마 ──────────
 
 # Content Add Flow (4개)

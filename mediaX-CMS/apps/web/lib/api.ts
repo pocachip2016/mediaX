@@ -901,6 +901,12 @@ export interface TmdbCacheRecentItem {
   fetched_at: string
 }
 
+export interface PaginatedTmdbCache {
+  items: TmdbCacheRecentItem[]
+  total: number
+  page: number
+}
+
 export const tmdbCacheApi = {
   getStats: () =>
     request<TmdbCacheStats>("/api/programming/metadata/tmdb-cache/stats"),
@@ -919,6 +925,15 @@ export const tmdbCacheApi = {
     if (params?.kind) q.set("kind", params.kind)
     if (params?.limit) q.set("limit", String(params.limit))
     return request<TmdbCacheRecentItem[]>(`/api/programming/metadata/tmdb-cache/recent?${q}`)
+  },
+
+  search: (params?: { title?: string; kind?: string; page?: number; size?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.title) q.set("title", params.title)
+    if (params?.kind) q.set("kind", params.kind)
+    if (params?.page) q.set("page", String(params.page))
+    if (params?.size) q.set("size", String(params.size))
+    return request<PaginatedTmdbCache>(`/api/programming/metadata/tmdb-cache/search?${q}`)
   },
 }
 
@@ -1043,7 +1058,35 @@ function makeExternalApi(source: "kobis" | "kmdb") {
   }
 }
 
-export const kobisApi = makeExternalApi("kobis")
+export interface KobisCacheItem {
+  movie_cd: string
+  title: string
+  title_en: string | null
+  open_dt: string | null
+  prdt_year: number | null
+  rep_genre_nm: string | null
+  rep_nation_nm: string | null
+  first_fetched_at: string
+  last_fetched_at: string
+}
+
+export interface PaginatedKobisCache {
+  items: KobisCacheItem[]
+  total: number
+  page: number
+}
+
+export const kobisApi = {
+  ...makeExternalApi("kobis"),
+  getCache: (params?: { title?: string; year?: number; page?: number; size?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.title) q.set("title", params.title)
+    if (params?.year)  q.set("year",  String(params.year))
+    if (params?.page)  q.set("page",  String(params.page))
+    if (params?.size)  q.set("size",  String(params.size))
+    return request<PaginatedKobisCache>(`/api/programming/metadata/kobis/cache?${q}`)
+  },
+}
 export const kmdbApi = {
   ...makeExternalApi("kmdb"),
   getCache: (params?: { title?: string; year?: number; page?: number; size?: number }) => {

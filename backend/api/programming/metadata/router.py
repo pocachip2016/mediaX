@@ -59,6 +59,7 @@ from api.programming.metadata.schemas import (
     PaginatedTmdbItems,
     TmdbCacheStats, TmdbSyncLogItem, PaginatedSyncLog, TmdbCacheRecentItem,
     ExternalSourceStats, PaginatedExternalItems, KmdbCacheItem, PaginatedKmdbCache,
+    PaginatedTmdbCache, KobisCacheItem, PaginatedKobisCache,
     MappedExternalItem, PaginatedMappedItems,
     BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
     UndoActionRequest, UndoActionOut,
@@ -720,6 +721,18 @@ def list_tmdb_cache_recent(
     return service.list_tmdb_cache_recent(db, kind=kind, limit=limit)
 
 
+@router.get("/tmdb-cache/search", response_model=PaginatedTmdbCache, summary="TMDB 캐시 검색")
+def search_tmdb_cache(
+    title: Optional[str] = Query(None),
+    kind: str = Query("movie", description="movie | tv"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    items, total = service.search_tmdb_cache(db, title=title, kind=kind, page=page, size=size)
+    return PaginatedTmdbCache(items=items, total=total, page=page)
+
+
 # ── KOBIS 모니터링 ────────────────────────────────────────────────────────────
 
 @router.get("/kobis/stats", response_model=ExternalSourceStats, summary="KOBIS 동기화 통계")
@@ -759,6 +772,18 @@ def search_kobis(
 ):
     items, total = service.search_external_sources(db, "kobis", title=title, year=None, page=page, size=size)
     return PaginatedExternalItems(items=items, total=total, page=page, size=size)
+
+
+@router.get("/kobis/cache", response_model=PaginatedKobisCache, summary="KOBIS 로컬 캐시 검색")
+def search_kobis_cache(
+    title: Optional[str] = Query(None),
+    year: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    items, total = service.search_kobis_cache(db, title=title, year=year, page=page, size=size)
+    return PaginatedKobisCache(items=items, total=total, page=page)
 
 
 # ── KMDB 모니터링 ────────────────────────────────────────────────────────────

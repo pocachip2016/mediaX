@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] 외부 소스 대시보드 — 통합 sync log + TMDB/KOBIS 로컬 캐시 UI (2026-05-18)
 - [x] link-kmdb-to-contents — KMDB 캐시(673건) → contents 링크 (exact+fuzzy 매칭) + Beat 07:00 (2026-05-18)
 - [x] sqlite-to-postgres — SQLite → PostgreSQL 전환 완료 (alembic 0016·0017, 2,126건, .env 전환) (2026-05-18)
 - [x] kmdb-front-monitoring — KMDB 모니터링 페이지(KPI/동기화 로그/캐시 검색) + /kmdb/cache 엔드포인트 (2026-05-18)
