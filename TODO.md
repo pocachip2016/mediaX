@@ -6,6 +6,7 @@
 ## Now (진행 중, 1~3개)
 
 ## Next (이번 마일스톤)
+- [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)
 
 ## Later (백로그)
 - [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)
