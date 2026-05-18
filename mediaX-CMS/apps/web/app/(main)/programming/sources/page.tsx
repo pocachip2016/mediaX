@@ -3,9 +3,21 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { RefreshCw, Database, Film, Tv, Clock, ArrowRight, CheckCircle, XCircle, AlertCircle } from "lucide-react"
-import { tmdbCacheApi, kobisApi, kmdbApi, type TmdbCacheStats, type ExternalSourceStats } from "@/lib/api"
+import { tmdbCacheApi, kobisApi, kmdbApi, type TmdbCacheStats, type ExternalSourceStats, type TmdbSyncLogItem } from "@/lib/api"
+
+type CombinedSyncLog = TmdbSyncLogItem & { provider: "TMDB" | "KOBIS" | "KMDB" }
 
 // ── Mock ──────────────────────────────────────────────────
+
+const MOCK_COMBINED_LOGS: CombinedSyncLog[] = [
+  { id: 2, run_id: "k2",  source: "kobis_daily",       target_year: null, target_date: "2026-05-18", status: "completed", started_at: "2026-05-18T07:00:00+09:00", finished_at: "2026-05-18T07:00:02+09:00", pages_fetched: 1,    items_fetched: 10,      items_inserted: 2,   items_updated: 6,   items_unchanged: 2, errors: 0, provider: "KOBIS" },
+  { id: 2, run_id: "km2", source: "kmdb_backfill",      target_year: 2024, target_date: null,          status: "completed", started_at: "2026-05-18T06:00:05+09:00", finished_at: "2026-05-18T06:01:50+09:00", pages_fetched: 7,    items_fetched: 664,     items_inserted: 664, items_updated: 0,   items_unchanged: 0, errors: 0, provider: "KMDB"  },
+  { id: 1, run_id: "k1",  source: "kobis_backfill",     target_year: 2025, target_date: null,          status: "completed", started_at: "2026-05-18T06:30:00+09:00", finished_at: "2026-05-18T06:30:10+09:00", pages_fetched: 0,    items_fetched: 0,       items_inserted: 0,   items_updated: 0,   items_unchanged: 0, errors: 0, provider: "KOBIS" },
+  { id: 1, run_id: "km1", source: "kmdb_daily",         target_year: null, target_date: "2026-05-18", status: "completed", started_at: "2026-05-18T05:30:00+09:00", finished_at: "2026-05-18T05:30:45+09:00", pages_fetched: 1,    items_fetched: 12,      items_inserted: 8,   items_updated: 4,   items_unchanged: 0, errors: 0, provider: "KMDB"  },
+  { id: 4, run_id: "a4",  source: "daily_new_releases", target_year: null, target_date: "2026-05-05", status: "completed", started_at: "2026-05-05T03:45:00+09:00", finished_at: "2026-05-05T03:52:00+09:00", pages_fetched: 4,    items_fetched: 80,      items_inserted: 65,  items_updated: 12,  items_unchanged: 3, errors: 0, provider: "TMDB"  },
+  { id: 3, run_id: "a3",  source: "daily_changes",      target_year: null, target_date: "2026-05-05", status: "completed", started_at: "2026-05-05T03:30:00+09:00", finished_at: "2026-05-05T03:44:00+09:00", pages_fetched: 8,    items_fetched: 143,     items_inserted: 0,   items_updated: 143, items_unchanged: 0, errors: 0, provider: "TMDB"  },
+  { id: 1, run_id: "a1",  source: "backfill_discover",  target_year: 2024, target_date: null,          status: "completed", started_at: "2026-05-04T10:00:00+09:00", finished_at: "2026-05-04T14:30:00+09:00", pages_fetched: 4240, items_fetched: 847_230, items_inserted: 847_000, items_updated: 0, items_unchanged: 0, errors: 12, provider: "TMDB" },
+]
 
 const MOCK_TMDB: TmdbCacheStats = {
   total_movies: 847_230, total_tv: 192_440, total_persons: 0,
@@ -43,6 +55,33 @@ const MOCK_KMDB: ExternalSourceStats = {
 }
 
 // ── 유틸 ──────────────────────────────────────────────────
+
+const ALL_SOURCE_LABELS: Record<string, string> = {
+  daily_changes: "일별 변경", daily_new_releases: "신규 출시", backfill_discover: "전체 백필", manual: "수동",
+  kobis_daily: "일별 수집", kobis_backfill: "전체 백필",
+  kmdb_daily: "일별 수집", kmdb_backfill: "연도 백필",
+}
+
+const SYNC_STATUS_LABEL: Record<string, string> = { completed: "완료", running: "진행중", failed: "실패", partial: "일부완료" }
+
+const PROVIDER_CLASS: Record<string, string> = {
+  TMDB:  "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  KOBIS: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  KMDB:  "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+}
+
+function statusIcon(status: string) {
+  if (status === "completed") return <CheckCircle className="w-4 h-4 text-green-500" />
+  if (status === "running")   return <RefreshCw   className="w-4 h-4 text-blue-500 animate-spin" />
+  if (status === "failed")    return <XCircle     className="w-4 h-4 text-red-500" />
+  return <AlertCircle className="w-4 h-4 text-amber-500" />
+}
+
+function formatDateTime(iso: string | null) {
+  if (!iso) return "-"
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  return m ? `${m[2]}.${m[3]} ${m[4]}:${m[5]}` : iso
+}
 
 function formatDate(iso: string | null) {
   if (!iso) return "-"
@@ -121,22 +160,33 @@ function SourceCard({
 // ── 메인 ─────────────────────────────────────────────────
 
 export default function SourcesDashboard() {
-  const [tmdb,    setTmdb]    = useState<TmdbCacheStats>(MOCK_TMDB)
-  const [kobis,   setKobis]   = useState<ExternalSourceStats>(MOCK_KOBIS)
-  const [kmdb,    setKmdb]    = useState<ExternalSourceStats>(MOCK_KMDB)
-  const [loading, setLoading] = useState(false)
+  const [tmdb,     setTmdb]     = useState<TmdbCacheStats>(MOCK_TMDB)
+  const [kobis,    setKobis]    = useState<ExternalSourceStats>(MOCK_KOBIS)
+  const [kmdb,     setKmdb]     = useState<ExternalSourceStats>(MOCK_KMDB)
+  const [syncLogs, setSyncLogs] = useState<CombinedSyncLog[]>(MOCK_COMBINED_LOGS)
+  const [loading,  setLoading]  = useState(false)
 
   const fetchAll = async () => {
     setLoading(true)
     try {
-      const [t, k, m] = await Promise.all([
+      const results = await Promise.allSettled([
         tmdbCacheApi.getStats(),
         kobisApi.getStats(),
         kmdbApi.getStats(),
+        tmdbCacheApi.getSyncLog({ page: 1, size: 5 }),
+        kobisApi.getSyncLog({ page: 1, size: 5 }),
+        kmdbApi.getSyncLog({ page: 1, size: 5 }),
       ])
-      if (t.total_movies + t.total_tv > 0) setTmdb(t)
-      if (k.total_synced > 0) setKobis(k)
-      if (m.total_synced > 0) setKmdb(m)
+      const [tr, kr, mr, tl, kl, ml] = results
+      if (tr.status === "fulfilled") { const t = tr.value; if (t.total_movies + t.total_tv > 0) setTmdb(t) }
+      if (kr.status === "fulfilled") { const k = kr.value; if (k.total_synced > 0) setKobis(k) }
+      if (mr.status === "fulfilled") { const m = mr.value; if (m.total_synced > 0) setKmdb(m) }
+      const combined: CombinedSyncLog[] = [
+        ...(tl.status === "fulfilled" ? tl.value.items.map(l => ({ ...l, provider: "TMDB" as const })) : []),
+        ...(kl.status === "fulfilled" ? kl.value.items.map(l => ({ ...l, provider: "KOBIS" as const })) : []),
+        ...(ml.status === "fulfilled" ? ml.value.items.map(l => ({ ...l, provider: "KMDB" as const })) : []),
+      ].sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime()).slice(0, 15)
+      if (combined.length > 0) setSyncLogs(combined)
     } catch {
       // Mock 유지
     } finally {
@@ -222,6 +272,52 @@ export default function SourcesDashboard() {
           maxBar={1}
           accent=""
         />
+      </div>
+
+      {/* 통합 동기화 로그 */}
+      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+        <div className="px-5 py-3.5 border-b">
+          <h3 className="text-sm font-semibold">동기화 로그</h3>
+        </div>
+        <div className="overflow-y-auto max-h-[260px]">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 sticky top-0 z-10">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">소스</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">작업</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">상태</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">시작</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground">신규</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">갱신</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">오류</th>
+              </tr>
+            </thead>
+            <tbody>
+              {syncLogs.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">동기화 이력이 없습니다.</td></tr>
+              ) : syncLogs.map((log, idx) => (
+                <tr key={`${log.provider}-${log.id}-${idx}`} className="border-t hover:bg-muted/30 transition-colors">
+                  <td className="px-4 py-3">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${PROVIDER_CLASS[log.provider]}`}>
+                      {log.provider}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{ALL_SOURCE_LABELS[log.source] ?? log.source}</td>
+                  <td className="px-4 py-3">
+                    <span className="flex items-center gap-1.5">
+                      {statusIcon(log.status)}
+                      <span className="text-xs">{SYNC_STATUS_LABEL[log.status] ?? log.status}</span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell text-xs">{formatDateTime(log.started_at)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-medium text-green-600 dark:text-green-400 text-xs">+{log.items_inserted.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground hidden lg:table-cell text-xs">{log.items_updated.toLocaleString()}</td>
+                  <td className={`px-4 py-3 text-right tabular-nums hidden lg:table-cell text-xs ${log.errors > 0 ? "text-red-500" : "text-muted-foreground"}`}>{log.errors}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* 수집 현황 요약 테이블 */}

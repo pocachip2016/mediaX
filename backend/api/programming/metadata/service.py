@@ -1616,6 +1616,54 @@ def search_kmdb_cache(db, title: str | None, year: int | None, page: int, size: 
     return items, total
 
 
+def search_tmdb_cache(db, title: str | None, kind: str, page: int, size: int):
+    """tmdb_movie_cache / tmdb_tv_cache 단일 종류 검색."""
+    from api.programming.metadata.models import TmdbMovieCache, TmdbTvCache
+    from api.programming.metadata.tmdb_client import TmdbClient
+
+    if kind == "tv":
+        q = db.query(TmdbTvCache)
+        if title:
+            q = q.filter(TmdbTvCache.name.ilike(f"%{title}%"))
+        total = q.count()
+        rows = q.order_by(TmdbTvCache.last_fetched_at.desc()).offset((page - 1) * size).limit(size).all()
+        items = [{
+            "id": r.id, "title": r.name, "original_title": r.original_name,
+            "release_date": None, "first_air_date": r.first_air_date,
+            "popularity": r.popularity, "vote_average": r.vote_average,
+            "poster_url": TmdbClient.poster_url(r.poster_path),
+            "kind": "tv", "fetched_at": r.last_fetched_at,
+        } for r in rows]
+    else:
+        q = db.query(TmdbMovieCache)
+        if title:
+            q = q.filter(TmdbMovieCache.title.ilike(f"%{title}%"))
+        total = q.count()
+        rows = q.order_by(TmdbMovieCache.last_fetched_at.desc()).offset((page - 1) * size).limit(size).all()
+        items = [{
+            "id": r.id, "title": r.title, "original_title": r.original_title,
+            "release_date": r.release_date, "first_air_date": None,
+            "popularity": r.popularity, "vote_average": r.vote_average,
+            "poster_url": TmdbClient.poster_url(r.poster_path),
+            "kind": "movie", "fetched_at": r.last_fetched_at,
+        } for r in rows]
+    return items, total
+
+
+def search_kobis_cache(db, title: str | None, year: int | None, page: int, size: int):
+    """kobis_movie_cache 검색."""
+    from api.programming.metadata.models.kobis_cache import KobisMovieCache
+
+    q = db.query(KobisMovieCache)
+    if title:
+        q = q.filter(KobisMovieCache.title.ilike(f"%{title}%"))
+    if year:
+        q = q.filter(KobisMovieCache.prdt_year == year)
+    total = q.count()
+    items = q.order_by(KobisMovieCache.last_fetched_at.desc()).offset((page - 1) * size).limit(size).all()
+    return items, total
+
+
 def search_external_sources(db, source_type: str, title: str | None, year: int | None, page: int, size: int):
     """external_meta_sources에서 소스별 검색."""
     from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType

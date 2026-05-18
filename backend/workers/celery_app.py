@@ -115,6 +115,11 @@ celery_app.conf.update(
             "task": "workers.tasks.metadata.link_kobis_cache_to_contents",
             "schedule": crontab(hour=7, minute=45),
         },
+        # TMDB 역순 역사 백필 — 매일 08:30 KST (최신 연도부터 역순, quota-aware, 1일 1연도)
+        "backfill-tmdb-historical": {
+            "task": "workers.tasks.tmdb_cache.tmdb_quota_backfill_tick",
+            "schedule": crontab(hour=8, minute=30),
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},
