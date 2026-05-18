@@ -7,8 +7,9 @@
   2. contents.cp_name = 'Watcha'
 
 ContentMetadata 는 cascade 미설정 → bulk delete 선행.
-나머지 하위 테이블(genres/tags/credits/images/external_sources/ai_results)은
-Content.cascade="all, delete-orphan" 으로 자동 삭제.
+genres/tags/credits/images/ai_results 는 Content.cascade="all, delete-orphan"
+으로 자동 삭제. external_sources 는 cascade 미설정(의도적) — 부모 Content
+삭제 시 content_id 만 NULL 로 비워지고 행은 보존된다(TMDB/KOBIS 재수집 방지).
 """
 
 import sys

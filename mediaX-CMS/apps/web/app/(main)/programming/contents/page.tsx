@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   Search, X, ChevronLeft, ChevronRight, RefreshCw,
-  Film, Tv, Layers, Play, Check, RotateCcw, Link2,
+  Film, Tv, Layers, Play, Check, RotateCcw, Link2, Trash2,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { metadataApi, type ContentOut, type ContentStatus, type ContentType, resolvePosterUrl } from "@/lib/api"
@@ -150,6 +150,9 @@ export default function ContentsPage() {
   // 다중 선택
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
+  // 삭제
+  const [deleting, setDeleting] = useState(false)
+
   // 모달
   const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [bulkAction, setBulkAction] = useState<"approve" | "reject" | "reprocess" | "rematch">("approve")
@@ -227,6 +230,23 @@ export default function ContentsPage() {
   const canReject  = canApprove
   const canRetryAI = selectedItems.length > 0 && selectedItems.every((it) => it.status === "review" || it.status === "processing")
   const canRematch = selectedItems.length > 0
+
+  // ── 삭제 핸들러 ──
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    const confirmed = window.confirm(`선택한 ${selectedIds.size}건을 삭제합니다.\n삭제된 항목은 목록에서 숨겨집니다. 계속하시겠습니까?`)
+    if (!confirmed) return
+    setDeleting(true)
+    try {
+      await metadataApi.bulkDelete({ ids: Array.from(selectedIds) })
+      clearSelection()
+      fetchList(appliedForm, page, size)
+    } catch {
+      alert("삭제 중 오류가 발생했습니다.")
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   // ── 검색 핸들러 ──
   const handleSearch = () => { setPage(1); setAppliedForm({ ...form }); clearSelection() }
@@ -365,6 +385,15 @@ export default function ContentsPage() {
               onClick={() => { setBulkAction("reprocess"); setBulkModalOpen(true) }} />
             <BulkBtn icon={<Link2 className="h-3.5 w-3.5" />} label="외부소스 매칭" enabled={canRematch} variant="violet"
               onClick={() => alert(`[Step 2 예정] ${selectedIds.size}건 외부소스 매칭 모달`)} />
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={handleBulkDelete}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {deleting ? "삭제 중…" : `삭제 (${selectedIds.size})`}
+            </button>
             <button onClick={clearSelection}
               className="px-2.5 py-1.5 rounded-lg border border-border text-xs hover:bg-accent">
               해제

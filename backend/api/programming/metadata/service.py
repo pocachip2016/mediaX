@@ -113,6 +113,7 @@ def list_contents(
         joinedload(Content.metadata_record),
         selectinload(Content.images),
     )
+    q = q.filter(Content.is_deleted == False)  # noqa: E712
     if status:
         q = q.filter(Content.status == status)
     if cp_name:
@@ -1828,38 +1829,23 @@ async def bulk_delete(
     ids: list[int],
     reason: Optional[str] = None,
     sync_mode: bool = False,
-) -> "JobStatusOut":
+) -> "BulkActionResponse":
     """Bulk soft delete (is_deleted=True)"""
-    from api.programming.metadata.schemas import JobStatusOut
+    from api.programming.metadata.schemas import BulkActionResponse
 
     contents = db.query(Content).filter(Content.id.in_(ids)).all()
     valid_ids = [c.id for c in contents]
     invalid_ids = [id for id in ids if id not in {c.id for c in contents}]
 
-    # Soft delete
     for c in contents:
         c.is_deleted = True
 
-    job = ContentBatchJob(
-        job_name=f"bulk_delete_{len(valid_ids)}_items",
-        status="done",
-        total_count=len(valid_ids),
-        success_count=len(valid_ids),
-        parse_mode="delete",
-    )
-    db.add(job)
     db.commit()
-    db.refresh(job)
 
-    return JobStatusOut(
-        id=job.id,
-        status="done",
-        action_type="bulk_delete",
-        target_count=len(valid_ids),
-        completed_count=len(valid_ids),
-        failed_count=0,
-        progress_percent=100,
-        created_at=job.created_at,
+    return BulkActionResponse(
+        job_id="0",
+        ids_accepted=len(valid_ids),
+        ids_rejected=len(invalid_ids),
         errors=[f"ID {id} 없음" for id in invalid_ids] if invalid_ids else None,
     )
 
