@@ -3194,9 +3194,75 @@ print('  ✓ kmdb_movie_cache 테이블 + 컬럼 OK')
     echo "=== PASS ==="
     ;;
 
+  kobis-quota-backfill)
+    echo "=== kobis-quota-backfill: KOBIS quota-aware backfill Beat ==="
+    # 1. backfill_kobis 시그니처 (year: int)
+    docker exec mediax-worker-1 python3 -c "
+import inspect
+from workers.tasks.metadata import backfill_kobis
+sig = inspect.signature(backfill_kobis.run)
+params = list(sig.parameters.keys())
+assert params == ['year'], f'backfill_kobis 시그니처 불일치: {params}'
+print('  ✓ backfill_kobis(year: int) 시그니처 OK')
+"
+    # 2. kobis_quota_backfill_tick 등록 확인
+    docker exec mediax-worker-1 python3 -c "
+from workers.tasks.metadata import kobis_quota_backfill_tick, _KOBIS_QUOTA_THRESHOLD, _KOBIS_DAILY_LIMIT, _KOBIS_BACKFILL_FLOOR_YEAR
+assert kobis_quota_backfill_tick.name == 'workers.tasks.metadata.kobis_quota_backfill_tick'
+assert _KOBIS_QUOTA_THRESHOLD == 1000
+assert _KOBIS_DAILY_LIMIT == 2900
+assert _KOBIS_BACKFILL_FLOOR_YEAR == 1990
+print('  ✓ kobis_quota_backfill_tick task + 상수 OK')
+"
+    # 3. Beat 스케줄 등록 확인
+    docker exec mediax-worker-1 python3 -c "
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule['backfill-kobis-historical']
+assert sched['task'] == 'workers.tasks.metadata.kobis_quota_backfill_tick'
+# crontab 객체 — hour=6, minute=30
+ct = sched['schedule']
+assert 6 in ct.hour and 30 in ct.minute, f'Beat 시각 불일치: hour={ct.hour}, minute={ct.minute}'
+print('  ✓ backfill-kobis-historical Beat @ 06:30 KST 등록 OK')
+"
+    # 4. tick 동기 실행 — quota 임계치 미만이거나 모두 백필되면 skip 결과
+    docker exec mediax-worker-1 python3 -c "
+from workers.tasks.metadata import kobis_quota_backfill_tick
+result = kobis_quota_backfill_tick.apply().result
+print('  tick 결과:', result)
+assert isinstance(result, dict)
+# 결과는 skip 또는 triggered_year 중 하나
+assert ('skipped' in result) or ('triggered_year' in result), f'예상치 못한 결과: {result}'
+print('  ✓ tick 동기 실행 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-front)
+    echo "=== kmdb-front: KMDB 프론트엔드 — api.ts 타입 + kmdb/page.tsx ==="
+    CMS=/home/ktalpha/Work/mediaX/mediaX-CMS
+    # 1. KmdbCacheItem / PaginatedKmdbCache 타입 존재
+    grep -q "KmdbCacheItem" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: KmdbCacheItem in api.ts"; exit 1; }
+    grep -q "PaginatedKmdbCache" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: PaginatedKmdbCache in api.ts"; exit 1; }
+    echo "  ✓ KmdbCacheItem / PaginatedKmdbCache 타입 존재"
+    # 2. kmdbApi.getCache 메서드 존재
+    grep -q "getCache" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: kmdbApi.getCache in api.ts"; exit 1; }
+    echo "  ✓ kmdbApi.getCache 메서드 존재"
+    # 3. kmdb/page.tsx 동기화 로그 + 캐시 검색 섹션 존재
+    grep -q "SOURCE_LABEL" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: SOURCE_LABEL in kmdb/page.tsx"; exit 1; }
+    grep -q "kmdb_backfill" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: kmdb_backfill label"; exit 1; }
+    grep -q "target_year" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: target_year column"; exit 1; }
+    grep -q "getCache" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: getCache call in page.tsx"; exit 1; }
+    echo "  ✓ 동기화 로그 + 캐시 검색 섹션 존재"
+    # 4. TypeScript 타입 체크
+    cd "$CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | head -20
+    [ ${PIPESTATUS[0]} -eq 0 ] || exit 1
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill"
     exit 1
     ;;
 esac

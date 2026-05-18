@@ -58,7 +58,7 @@ from api.programming.metadata.schemas import (
     ServiceReadinessStats,
     PaginatedTmdbItems,
     TmdbCacheStats, TmdbSyncLogItem, PaginatedSyncLog, TmdbCacheRecentItem,
-    ExternalSourceStats, PaginatedExternalItems,
+    ExternalSourceStats, PaginatedExternalItems, KmdbCacheItem, PaginatedKmdbCache,
     BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
     UndoActionRequest, UndoActionOut,
     PromoteAIResultOut, ApplyExternalFieldsRequest,
@@ -671,7 +671,7 @@ def get_kmdb_stats(db: Session = Depends(get_db)):
     return service.get_external_source_stats(db, "kmdb")
 
 
-@router.get("/kmdb/sync-log", response_model=PaginatedSyncLog, summary="KMDB 동기화 로그 (항상 빈 결과)")
+@router.get("/kmdb/sync-log", response_model=PaginatedSyncLog, summary="KMDB 동기화 로그")
 def list_kmdb_sync_log(
     status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -682,7 +682,7 @@ def list_kmdb_sync_log(
     return PaginatedSyncLog(items=items, total=total, page=page, size=size)
 
 
-@router.get("/kmdb/search", response_model=PaginatedExternalItems, summary="KMDB 캐시 검색")
+@router.get("/kmdb/search", response_model=PaginatedExternalItems, summary="KMDB 콘텐츠 매핑 검색")
 def search_kmdb(
     title: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -691,6 +691,18 @@ def search_kmdb(
 ):
     items, total = service.search_external_sources(db, "kmdb", title=title, year=None, page=page, size=size)
     return PaginatedExternalItems(items=items, total=total, page=page, size=size)
+
+
+@router.get("/kmdb/cache", response_model=PaginatedKmdbCache, summary="KMDB 로컬 캐시 검색")
+def search_kmdb_cache(
+    title: Optional[str] = Query(None),
+    year: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    items, total = service.search_kmdb_cache(db, title=title, year=year, page=page, size=size)
+    return PaginatedKmdbCache(items=items, total=total, page=page)
 
 
 # ── dev-api-consolidation: Bulk Actions ──────────────────────

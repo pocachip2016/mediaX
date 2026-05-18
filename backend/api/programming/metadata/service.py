@@ -1465,35 +1465,68 @@ def get_external_source_stats(db, source_type: str) -> dict:
             "last_7d_daily": last_7d,
         }
 
-    # KMDB: sync_log 없으므로 matched_at 기준
-    last_matched = (
-        db.query(func.max(ExternalMetaSource.matched_at))
-        .filter(ExternalMetaSource.source_type == ext_type)
-        .scalar()
+    # KMDB: kmdb_movie_cache 건수 + external_sync_log 기준
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+    kmdb_sources = [TmdbSyncSource.kmdb_daily, TmdbSyncSource.kmdb_backfill]
+    total_cache = db.query(KmdbMovieCache).count()
+    last_log = (
+        db.query(TmdbSyncLog)
+        .filter(TmdbSyncLog.source.in_(kmdb_sources))
+        .order_by(TmdbSyncLog.started_at.desc())
+        .first()
     )
+    cutoff_7d = datetime.utcnow() - timedelta(days=7)
+    recent_logs = (
+        db.query(TmdbSyncLog)
+        .filter(TmdbSyncLog.source.in_(kmdb_sources), TmdbSyncLog.started_at >= cutoff_7d)
+        .all()
+    )
+    day_map: dict = defaultdict(lambda: {"count": 0, "errors": 0})
+    for log in recent_logs:
+        if log.started_at:
+            day_str = log.started_at.strftime("%Y-%m-%d")
+            day_map[day_str]["count"] += log.items_inserted or 0
+            day_map[day_str]["errors"] += log.errors or 0
+    last_7d = [{"date": d, "count": v["count"], "errors": v["errors"]} for d, v in sorted(day_map.items())]
     return {
-        "total_synced": total,
-        "last_run_at": last_matched,
-        "last_run_status": None,
-        "last_7d_daily": [],
+        "total_synced": total_cache,
+        "last_run_at": last_log.started_at if last_log else None,
+        "last_run_status": last_log.status.value if last_log else None,
+        "last_7d_daily": last_7d,
     }
 
 
 def list_external_source_sync_log(db, source_type: str, status: str | None, page: int, size: int):
-    """KOBIS sync 이력 (KMDB는 항상 빈 결과)."""
+    """KOBIS / KMDB sync 이력."""
     from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource
 
-    if source_type != "kobis":
+    if source_type == "kobis":
+        sync_sources = [TmdbSyncSource.kobis_daily, TmdbSyncSource.kobis_backfill]
+    elif source_type == "kmdb":
+        sync_sources = [TmdbSyncSource.kmdb_daily, TmdbSyncSource.kmdb_backfill]
+    else:
         return [], 0
 
-    q = db.query(TmdbSyncLog).filter(
-        TmdbSyncLog.source.in_([TmdbSyncSource.kobis_daily, TmdbSyncSource.kobis_backfill])
-    )
+    q = db.query(TmdbSyncLog).filter(TmdbSyncLog.source.in_(sync_sources))
     if status:
         q = q.filter(TmdbSyncLog.status == status)
 
     total = q.count()
     items = q.order_by(TmdbSyncLog.started_at.desc()).offset((page - 1) * size).limit(size).all()
+    return items, total
+
+
+def search_kmdb_cache(db, title: str | None, year: int | None, page: int, size: int):
+    """kmdb_movie_cache 검색."""
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+
+    q = db.query(KmdbMovieCache)
+    if title:
+        q = q.filter(KmdbMovieCache.title.ilike(f"%{title}%"))
+    if year:
+        q = q.filter(KmdbMovieCache.prod_year == year)
+    total = q.count()
+    items = q.order_by(KmdbMovieCache.last_fetched_at.desc()).offset((page - 1) * size).limit(size).all()
     return items, total
 
 

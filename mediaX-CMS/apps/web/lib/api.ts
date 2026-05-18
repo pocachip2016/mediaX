@@ -955,6 +955,24 @@ export interface PaginatedExternalItems {
   size: number
 }
 
+export interface KmdbCacheItem {
+  docid: string
+  title: string
+  title_eng: string | null
+  prod_year: number | null
+  genre: string | null
+  nation: string | null
+  poster_url: string | null
+  first_fetched_at: string
+  last_fetched_at: string
+}
+
+export interface PaginatedKmdbCache {
+  items: KmdbCacheItem[]
+  total: number
+  page: number
+}
+
 export interface DamAssetItem {
   asset_id: number
   filename: string
@@ -995,7 +1013,17 @@ function makeExternalApi(source: "kobis" | "kmdb") {
 }
 
 export const kobisApi = makeExternalApi("kobis")
-export const kmdbApi = makeExternalApi("kmdb")
+export const kmdbApi = {
+  ...makeExternalApi("kmdb"),
+  getCache: (params?: { title?: string; year?: number; page?: number; size?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.title) q.set("title", params.title)
+    if (params?.year)  q.set("year",  String(params.year))
+    if (params?.page)  q.set("page",  String(params.page))
+    if (params?.size)  q.set("size",  String(params.size))
+    return request<PaginatedKmdbCache>(`/api/programming/metadata/kmdb/cache?${q}`)
+  },
+}
 
 // ── 포스터 추천 ────────────────────────────────────────────────────────────────
 

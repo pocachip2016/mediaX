@@ -80,6 +80,10 @@ celery_app.conf.update(
             "task": "workers.tasks.kmdb_cache.kmdb_quota_backfill_tick",
             "schedule": crontab(hour=6, minute=0),
         },
+        "backfill-kobis-historical": {
+            "task": "workers.tasks.metadata.kobis_quota_backfill_tick",
+            "schedule": crontab(hour=6, minute=30),
+        },
         "discover-tmdb-weekly": {
             "task": "workers.tasks.discovery_tasks.discover_tmdb",
             "schedule": crontab(hour=6, minute=0, day_of_week=0),
@@ -106,6 +110,7 @@ celery_app.conf.update(
         "workers.tasks.analytics.*":             {"queue": "analytics"},
         "workers.tasks.metadata.*":              {"queue": "metadata"},
         "workers.tasks.tmdb_cache.*":            {"queue": "metadata"},
+        "workers.tasks.kmdb_cache.*":            {"queue": "metadata"},
         "workers.tasks.discovery_tasks.*":       {"queue": "metadata"},
     },
 )
