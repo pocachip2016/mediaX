@@ -58,7 +58,8 @@ from api.programming.metadata.schemas import (
     ServiceReadinessStats,
     PaginatedTmdbItems,
     TmdbCacheStats, TmdbSyncLogItem, PaginatedSyncLog, TmdbCacheRecentItem,
-    ExternalSourceStats, PaginatedExternalItems,
+    ExternalSourceStats, PaginatedExternalItems, KmdbCacheItem, PaginatedKmdbCache,
+    MappedExternalItem, PaginatedMappedItems,
     BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
     UndoActionRequest, UndoActionOut,
     PromoteAIResultOut, ApplyExternalFieldsRequest,
@@ -366,25 +367,66 @@ async def batch_upload(
     # CSV 파싱 (Excel은 추후 openpyxl 연동)
     rows = []
     try:
+        KNOWN_COLUMNS = {
+            "title", "제목", "콘텐츠명", "콘텐츠편성명",
+            "production_year", "제작연도", "개봉일",
+            "content_type", "타입",  # 영상유형은 제외 → extra_metadata 자동 보존
+            "cp_name", "CP사", "CP명",
+            "synopsis", "시놉시스",
+            "cast", "출연진",
+            "directors", "감독",
+            "genres", "장르",
+            "country", "제작국가",
+            "runtime", "런타임", "상용시간(RT)",
+            "rating_age", "시청등급",
+            "poster_url", "포스터URL",
+            "audio_channels", "음성채널", "5.1CH",
+            "video_resolution", "화질",
+        }
+
         def _extract_row(get_fn) -> dict:
             """공통 필드 추출 — CSV/Excel 모두 사용"""
+            raw_audio = get_fn(["audio_channels", "음성채널", "5.1CH"])
+            smpte_runtime = get_fn(["상용시간(RT)"])
+            raw_year_date = get_fn(["개봉일"])
             return {
-                "title": get_fn(["title", "제목"]),
-                "production_year": _safe_int(get_fn(["production_year", "제작연도"])),
-                "content_type": _normalize_content_type(get_fn(["content_type", "타입"]) or "movie"),
-                "cp_name": get_fn(["cp_name", "CP사"]) or cp_name,
+                "title": get_fn(["title", "제목", "콘텐츠명", "콘텐츠편성명"]),
+                "production_year": (
+                    _safe_int(get_fn(["production_year", "제작연도"]))
+                    or _parse_year(raw_year_date)
+                ),
+                "content_type": _normalize_content_type(
+                    get_fn(["content_type", "타입", "영상유형"]) or "movie"
+                ),
+                "cp_name": get_fn(["cp_name", "CP사", "CP명"]) or cp_name,
                 "synopsis": get_fn(["synopsis", "시놉시스"]),
                 "cast": get_fn(["cast", "출연진"]),
                 "directors": get_fn(["directors", "감독"]),
                 "genres": get_fn(["genres", "장르"]),
                 "country": get_fn(["country", "제작국가"]),
-                "runtime": _safe_int(get_fn(["runtime", "런타임"])),
+                "runtime": (
+                    _safe_int(get_fn(["runtime", "런타임"]))
+                    or _parse_smpte_runtime(smpte_runtime)
+                ),
                 "rating_age": get_fn(["rating_age", "시청등급"]),
                 "poster_url": get_fn(["poster_url", "포스터URL"]) or None,
+                "audio_channels": _map_audio_channels(raw_audio),
+                "video_resolution": get_fn(["video_resolution", "화질"]) or None,
             }
 
         if file.filename.lower().endswith(".csv"):
-            text = content_bytes.decode("utf-8-sig", errors="replace")
+            text = None
+            for encoding in ("utf-8-sig", "cp949", "euc-kr"):
+                try:
+                    text = content_bytes.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if text is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="지원하지 않는 파일 인코딩 (UTF-8/CP949/EUC-KR 만 지원)",
+                )
             reader = csv.DictReader(io.StringIO(text))
             for row in reader:
                 def _csv_get(col_names, _row=row):
@@ -393,7 +435,11 @@ async def batch_upload(
                         if v:
                             return v.strip()
                     return ""
-                rows.append(_extract_row(_csv_get))
+                extracted = _extract_row(_csv_get)
+                extra = {k: v.strip() for k, v in row.items() if k not in KNOWN_COLUMNS and v and str(v).strip()}
+                if extra:
+                    extracted["extra_metadata"] = extra
+                rows.append(extracted)
         else:
             # Excel 지원 — openpyxl 없으면 에러 메시지 반환
             try:
@@ -409,7 +455,15 @@ async def batch_upload(
                             if idx is not None and _cells[idx]:
                                 return str(_cells[idx]).strip()
                         return ""
-                    rows.append(_extract_row(_excel_get))
+                    extracted = _extract_row(_excel_get)
+                    extra = {
+                        headers[i]: str(v).strip()
+                        for i, v in enumerate(row_cells)
+                        if v is not None and str(v).strip() and headers[i] not in KNOWN_COLUMNS
+                    }
+                    if extra:
+                        extracted["extra_metadata"] = extra
+                    rows.append(extracted)
             except ImportError:
                 raise HTTPException(
                     status_code=422,
@@ -597,9 +651,40 @@ def _safe_int(val) -> Optional[int]:
         return None
 
 
+def _parse_smpte_runtime(val: str) -> Optional[int]:
+    """HH:MM:SS:FF → 분 (FF 무시, 1분 미만은 1 반환)"""
+    if not val:
+        return None
+    parts = val.split(":")
+    try:
+        h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+        total = h * 60 + m + round(s / 60)
+        return max(total, 1)
+    except (IndexError, ValueError):
+        return None
+
+
+def _parse_year(val: str) -> Optional[int]:
+    """'2026-03-23' 또는 '2026' → 2026"""
+    if not val or len(val) < 4:
+        return None
+    try:
+        return int(val[:4])
+    except (ValueError, TypeError):
+        return None
+
+
+def _map_audio_channels(val: str) -> Optional[str]:
+    """5.1CH 컬럼 값 매핑: '1'→'5.1CH', '2'→'Stereo', 그 외 passthrough"""
+    if not val:
+        return None
+    mapping = {"1": "5.1CH", "2": "Stereo"}
+    return mapping.get(val.strip(), val.strip() or None)
+
+
 def _normalize_content_type(val: str) -> str:
     mapping = {
-        "영화": "movie", "movie": "movie",
+        "영화": "movie", "movie": "movie", "본편": "movie", "부속": "movie", "소장": "movie",
         "시리즈": "series", "series": "series", "드라마": "series",
         "시즌": "season", "season": "season",
         "에피소드": "episode", "episode": "episode",
@@ -653,6 +738,18 @@ def list_kobis_sync_log(
     return PaginatedSyncLog(items=items, total=total, page=page, size=size)
 
 
+@router.get("/kobis/contents", response_model=PaginatedMappedItems, summary="KOBIS 매핑 콘텐츠 목록")
+def list_kobis_contents(
+    title: Optional[str] = Query(None),
+    content_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_external_mapped_contents(db, "kobis", content_type=content_type, search=title, page=page, size=size)
+    return PaginatedMappedItems(items=items, total=total, page=page, size=size)
+
+
 @router.get("/kobis/search", response_model=PaginatedExternalItems, summary="KOBIS 캐시 검색")
 def search_kobis(
     title: Optional[str] = Query(None),
@@ -671,7 +768,7 @@ def get_kmdb_stats(db: Session = Depends(get_db)):
     return service.get_external_source_stats(db, "kmdb")
 
 
-@router.get("/kmdb/sync-log", response_model=PaginatedSyncLog, summary="KMDB 동기화 로그 (항상 빈 결과)")
+@router.get("/kmdb/sync-log", response_model=PaginatedSyncLog, summary="KMDB 동기화 로그")
 def list_kmdb_sync_log(
     status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -682,7 +779,19 @@ def list_kmdb_sync_log(
     return PaginatedSyncLog(items=items, total=total, page=page, size=size)
 
 
-@router.get("/kmdb/search", response_model=PaginatedExternalItems, summary="KMDB 캐시 검색")
+@router.get("/kmdb/contents", response_model=PaginatedMappedItems, summary="KMDB 매핑 콘텐츠 목록")
+def list_kmdb_contents(
+    title: Optional[str] = Query(None),
+    content_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_external_mapped_contents(db, "kmdb", content_type=content_type, search=title, page=page, size=size)
+    return PaginatedMappedItems(items=items, total=total, page=page, size=size)
+
+
+@router.get("/kmdb/search", response_model=PaginatedExternalItems, summary="KMDB 콘텐츠 매핑 검색")
 def search_kmdb(
     title: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -691,6 +800,18 @@ def search_kmdb(
 ):
     items, total = service.search_external_sources(db, "kmdb", title=title, year=None, page=page, size=size)
     return PaginatedExternalItems(items=items, total=total, page=page, size=size)
+
+
+@router.get("/kmdb/cache", response_model=PaginatedKmdbCache, summary="KMDB 로컬 캐시 검색")
+def search_kmdb_cache(
+    title: Optional[str] = Query(None),
+    year: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    items, total = service.search_kmdb_cache(db, title=title, year=year, page=page, size=size)
+    return PaginatedKmdbCache(items=items, total=total, page=page)
 
 
 # ── dev-api-consolidation: Bulk Actions ──────────────────────
@@ -862,3 +983,11 @@ async def api_create_from_sources(
     db: Session = Depends(get_db),
 ):
     return await service.create_from_sources(db, req.source_id, req.selected_fields, req.cp_name)
+
+
+@router.post("/contents/{content_id}/enrich-credits", summary="외부 소스에서 credits 보강")
+async def api_enrich_credits(
+    content_id: int,
+    db: Session = Depends(get_db),
+):
+    return await service.enrich_external_credits(content_id, db)

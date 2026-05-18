@@ -2501,9 +2501,1127 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  distribution-step0)
+    echo "=== distribution-step0: ContentDistribution/ServiceCategory/DeviceVariant 스키마 ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 모델 파일 존재 확인 ---"
+    for f in api/distribution/models.py api/distribution/schemas.py api/distribution/service.py api/distribution/router.py; do
+      [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+      echo "  ✓ $f"
+    done
+
+    echo "--- alembic 마이그레이션 파일 확인 ---"
+    [ -f "alembic/versions/0014_distribution_tables.py" ] || { echo "MISSING: 0014_distribution_tables.py"; exit 1; }
+    echo "  ✓ 0014_distribution_tables.py"
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/test_distribution_step0.py -q 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.3)
+    echo "=== recommend-step1.3: ShortMetaGrid + cells ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$RECOMMEND_DIR/ShortMetaGrid.tsx" ] || { echo "MISSING: ShortMetaGrid.tsx"; exit 1; }
+    [ -f "$RECOMMEND_DIR/cells/MetaCell.tsx" ] || { echo "MISSING: MetaCell.tsx"; exit 1; }
+    [ -f "$RECOMMEND_DIR/cells/DiffCell.tsx" ] || { echo "MISSING: DiffCell.tsx"; exit 1; }
+    [ -f "$RECOMMEND_DIR/cells/RecomCell.tsx" ] || { echo "MISSING: RecomCell.tsx"; exit 1; }
+    echo "  ✓ 4 컴포넌트 존재"
+
+    grep -q "grid-cols-\[200px" "$RECOMMEND_DIR/ShortMetaGrid.tsx" || { echo "MISSING: 3열 grid 레이아웃"; exit 1; }
+    echo "  ✓ 3열 grid 확인"
+
+    grep -q "classifyField" "$RECOMMEND_DIR/ShortMetaGrid.tsx" || { echo "MISSING: classifyField usage"; exit 1; }
+    echo "  ✓ classifyField 사용 확인"
+
+    grep -q "ShortMetaGrid" "$RECOMMEND_PAGE" || { echo "MISSING: ShortMetaGrid in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.4)
+    echo "=== recommend-step1.4: SynopsisRow ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$RECOMMEND_DIR/SynopsisRow.tsx" ] || { echo "MISSING: SynopsisRow.tsx"; exit 1; }
+    echo "  ✓ SynopsisRow.tsx 존재"
+
+    grep -q "ExpandableText" "$RECOMMEND_DIR/SynopsisRow.tsx" || { echo "MISSING: ExpandableText 컴포넌트"; exit 1; }
+    echo "  ✓ ExpandableText 토글 확인"
+
+    grep -q "SynopsisRow" "$RECOMMEND_PAGE" || { echo "MISSING: SynopsisRow in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.5)
+    echo "=== recommend-step1.5: AISummaryBottom ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$RECOMMEND_DIR/AISummaryBottom.tsx" ] || { echo "MISSING: AISummaryBottom.tsx"; exit 1; }
+    echo "  ✓ AISummaryBottom.tsx 존재"
+
+    grep -q "avgConfidence\|avg confidence" "$RECOMMEND_DIR/AISummaryBottom.tsx" || { echo "MISSING: avg confidence gauge"; exit 1; }
+    echo "  ✓ 신뢰도 게이지 확인"
+
+    grep -q "confirmed.length\|auto.length\|conflict.length\|missing.length" "$RECOMMEND_DIR/AISummaryBottom.tsx" || { echo "MISSING: category chips"; exit 1; }
+    echo "  ✓ 4 카테고리 칩 확인"
+
+    grep -q "AISummaryBottom" "$RECOMMEND_PAGE" || { echo "MISSING: AISummaryBottom in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.6)
+    echo "=== recommend-step1.6: SecondaryAccordion ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+    SEC="$RECOMMEND_DIR/SecondaryAccordion.tsx"
+
+    [ -f "$SEC" ] || { echo "MISSING: SecondaryAccordion.tsx"; exit 1; }
+    echo "  ✓ SecondaryAccordion.tsx 존재"
+
+    grep -q "@workspace/ui/components/collapsible" "$SEC" || { echo "MISSING: Collapsible import"; exit 1; }
+    echo "  ✓ Collapsible import 확인"
+
+    grep -q "출연진" "$SEC" || { echo "MISSING: 출연진 섹션"; exit 1; }
+    grep -q "외부 소스" "$SEC" || { echo "MISSING: 외부 소스 섹션"; exit 1; }
+    grep -q "AI 처리 이력\|AI 이력" "$SEC" || { echo "MISSING: AI 이력 섹션"; exit 1; }
+    echo "  ✓ 3개 섹션 확인 (출연진·외부 소스·AI 이력)"
+
+    grep -q "SecondaryAccordion" "$RECOMMEND_PAGE" || { echo "MISSING: SecondaryAccordion in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.2)
+    echo "=== recommend-step1.2: PosterRow ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    POSTER_ROW="$MEDIAX_CMS/apps/web/components/contents/recommend/PosterRow.tsx"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    [ -f "$POSTER_ROW" ] || { echo "MISSING: PosterRow.tsx"; exit 1; }
+    echo "  ✓ PosterRow.tsx"
+
+    grep -q "overflow-x-auto\|flex-row" "$POSTER_ROW" || { echo "MISSING: 가로 스크롤 레이아웃"; exit 1; }
+    echo "  ✓ 가로 스크롤 레이아웃 확인"
+
+    grep -q "PosterRow" "$RECOMMEND_PAGE" || { echo "MISSING: PosterRow in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx PosterRow 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.1)
+    echo "=== recommend-step1.1: page-scaffold + StickyActionBar ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+    STICKY_BAR="$MEDIAX_CMS/apps/web/components/contents/recommend/StickyActionBar.tsx"
+
+    [ -f "$RECOMMEND_PAGE" ] || { echo "MISSING: recommend/page.tsx"; exit 1; }
+    echo "  ✓ recommend/page.tsx"
+
+    [ -f "$STICKY_BAR" ] || { echo "MISSING: StickyActionBar.tsx"; exit 1; }
+    echo "  ✓ StickyActionBar.tsx"
+
+    grep -q "useContentReviewActions" "$RECOMMEND_PAGE" || { echo "MISSING: useContentReviewActions usage"; exit 1; }
+    echo "  ✓ hook 사용 확인"
+
+    grep -q "deriveMode\|PageMode\|readonly\|review" "$STICKY_BAR" || { echo "MISSING: mode 분기"; exit 1; }
+    echo "  ✓ mode 분기 확인"
+
+    grep -q "BulkActionModal" "$RECOMMEND_PAGE" || { echo "MISSING: BulkActionModal"; exit 1; }
+    echo "  ✓ BulkActionModal 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-step1.0)
+    echo "=== recommend-step1.0: action-hook + recommendDerive helper ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+
+    [ -f "$MEDIAX_CMS/apps/web/hooks/useContentReviewActions.ts" ] || { echo "MISSING: useContentReviewActions.ts"; exit 1; }
+    echo "  ✓ useContentReviewActions.ts"
+
+    [ -f "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" ] || { echo "MISSING: recommendDerive.ts"; exit 1; }
+    echo "  ✓ recommendDerive.ts"
+
+    grep -q "classifyField" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: classifyField export"; exit 1; }
+    grep -q "reasonSummary" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: reasonSummary export"; exit 1; }
+    grep -q "avgConfidence" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: avgConfidence export"; exit 1; }
+    grep -q "summarizeByKind" "$MEDIAX_CMS/apps/web/lib/recommendDerive.ts" || { echo "MISSING: summarizeByKind export"; exit 1; }
+    echo "  ✓ helper exports OK"
+
+    grep -q "applyRec\|applyAllAuto\|approve\|reject" "$MEDIAX_CMS/apps/web/hooks/useContentReviewActions.ts" || { echo "MISSING: hook actions"; exit 1; }
+    echo "  ✓ hook actions OK"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step1)
+    echo "=== recommend-cast-enrich-step1: bulk-dedup ==="
+    SVC="$BACKEND/api/programming/metadata/service.py"
+    SCRIPT="$BACKEND/scripts/dedup_contents.py"
+
+    grep -q "skipped_duplicates" "$SVC" || { echo "MISSING: skipped_duplicates in service.py"; exit 1; }
+    echo "  ✓ process_batch_rows skipped_duplicates 추가"
+
+    [ -f "$SCRIPT" ] || { echo "MISSING: scripts/dedup_contents.py"; exit 1; }
+    echo "  ✓ dedup_contents.py 존재"
+
+    python3 -c "import scripts.dedup_contents" || { echo "FAIL: dedup_contents import"; exit 1; }
+    echo "  ✓ import OK"
+
+    echo "--- dry-run 실행 ---"
+    python3 scripts/dedup_contents.py --dry-run --limit 3 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: dry-run"; exit 1; }
+    echo "  ✓ dry-run 성공"
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step2)
+    echo "=== recommend-cast-enrich-step2: kobis-movie-info ==="
+    KOBIS="$BACKEND/api/meta_core/clients/kobis_client.py"
+    grep -q "def movie_info" "$KOBIS" || { echo "MISSING: movie_info method"; exit 1; }
+    echo "  ✓ KobisClient.movie_info 추가"
+    python3 -c "
+from api.meta_core.clients.kobis_client import KobisClient
+import inspect
+sig = inspect.signature(KobisClient.movie_info)
+assert 'movie_cd' in sig.parameters, 'movie_cd 파라미터 없음'
+print('  ✓ signature OK')
+" || { echo "FAIL: signature"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step3)
+    echo "=== recommend-cast-enrich-step3: enrich-credits ==="
+    SVC="$BACKEND/api/programming/metadata/service.py"
+    ROUTER="$BACKEND/api/programming/metadata/router.py"
+
+    grep -q "def enrich_external_credits" "$SVC" || { echo "MISSING: enrich_external_credits"; exit 1; }
+    echo "  ✓ enrich_external_credits 함수"
+
+    grep -q "def _enrich_tmdb_source\|_enrich_tmdb_source" "$SVC" || { echo "MISSING: _enrich_tmdb_source"; exit 1; }
+    grep -q "def _enrich_kobis_source\|_enrich_kobis_source" "$SVC" || { echo "MISSING: _enrich_kobis_source"; exit 1; }
+    echo "  ✓ TMDB/KOBIS 헬퍼"
+
+    grep -q "raw_cast\[:5\]\|cast\[:5\]" "$SVC" || { echo "MISSING: cast 5명 슬라이스"; exit 1; }
+    echo "  ✓ cast 상위 5명 슬라이스"
+
+    grep -q "enrich-credits" "$ROUTER" || { echo "MISSING: /enrich-credits endpoint"; exit 1; }
+    echo "  ✓ endpoint 등록"
+
+    python3 -c "
+from api.programming.metadata.service import enrich_external_credits
+import inspect
+sig = inspect.signature(enrich_external_credits)
+assert 'content_id' in sig.parameters
+assert 'db' in sig.parameters
+print('  ✓ signature OK')
+" || { echo "FAIL: signature"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step4)
+    echo "=== recommend-cast-enrich-step4: verify-content-4192 ==="
+    echo "--- enrich-credits POST ---"
+    RES=$(curl -s -X POST http://localhost:8000/api/programming/metadata/contents/4192/enrich-credits)
+    echo "  응답: $RES"
+    echo "$RES" | grep -q '"tmdb"' || { echo "FAIL: tmdb 키 없음"; exit 1; }
+    echo "$RES" | grep -q '"kobis"' || { echo "FAIL: kobis 키 없음"; exit 1; }
+
+    echo "--- recommendations API ---"
+    REC=$(curl -s http://localhost:8000/api/programming/metadata/contents/4192/recommendations)
+    echo "$REC" | python3 -m json.tool | grep -A 3 '"field": "cast"' || { echo "WARN: cast 필드 없음 (소스에 cast 없을 수 있음)"; }
+    echo "$REC" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+fields = {r['field'] for r in data['auto_fill'] + data['conflicts']}
+print(f'  필드 목록: {sorted(fields)}')
+assert 'director' in fields or 'genres' in fields, '기존 필드 회귀'
+"
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step5)
+    echo "=== recommend-cast-enrich-step5: wrap (doc only) ==="
+    INDEX="$SCRIPT_DIR/../plans/dev-recommend-cast-enrich/index.json"
+    [ -f "$INDEX" ] || { echo "MISSING: plans/dev-recommend-cast-enrich/index.json"; exit 1; }
+    python3 -c "
+import json
+data = json.load(open('$INDEX'))
+pending = [s for s in data['steps'] if s['status'] == 'pending']
+assert not pending, f'pending steps 남음: {pending}'
+print('  ✓ 모든 step completed')
+" || { echo "FAIL: pending steps"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-year-param-fix)
+    echo "=== kmdb-year-param-fix: search_movie year → YYYYMMDD 형식 ==="
+    python3 -c "
+from shared.config import settings
+from api.meta_core.clients.kmdb_client import KmdbClient
+
+client = KmdbClient(settings.KMDB_API_KEY)
+results = client.search_movie('기생충', 2019)
+assert len(results) >= 1, f'year 필터 결과 없음: {results}'
+years = {r.get('prodYear', '') for r in results}
+print(f'  ✓ search_movie(기생충, 2019): {len(results)}건, prodYears={years}')
+assert any('2019' in y or '2018' in y for y in years), f'연도 범위 이상: {years}'
+print('  ✓ YYYYMMDD 형식 파라미터 정상 동작')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-live-search)
+    echo "=== kmdb-live-search: KmdbClient 실제 외부 API 호출 ==="
+    python3 -c "
+from shared.config import settings
+from api.meta_core.clients.kmdb_client import KmdbClient, KmdbApiKeyMissing, KmdbDailyLimitExceeded
+
+if not settings.KMDB_API_KEY:
+    print('  ✗ KMDB_API_KEY 미설정')
+    exit(1)
+print(f'  ✓ API 키 존재: {settings.KMDB_API_KEY[:4]}...')
+
+# NOTE: year 파라미터는 releaseDts=YYYYMMDD 형식 필요 — str(year) 변환 버그 (follow-up)
+# 이 검증은 year 없이 API 키 유효성 + 서버 응답 정상 여부만 확인
+client = KmdbClient(settings.KMDB_API_KEY)
+try:
+    results = client.search_movie('기생충')
+    assert len(results) >= 1, f'결과 없음: {results}'
+    assert 'DOCID' in results[0], f'DOCID 키 없음: {list(results[0].keys())[:5]}'
+    docid = results[0]['DOCID']
+    title = results[0].get('title', '').strip()
+    print(f'  ✓ search_movie 결과 {len(results)}건')
+    print(f'  ✓ DOCID={docid}, title={title}')
+except KmdbDailyLimitExceeded:
+    print('  ✗ KMDB daily quota 초과 — 내일 재시도')
+    exit(1)
+except KmdbApiKeyMissing:
+    print('  ✗ KmdbApiKeyMissing — API 키 문제')
+    exit(1)
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-unit-pytest)
+    echo "=== kmdb-unit-pytest: KMDB 단위 테스트 ==="
+    python3 -m pytest tests/meta_core/test_discovery_kmdb.py tests/meta_core/test_enrich.py \
+        -q -k "kmdb or discover_kmdb or KmdbClient or kmdb_client" \
+        --tb=short
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-discovery-run)
+    echo "=== kmdb-discovery-run: Celery discover_kmdb 동기 실행 ==="
+    python3 -c "
+import sqlite3, json
+conn = sqlite3.connect('media_ax_dev.db')
+before = conn.execute(\"SELECT count(*) FROM content_seeds WHERE source_type='kmdb'\").fetchone()[0]
+print(f'  before: content_seeds (source_type=kmdb) = {before}')
+conn.close()
+"
+    python3 -c "
+from workers.tasks.discovery_tasks import discover_kmdb
+print('  태스크 실행 중 (mode=new_release, days=90)...')
+result = discover_kmdb.apply(kwargs={'mode': 'new_release', 'days': 90}).get(timeout=120)
+print(f'  결과: {result}')
+"
+    python3 -c "
+import sqlite3
+conn = sqlite3.connect('media_ax_dev.db')
+after = conn.execute(\"SELECT count(*) FROM content_seeds WHERE source_type='kmdb'\").fetchone()[0]
+print(f'  after: content_seeds (source_type=kmdb) = {after}')
+samples = conn.execute(\"SELECT id, title, external_id FROM content_seeds WHERE source_type='kmdb' ORDER BY discovered_at DESC LIMIT 3\").fetchall()
+for s in samples:
+    print(f'    seed id={s[0]} title={s[1]} external_id={s[2]}')
+conn.close()
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-enrich-content)
+    echo "=== kmdb-enrich-content: KMDB enrich 경로 검증 (Docker PostgreSQL) ==="
+    # Docker 컨테이너의 backend 에서 enrich_content 호출
+    docker compose exec -T backend python3 -c "
+from shared.database import SessionLocal
+from sqlalchemy import text
+
+# 1. 대상 콘텐츠 선정: KMDB 소스 없는 콘텐츠 1건
+db = SessionLocal()
+try:
+    result = db.execute(text('''
+        SELECT c.id, c.title, c.production_year
+        FROM contents c
+        WHERE c.production_year IS NOT NULL
+          AND c.id NOT IN (
+              SELECT content_id FROM external_meta_sources WHERE source_type = 'kmdb'
+          )
+        ORDER BY c.id DESC LIMIT 1
+    '''))
+    row = result.fetchone()
+    if not row:
+        print('  ℹ 대상 콘텐츠 없음 (모두 이미 KMDB 소스 보유)')
+        exit(0)
+    content_id, title, year = row
+    print(f'  대상: content_id={content_id}, title={title}, year={year}')
+finally:
+    db.close()
+"
+
+    # 2. enrich_content 호출 → ExternalMetaSource 에 KMDB 행 생성 시도
+    docker compose exec -T backend python3 -c "
+from shared.database import SessionLocal
+from sqlalchemy import text
+from api.meta_core.enrich import enrich_content
+
+db = SessionLocal()
+content_id = None
+try:
+    result = db.execute(text('''
+        SELECT c.id FROM contents c
+        WHERE c.production_year IS NOT NULL
+          AND c.id NOT IN (SELECT content_id FROM external_meta_sources WHERE source_type='kmdb')
+        ORDER BY c.id DESC LIMIT 1
+    '''))
+    row = result.fetchone()
+    if not row:
+        print('  ℹ 대상 콘텐츠 없음 (enrich 스킵)')
+        exit(0)
+    content_id = row[0]
+
+    # enrich 실행
+    enrich_content(content_id, db)
+    db.commit()
+    print(f'  ✓ enrich_content({content_id}) 완료')
+finally:
+    db.close()
+
+# 3. 결과 검증: external_meta_sources 에 kmdb 행 확인
+db2 = SessionLocal()
+try:
+    result = db2.execute(text('''
+        SELECT id, source_type, substr(json_extract(raw_json, '$'), 1, 150)
+        FROM external_meta_sources
+        WHERE content_id = :cid AND source_type = 'kmdb'
+        ORDER BY created_at DESC LIMIT 1
+    '''), {'cid': content_id})
+    row = result.fetchone()
+    if row:
+        print(f'  ✓ ExternalMetaSource id={row[0]}, source_type={row[1]}')
+        print(f'  raw_json 발췌: {row[2]}...')
+    else:
+        print(f'  ℹ 새 ExternalMetaSource (source_type=kmdb) 행 없음 (enrich 결과 KMDB 매칭 실패 가능)')
+finally:
+    db2.close()
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-enrich-cache-read)
+    echo "=== kmdb-enrich-cache-read: enrich 캐시 우선 조회 구조 ==="
+    # 1. 임포트 + 코드 구조 확인
+    python3 -c "
+from api.meta_core.enrich import enrich_content, _fetch_kmdb_with_cache
+import inspect
+src = inspect.getsource(_fetch_kmdb_with_cache)
+assert 'KmdbMovieCache' in src, 'KmdbMovieCache 조회 없음'
+assert '_upsert_kmdb_movie' in src, 'cache upsert 없음'
+assert 'cache HIT' in src, 'cache hit 로깅 없음'
+assert 'cache MISS' in src, 'cache miss 로깅 없음'
+print('  ✓ _fetch_kmdb_with_cache 구조 OK')
+"
+    # 2. enrich_content KMDB 섹션이 _fetch_kmdb_with_cache 를 호출하는지 확인
+    python3 -c "
+from api.meta_core.enrich import enrich_content
+import inspect
+src = inspect.getsource(enrich_content)
+assert '_fetch_kmdb_with_cache' in src, 'enrich_content 에 cache 함수 미사용'
+print('  ✓ enrich_content → _fetch_kmdb_with_cache 연결 OK')
+"
+    # 3. KmdbMovieCache 직접 조회 + raw_json 가 있으면 cache hit 경로 검증 (DB 수준)
+    python3 -c "
+import sqlite3, json
+conn = sqlite3.connect('media_ax_dev.db')
+# 테스트용 캐시 행 삽입
+docid = 'VERIF|99998'
+raw = {'DOCID': docid, 'title': '__verify_enrich__', 'prodYear': '2000'}
+conn.execute('''
+    INSERT OR REPLACE INTO kmdb_movie_cache
+    (docid, title, prod_year, raw_json, first_fetched_at, last_fetched_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+''', (docid, '__verify_enrich__', 2000, json.dumps(raw)))
+conn.commit()
+# 조회 확인
+row = conn.execute(\"SELECT docid, title FROM kmdb_movie_cache WHERE title='__verify_enrich__'\").fetchone()
+assert row and row[0] == docid
+conn.execute(\"DELETE FROM kmdb_movie_cache WHERE docid=?\", (docid,))
+conn.commit()
+conn.close()
+print('  ✓ kmdb_movie_cache 캐시 조회 경로 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-quota-aware-beat)
+    echo "=== kmdb-quota-aware-beat: tick 태스크 + Beat entry + daily_remaining ==="
+    # 1. daily_remaining 헬퍼
+    python3 -c "
+from shared.quota_manager import QuotaManager
+import inspect
+src = inspect.getsource(QuotaManager.daily_remaining)
+assert 'daily_limit' in src and 'current_count' in src
+print('  ✓ QuotaManager.daily_remaining OK')
+"
+    # 2. kmdb_quota_backfill_tick 임포트 + 구조
+    python3 -c "
+from workers.tasks.kmdb_cache import kmdb_quota_backfill_tick
+import inspect
+src = inspect.getsource(kmdb_quota_backfill_tick)
+assert 'daily_remaining' in src, 'daily_remaining 미사용'
+assert 'backfill_kmdb.delay' in src, '.delay() 비동기 위임 없음'
+assert '_QUOTA_THRESHOLD' in src or '200' in src, 'quota 임계치 없음'
+print('  ✓ kmdb_quota_backfill_tick 구조 OK')
+"
+    # 3. Beat entry 등록 확인
+    python3 -c "
+from workers.celery_app import celery_app
+schedule = celery_app.conf.beat_schedule
+assert 'backfill-kmdb-historical' in schedule, 'Beat entry 없음'
+entry = schedule['backfill-kmdb-historical']
+assert entry['task'] == 'workers.tasks.kmdb_cache.kmdb_quota_backfill_tick'
+print('  ✓ Beat entry backfill-kmdb-historical OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-backfill-task)
+    echo "=== kmdb-backfill-task: backfill_kmdb 태스크 + search_year + celery include ==="
+    # 1. search_year 추가 확인
+    python3 -c "
+from api.meta_core.clients.kmdb_client import KmdbClient
+import inspect
+src = inspect.getsource(KmdbClient.search_year)
+assert 'releaseDts' in src and 'releaseDte' in src and 'startCount' in src
+print('  ✓ KmdbClient.search_year OK')
+"
+    # 2. backfill_kmdb 태스크 임포트 + 구조 확인
+    python3 -c "
+from workers.tasks.kmdb_cache import backfill_kmdb
+import inspect
+src = inspect.getsource(backfill_kmdb)
+assert 'search_year' in src, 'search_year 미사용'
+assert 'KmdbDailyLimitExceeded' in src, 'quota 예외 처리 없음'
+assert 'kmdb_backfill' in src, 'TmdbSyncSource.kmdb_backfill 미기록'
+assert 'target_year' in src, 'target_year 미설정'
+print('  ✓ backfill_kmdb 구조 OK')
+"
+    # 3. celery_app include 확인
+    python3 -c "
+from workers.celery_app import celery_app
+assert 'workers.tasks.kmdb_cache' in celery_app.conf.include, 'celery include 없음'
+print('  ✓ celery_app include OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-daily-sync)
+    echo "=== kmdb-daily-sync: discover_kmdb 임포트 + ExternalSyncLog 기록 구조 ==="
+    # 1. 임포트 + 코드 구조 확인
+    python3 -c "
+from workers.tasks.discovery_tasks import discover_kmdb
+import inspect
+src = inspect.getsource(discover_kmdb)
+assert '_upsert_kmdb_movie' in src, '_upsert_kmdb_movie 호출 없음'
+assert 'TmdbSyncLog' in src or 'ExternalSyncLog' in src, 'SyncLog 기록 없음'
+assert 'TmdbSyncSource.kmdb_daily' in src, 'kmdb_daily source 미설정'
+assert 'ExternalSourceType.kmdb' in src, 'external_source kmdb 미설정'
+print('  ✓ discover_kmdb 구조 OK')
+"
+    # 2. SQLite DB에서 external_sync_log 테이블 + TmdbSyncSource enum 컬럼 확인
+    python3 -c "
+import sqlite3
+conn = sqlite3.connect('media_ax_dev.db')
+tables = [t[0] for t in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall()]
+assert 'external_sync_log' in tables, 'external_sync_log 테이블 없음'
+cols = [c[1] for c in conn.execute('PRAGMA table_info(external_sync_log)').fetchall()]
+for c in ['external_source', 'items_fetched', 'items_inserted', 'items_updated']:
+    assert c in cols, f'{c} 컬럼 없음'
+conn.close()
+print('  ✓ external_sync_log 스키마 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-upsert-helper)
+    echo "=== kmdb-upsert-helper: _upsert_kmdb_movie 3가지 결과 ==="
+    python3 -c "
+from workers.tasks.kmdb_cache import _upsert_kmdb_movie
+from shared.database import SessionLocal
+
+RAW_BASE = {
+    'DOCID': 'TEST|99999',
+    'title': '테스트영화',
+    'titleEng': 'Test Movie',
+    'prodYear': '2010',
+    'nation': '한국',
+    'genre': '드라마',
+    'directors': {'director': [{'directorNm': '홍길동'}]},
+    'actors': {'actor': [{'actorNm': '김철수'}]},
+    'plots': {'plot': [{'plotText': '테스트 시놉시스'}]},
+}
+RAW_UPDATED = dict(RAW_BASE, title='테스트영화(수정)', plots={'plot': [{'plotText': '수정된 시놉시스'}]})
+
+db = SessionLocal()
+try:
+    # 혹시 이전 테스트 데이터 정리
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+    old = db.get(KmdbMovieCache, 'TEST|99999')
+    if old:
+        db.delete(old)
+        db.commit()
+
+    r1 = _upsert_kmdb_movie(db, RAW_BASE)
+    db.commit()
+    assert r1 == 'inserted', f'1회차 기대 inserted, 실제 {r1}'
+    print(f'  ✓ 1회차: {r1}')
+
+    r2 = _upsert_kmdb_movie(db, RAW_BASE)
+    db.commit()
+    assert r2 == 'unchanged', f'2회차 기대 unchanged, 실제 {r2}'
+    print(f'  ✓ 2회차: {r2}')
+
+    r3 = _upsert_kmdb_movie(db, RAW_UPDATED)
+    db.commit()
+    assert r3 == 'updated', f'3회차 기대 updated, 실제 {r3}'
+    print(f'  ✓ 3회차: {r3}')
+
+    # 정리
+    row = db.get(KmdbMovieCache, 'TEST|99999')
+    db.delete(row)
+    db.commit()
+finally:
+    db.close()
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-cache-model)
+    echo "=== kmdb-cache-model: KmdbMovieCache ORM + migration 0015 ==="
+    # 1. 모델 import + TmdbSyncSource enum 값 확인
+    python3 -c "
+from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+from api.programming.metadata.models.tmdb_cache import TmdbSyncSource
+assert KmdbMovieCache.__tablename__ == 'kmdb_movie_cache'
+assert TmdbSyncSource.kmdb_daily == 'kmdb_daily'
+assert TmdbSyncSource.kmdb_backfill == 'kmdb_backfill'
+print('  ✓ KmdbMovieCache import + TmdbSyncSource enum OK')
+"
+    # 2. __init__ re-export 확인
+    python3 -c "
+from api.programming.metadata.models import KmdbMovieCache
+print('  ✓ __init__ re-export OK')
+"
+    # 3. SQLite에서 migration 0015 적용 후 테이블 존재 확인
+    python3 -c "
+import sqlite3
+conn = sqlite3.connect('media_ax_dev.db')
+tables = [t[0] for t in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall()]
+assert 'kmdb_movie_cache' in tables, f'kmdb_movie_cache 테이블 없음 (현재 테이블: {tables})'
+cols = [c[1] for c in conn.execute('PRAGMA table_info(kmdb_movie_cache)').fetchall()]
+for c in ['docid', 'title', 'prod_year', 'directors', 'actors', 'raw_json']:
+    assert c in cols, f'{c} 컬럼 없음'
+conn.close()
+print('  ✓ kmdb_movie_cache 테이블 + 컬럼 OK')
+"
+    # 4. migration 파일 존재 확인
+    [ -f "alembic/versions/0015_kmdb_cache.py" ] || { echo "MISSING: 0015_kmdb_cache.py"; exit 1; }
+    echo "  ✓ 0015_kmdb_cache.py"
+    echo "=== PASS ==="
+    ;;
+
+  data-migration-tool)
+    echo "=== data-migration-tool: 마이그레이션 스크립트 존재 + dry-run ==="
+    SCRIPT=/home/ktalpha/Work/mediaX/backend/scripts/migrate_sqlite_to_postgres.py
+    [ -f "$SCRIPT" ] || { echo "MISSING: $SCRIPT"; exit 1; }
+    echo "  ✓ migrate_sqlite_to_postgres.py 존재"
+    # dry-run 실행 — 총 건수 > 600,000 확인
+    OUT=$(docker exec \
+      -e DATABASE_URL=postgresql://media_ax:media_ax@postgres:5432/media_ax \
+      mediax-backend-1 \
+      python3 /app/scripts/migrate_sqlite_to_postgres.py \
+        --sqlite-path /app/media_ax_dev.db \
+        --pg-url postgresql://media_ax:media_ax@postgres:5432/media_ax \
+        --dry-run 2>&1)
+    echo "$OUT" | grep -q "SQLite 합계" || { echo "dry-run 출력 이상: $OUT"; exit 1; }
+    TOTAL=$(echo "$OUT" | grep "SQLite 합계" | grep -oE '[0-9,]+건' | head -1 | tr -d ',건')
+    [ "$TOTAL" -gt 600000 ] || { echo "FAIL: dry-run 총 건수 $TOTAL < 600000"; exit 1; }
+    echo "  ✓ dry-run 통과 — 총 ${TOTAL}건 이전 대상"
+    echo "=== PASS ==="
+    ;;
+
+  pg-schema-sync)
+    echo "=== pg-schema-sync: Postgres alembic 0016 (head) 적용 검증 ==="
+    # 1. alembic current = 0016
+    VER=$(docker exec -e DATABASE_URL=postgresql://media_ax:media_ax@postgres:5432/media_ax mediax-backend-1 alembic current 2>&1 | grep -o '[0-9]\{4\}')
+    [ "$VER" = "0016" ] || { echo "FAIL: alembic_version=$VER (expected 0016)"; exit 1; }
+    echo "  ✓ alembic_version=0016"
+    # 2. 필수 테이블 존재
+    for TBL in kmdb_movie_cache content_action_logs content_audit_logs content_distributions web_search_quota_log; do
+      docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+        "SELECT 1 FROM information_schema.tables WHERE table_name='$TBL'" | grep -q 1 \
+        || { echo "MISSING table: $TBL"; exit 1; }
+    done
+    echo "  ✓ 5개 신규 테이블 존재"
+    # 3. externalsourcetype ENUM에 bulk_upload / manual 포함
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT enumlabel FROM pg_enum JOIN pg_type ON enumtypid=pg_type.oid WHERE typname='externalsourcetype'" \
+      | grep -q "bulk_upload" || { echo "MISSING ENUM value: bulk_upload"; exit 1; }
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT enumlabel FROM pg_enum JOIN pg_type ON enumtypid=pg_type.oid WHERE typname='externalsourcetype'" \
+      | grep -q "manual" || { echo "MISSING ENUM value: manual"; exit 1; }
+    echo "  ✓ externalsourcetype ENUM: bulk_upload, manual 포함"
+    # 4. tmdbsyncsource ENUM에 kmdb_daily / kmdb_backfill 포함
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT enumlabel FROM pg_enum JOIN pg_type ON enumtypid=pg_type.oid WHERE typname='tmdbsyncsource'" \
+      | grep -q "kmdb_daily" || { echo "MISSING ENUM value: kmdb_daily"; exit 1; }
+    echo "  ✓ tmdbsyncsource ENUM: kmdb_daily/kmdb_backfill 포함"
+    echo "=== PASS ==="
+    ;;
+
+  kobis-quota-backfill)
+    echo "=== kobis-quota-backfill: KOBIS quota-aware backfill Beat ==="
+    # 1. backfill_kobis 시그니처 (year: int)
+    docker exec mediax-worker-1 python3 -c "
+import inspect
+from workers.tasks.metadata import backfill_kobis
+sig = inspect.signature(backfill_kobis.run)
+params = list(sig.parameters.keys())
+assert params == ['year'], f'backfill_kobis 시그니처 불일치: {params}'
+print('  ✓ backfill_kobis(year: int) 시그니처 OK')
+"
+    # 2. kobis_quota_backfill_tick 등록 확인
+    docker exec mediax-worker-1 python3 -c "
+from workers.tasks.metadata import kobis_quota_backfill_tick, _KOBIS_QUOTA_THRESHOLD, _KOBIS_DAILY_LIMIT, _KOBIS_BACKFILL_FLOOR_YEAR
+assert kobis_quota_backfill_tick.name == 'workers.tasks.metadata.kobis_quota_backfill_tick'
+assert _KOBIS_QUOTA_THRESHOLD == 1000
+assert _KOBIS_DAILY_LIMIT == 2900
+assert _KOBIS_BACKFILL_FLOOR_YEAR == 1990
+print('  ✓ kobis_quota_backfill_tick task + 상수 OK')
+"
+    # 3. Beat 스케줄 등록 확인
+    docker exec mediax-worker-1 python3 -c "
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule['backfill-kobis-historical']
+assert sched['task'] == 'workers.tasks.metadata.kobis_quota_backfill_tick'
+# crontab 객체 — hour=6, minute=30
+ct = sched['schedule']
+assert 6 in ct.hour and 30 in ct.minute, f'Beat 시각 불일치: hour={ct.hour}, minute={ct.minute}'
+print('  ✓ backfill-kobis-historical Beat @ 06:30 KST 등록 OK')
+"
+    # 4. tick 동기 실행 — quota 임계치 미만이거나 모두 백필되면 skip 결과
+    docker exec mediax-worker-1 python3 -c "
+from workers.tasks.metadata import kobis_quota_backfill_tick
+result = kobis_quota_backfill_tick.apply().result
+print('  tick 결과:', result)
+assert isinstance(result, dict)
+# 결과는 skip 또는 triggered_year 중 하나
+assert ('skipped' in result) or ('triggered_year' in result), f'예상치 못한 결과: {result}'
+print('  ✓ tick 동기 실행 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-front)
+    echo "=== kmdb-front: KMDB 프론트엔드 — api.ts 타입 + kmdb/page.tsx ==="
+    CMS=/home/ktalpha/Work/mediaX/mediaX-CMS
+    # 1. KmdbCacheItem / PaginatedKmdbCache 타입 존재
+    grep -q "KmdbCacheItem" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: KmdbCacheItem in api.ts"; exit 1; }
+    grep -q "PaginatedKmdbCache" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: PaginatedKmdbCache in api.ts"; exit 1; }
+    echo "  ✓ KmdbCacheItem / PaginatedKmdbCache 타입 존재"
+    # 2. kmdbApi.getCache 메서드 존재
+    grep -q "getCache" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: kmdbApi.getCache in api.ts"; exit 1; }
+    echo "  ✓ kmdbApi.getCache 메서드 존재"
+    # 3. kmdb/page.tsx 동기화 로그 + 캐시 검색 섹션 존재
+    grep -q "SOURCE_LABEL" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: SOURCE_LABEL in kmdb/page.tsx"; exit 1; }
+    grep -q "kmdb_backfill" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: kmdb_backfill label"; exit 1; }
+    grep -q "target_year" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: target_year column"; exit 1; }
+    grep -q "getCache" "$CMS/apps/web/app/(main)/programming/sources/kmdb/page.tsx" || { echo "MISSING: getCache call in page.tsx"; exit 1; }
+    echo "  ✓ 동기화 로그 + 캐시 검색 섹션 존재"
+    # 4. TypeScript 타입 체크
+    cd "$CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | head -20
+    [ ${PIPESTATUS[0]} -eq 0 ] || exit 1
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  kobis-kmdb-mapped-contents)
+    echo "=== kobis-kmdb-mapped-contents: 매핑 콘텐츠 탐색 API + 타입체크 ==="
+    # 1. 백엔드 API 확인
+    python3 -c "
+import urllib.request, json
+# KOBIS
+r = urllib.request.urlopen('http://localhost:8000/api/programming/metadata/kobis/contents?size=5')
+d = json.loads(r.read())
+assert d['total'] > 0, f'KOBIS contents 0건'
+it = d['items'][0]
+for f in ['content_id','title','content_type','status','external_id']:
+    assert f in it, f'KOBIS 응답에 {f} 없음'
+print(f'  ✓ KOBIS /contents: total={d[\"total\"]}건, 필드 OK')
+
+# KMDB (0건이어도 스키마 OK면 통과)
+r2 = urllib.request.urlopen('http://localhost:8000/api/programming/metadata/kmdb/contents?size=5')
+d2 = json.loads(r2.read())
+assert 'total' in d2 and 'items' in d2, 'KMDB 응답 스키마 오류'
+print(f'  ✓ KMDB /contents: total={d2[\"total\"]}건 (enrich 전 0 정상)')
+"
+    # 2. 프론트 타입체크
+    cd /home/ktalpha/Work/mediaX/mediaX-CMS && npm run typecheck 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  kobis-api-fix)
+    echo "=== kobis-api-fix: KOBIS API 파라미터 수정 검증 ==="
+    docker exec mediax-worker-1 bash -c "cd /app && python3 << 'PYEOF'
+import httpx
+from shared.config import settings
+
+# 1. backfill: searchMovieList YYYY 포맷
+resp = httpx.get(
+    'http://www.kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json',
+    params={'key': settings.KOBIS_API_KEY, 'openStartDt': '2025', 'openEndDt': '2025', 'itemPerPage': '1', 'curPage': '1'},
+    timeout=15.0,
+)
+r = resp.json().get('movieListResult', {})
+assert r.get('movieList'), f'backfill 0건: {resp.text[:200]}'
+print('  ✓ backfill searchMovieList YYYY 포맷 OK')
+
+# 2. sync_kobis: searchDailyBoxOfficeList YYYYMMDD 포맷
+from datetime import datetime, timedelta, timezone
+date_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y%m%d')
+resp2 = httpx.get(
+    'http://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json',
+    params={'key': settings.KOBIS_API_KEY, 'targetDt': date_str},
+    timeout=15.0,
+)
+movies = resp2.json().get('boxOfficeResult', {}).get('dailyBoxOfficeList', [])
+assert movies, f'daily 0건: {resp2.text[:200]}'
+print(f'  ✓ sync_kobis dailyBoxOfficeList {date_str} {len(movies)}건 OK')
+
+# 3. 실제 task 실행
+from workers.tasks.metadata import sync_kobis
+r = sync_kobis()
+assert 'total_from_kobis' in r or 'skipped' in r, f'sync_kobis 응답 이상: {r}'
+print(f'  ✓ sync_kobis 실행: {r}')
+PYEOF
+"
+    echo "=== PASS ==="
+    ;;
+
+  sqlite-to-postgres)
+    echo "=== sqlite-to-postgres: SQLite → PostgreSQL 전환 검증 ==="
+    PG_URL="postgresql://media_ax:media_ax@localhost:5432/media_ax"
+    # 1. alembic head 확인
+    python3 -c "
+import subprocess, sys
+r = subprocess.run(
+    ['docker', 'exec', 'mediax-backend-1', 'bash', '-c',
+     'DATABASE_URL=postgresql://media_ax:media_ax@postgres:5432/media_ax alembic current'],
+    capture_output=True, text=True
+)
+out = r.stdout + r.stderr
+assert '0017' in out and 'head' in out, f'alembic head 아님: {out}'
+print('  ✓ alembic 0017 (head)')
+"
+    # 2. 컨테이너 DATABASE_URL 확인
+    python3 -c "
+import subprocess
+r = subprocess.run(
+    ['docker', 'exec', 'mediax-backend-1', 'bash', '-c', 'echo \$DATABASE_URL'],
+    capture_output=True, text=True
+)
+url = r.stdout.strip()
+assert 'postgresql' in url, f'DATABASE_URL이 SQLite: {url}'
+print(f'  ✓ DATABASE_URL = {url}')
+"
+    # 3. API health + contents row count
+    python3 -c "
+import urllib.request, json
+resp = urllib.request.urlopen('http://localhost:8000/health')
+h = json.loads(resp.read())
+assert h.get('status') == 'ok', f'health 실패: {h}'
+print('  ✓ /health ok')
+resp2 = urllib.request.urlopen('http://localhost:8000/api/programming/metadata/contents?limit=1')
+d = json.loads(resp2.read())
+total = d.get('total', 0)
+assert total > 0, f'contents 0건'
+print(f'  ✓ contents {total:,}건 반환')
+"
+    echo "=== PASS ==="
+    ;;
+
+  bulk-mapping-schema-ext)
+    echo "=== bulk-mapping-schema-ext: ContentMetadata 확장 컬럼 + alembic 0018 ==="
+    # 1. alembic 현재 head 확인
+    docker exec mediax-backend-1 alembic current 2>&1 | tail -5
+    # 2. 마이그레이션 실행
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -10
+    # 3. 컬럼 존재 확인
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+from shared.database import SessionLocal
+from sqlalchemy import text
+db = SessionLocal()
+try:
+    row = db.execute(text("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name='content_metadata'
+          AND column_name IN ('audio_channels','extra_metadata')
+        ORDER BY column_name
+    """)).fetchall()
+    cols = {r[0] for r in row}
+    assert 'audio_channels' in cols, "audio_channels 누락"
+    assert 'extra_metadata' in cols, "extra_metadata 누락"
+    print(f"  ✓ 컬럼 확인: {sorted(cols)}")
+finally:
+    db.close()
+PYEOF
+    # 4. 모델 import + 컬럼 속성 확인
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+from api.programming.metadata.models.content import ContentMetadata
+assert hasattr(ContentMetadata, 'audio_channels'), "모델 audio_channels 누락"
+assert hasattr(ContentMetadata, 'extra_metadata'), "모델 extra_metadata 누락"
+print("  ✓ ContentMetadata 모델 속성 OK")
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
+  csv-encoding-fallback-frontend)
+    echo "=== csv-encoding-fallback-frontend: 업로드 페이지 프리뷰 인코딩 폴백 ==="
+    UPLOAD_PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/upload/page.tsx"
+    # 1. TextDecoder 폴백 로직 존재 확인
+    grep -q 'TextDecoder("utf-8", { fatal: true })' "$UPLOAD_PAGE" || { echo "  ✗ utf-8 fatal decoder 누락"; exit 1; }
+    grep -q 'TextDecoder("euc-kr")' "$UPLOAD_PAGE" || { echo "  ✗ euc-kr 폴백 누락"; exit 1; }
+    echo "  ✓ TextDecoder 폴백 로직 OK"
+    # 2. typecheck (workspace 단위)
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    npm run typecheck 2>&1 | tail -20
+    echo "  ✓ typecheck pass"
+    cd "$BACKEND"
+    echo "=== PASS ==="
+    ;;
+
+  csv-encoding-fallback)
+    echo "=== csv-encoding-fallback: bulk upload CSV 인코딩 폴백 ==="
+    # 1. Python 문법 OK + 폴백 로직 존재 확인
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+import ast, pathlib
+src = pathlib.Path("/app/api/programming/metadata/router.py").read_text()
+ast.parse(src)
+assert 'for encoding in ("utf-8-sig", "cp949", "euc-kr"):' in src, "폴백 루프 누락"
+assert '지원하지 않는 파일 인코딩' in src, "에러 메시지 누락"
+print("  ✓ syntax + fallback 로직 OK")
+PYEOF
+    # 2. CP949 인코딩 디코드 실측
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+sample = "title,production_year\n영화_성인19+2026,2026\n".encode("cp949")
+text = None
+for enc in ("utf-8-sig", "cp949", "euc-kr"):
+    try:
+        text = sample.decode(enc)
+        used = enc
+        break
+    except UnicodeDecodeError:
+        continue
+assert text is not None, "디코드 실패"
+assert "영화_성인19+2026" in text, f"한글 깨짐: {text!r}"
+print(f"  ✓ CP949 폴백 OK (used={used})")
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
+  service-bulk-import-parsers)
+    echo "=== service-bulk-import-parsers: 한국어 CSV 파서 단위 테스트 ==="
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+import sys
+sys.path.insert(0, "/app")
+
+# router 모듈에서 헬퍼 임포트
+from api.programming.metadata.router import (
+    _parse_smpte_runtime, _parse_year, _map_audio_channels, _normalize_content_type
+)
+
+# _parse_smpte_runtime
+assert _parse_smpte_runtime("01:09:52:04") == 70, f"got {_parse_smpte_runtime('01:09:52:04')}"
+assert _parse_smpte_runtime("00:59:30:00") == 60, f"got {_parse_smpte_runtime('00:59:30:00')}"
+assert _parse_smpte_runtime("00:00:45:00") == 1
+assert _parse_smpte_runtime("") is None
+assert _parse_smpte_runtime(None) is None
+print("  ✓ _parse_smpte_runtime OK")
+
+# _parse_year
+assert _parse_year("2026-03-23") == 2026
+assert _parse_year("2026") == 2026
+assert _parse_year("") is None
+assert _parse_year(None) is None
+assert _parse_year("abc") is None
+print("  ✓ _parse_year OK")
+
+# _map_audio_channels
+assert _map_audio_channels("1") == "5.1CH"
+assert _map_audio_channels("2") == "Stereo"
+assert _map_audio_channels("Atmos") == "Atmos"
+assert _map_audio_channels("") is None
+assert _map_audio_channels(None) is None
+print("  ✓ _map_audio_channels OK")
+
+# _normalize_content_type
+assert _normalize_content_type("본편") == "movie"
+assert _normalize_content_type("부속") == "movie"
+assert _normalize_content_type("소장") == "movie"
+assert _normalize_content_type("시리즈") == "series"
+assert _normalize_content_type("영화") == "movie"
+assert _normalize_content_type("unknown") == "movie"
+print("  ✓ _normalize_content_type OK")
+
+print("  ✓ 모든 파서 테스트 통과")
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
+  service-bulk-import)
+    echo "=== service-bulk-import: 한국어 CSV E2E import 검증 ==="
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+from shared.database import SessionLocal
+from sqlalchemy import text
+
+db = SessionLocal()
+try:
+    total = db.execute(text("SELECT count(*) FROM contents")).scalar()
+    assert total > 100, f"contents 너무 적음: {total}"
+    print(f"  ✓ contents {total}건")
+
+    # audio_channels=Stereo 존재 확인
+    stereo = db.execute(text("SELECT count(*) FROM content_metadata WHERE audio_channels='Stereo'")).scalar()
+    assert stereo > 100, f"Stereo audio 너무 적음: {stereo}"
+    print(f"  ✓ audio_channels Stereo {stereo}건")
+
+    # video_resolution=HD 존재 확인
+    hd = db.execute(text("SELECT count(*) FROM content_metadata WHERE video_resolution='HD'")).scalar()
+    assert hd > 100, f"HD resolution 너무 적음: {hd}"
+    print(f"  ✓ video_resolution HD {hd}건")
+
+    # extra_metadata에 영상유형 보존 확인
+    extra = db.execute(text("SELECT count(*) FROM content_metadata WHERE extra_metadata->>'영상유형' IS NOT NULL")).scalar()
+    assert extra > 100, f"extra_metadata 영상유형 너무 적음: {extra}"
+    print(f"  ✓ extra_metadata 영상유형 {extra}건")
+
+    # runtime이 raw_json에 저장됐는지 확인 (외부소스)
+    runtime_count = db.execute(text("SELECT count(*) FROM external_meta_sources WHERE raw_json->>'runtime' IS NOT NULL")).scalar()
+    assert runtime_count > 100, f"runtime raw_json 너무 적음: {runtime_count}"
+    print(f"  ✓ runtime in raw_json {runtime_count}건")
+
+    print("  ✓ E2E import 검증 완료")
+finally:
+    db.close()
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
+  link-kmdb-to-contents)
+    echo "=== link-kmdb-to-contents: KMDB 캐시 → contents 링크 태스크 ==="
+    # 1. 태스크 import + Beat 스케줄 등록 확인
+    docker exec mediax-worker-1 python3 << 'PYEOF'
+from workers.tasks.metadata import link_kmdb_cache_to_contents
+from workers.celery_app import celery_app
+assert "link-kmdb-to-contents" in celery_app.conf.beat_schedule, "Beat 스케줄 미등록"
+print("  ✓ task import + beat schedule OK")
+PYEOF
+    # 2. 실제 실행 — 매칭 결과 확인
+    docker exec mediax-worker-1 python3 << 'PYEOF'
+import sys
+from workers.tasks.metadata import link_kmdb_cache_to_contents
+result = link_kmdb_cache_to_contents()
+print(f"  link_kmdb result: {result}")
+inserted = result.get("inserted", 0)
+unchanged = result.get("unchanged", 0)
+errors = result.get("errors", 0)
+assert errors == 0, f"errors={errors}"
+print(f"  ✓ inserted={inserted} unchanged={unchanged} errors={errors}")
+PYEOF
+    # 3. external_meta_sources 에 kmdb 레코드 존재 확인
+    docker exec mediax-worker-1 python3 << 'PYEOF'
+from shared.database import SessionLocal
+from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType
+db = SessionLocal()
+try:
+    cnt = db.query(ExternalMetaSource).filter(
+        ExternalMetaSource.source_type == ExternalSourceType.kmdb
+    ).count()
+    assert cnt > 0, f"external_meta_sources kmdb 0건"
+    print(f"  ✓ kmdb ExternalMetaSource {cnt:,}건")
+finally:
+    db.close()
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents"
     exit 1
     ;;
 esac

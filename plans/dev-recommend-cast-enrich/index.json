@@ -1,0 +1,26 @@
+{
+  "project": "mediaX",
+  "phase": "dev-recommend-cast-enrich",
+  "description": "추천 상세 화면 cast 보강 + bulk_upload 중복 방지 + 캐시 시스템 활용. content 4192 검증.",
+  "context": {
+    "problem_1": "process_batch_rows dedup 없음 → 같은 (title, year, cp) 콘텐츠 중복 생성 (344그룹, 4192는 3중복)",
+    "problem_2": "외부 소스가 검색 API 응답만 저장 → cast 필드 비어있음 → 추천 표시 안 됨",
+    "problem_3": "tmdb_movie_cache.raw_json에 credits 있는데 추천 API가 참조 안 함"
+  },
+  "decisions": {
+    "tmdb_cache_strategy": "tmdb_movie_cache/tmdb_tv_cache.raw_json 활용. 미스 시 detail_movie/tv API 호출 + 캐시 upsert(_upsert_movie/tv 재사용)",
+    "kobis_cache_strategy": "별도 캐시 테이블 신설 안 함 (이번 task). ExternalMetaSource.raw_json에 movie_info 결과 병합. 향후 KobisMovieCache 신설은 별도 task.",
+    "kmdb_scope": "범위 외. KMDB 호출 사례 적음 + 한국 영화 외 미적용 → 후속 task",
+    "bulk_dedup_policy": "(title, production_year, cp_name) 매칭 시 신규 Content 생성 안 함. 기존 raw_json에 빈 값만 채움(덮어쓰기 X).",
+    "existing_duplicates": "344그룹 정리는 dedup_contents.py 스크립트로 dry-run 기본 → 사용자 확인 후 --apply",
+    "cast_display": "상위 5명 슬라이스 (TMDB/KOBIS 정렬 순서 유지)",
+    "trigger": "신규 endpoint POST /contents/{id}/enrich-credits — 단건 처리. 일괄 처리는 후속."
+  },
+  "steps": [
+    { "step": "1", "name": "bulk-dedup", "status": "pending" },
+    { "step": "2", "name": "kobis-movie-info", "status": "completed", "summary": "KobisClient.movie_info 메서드 추가 — 영화 상세 정보 조회", "completed_at": "2026-05-17T10:44:57+09:00" },
+    { "step": "3", "name": "enrich-credits", "status": "completed", "summary": "enrich_external_credits 통합 함수 + TMDB/KOBIS 헬퍼 + cast 5명 슬라이스", "completed_at": "2026-05-17T10:51:41+09:00" },
+    { "step": "4", "name": "verify-content-4192", "status": "completed", "summary": "content 4192 검증 — enrich-credits 정상 작동, cast 필드 표시, 기존 6개 필드 회귀 무", "completed_at": "2026-05-17T14:17:14+09:00" },
+    { "step": "5", "name": "wrap", "status": "completed", "summary": "문서 갱신 — CLAUDE.md enrich-credits 엔드포인트 추가, TODO.md Done 이동", "completed_at": "2026-05-17T14:20:36+09:00" }
+  ]
+}

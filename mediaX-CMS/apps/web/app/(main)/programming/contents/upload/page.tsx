@@ -69,7 +69,18 @@ export default function UploadPage() {
     setFile(selectedFile)
 
     if (isCSV) {
-      const text = await selectedFile.text()
+      const buffer = await selectedFile.arrayBuffer()
+      let text: string | null = null
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(buffer)
+      } catch {
+        try {
+          text = new TextDecoder("euc-kr").decode(buffer)
+        } catch {
+          setError("파일 인코딩을 인식할 수 없습니다 (UTF-8 또는 CP949/EUC-KR만 지원)")
+          return
+        }
+      }
       const lines = text.split("\n").filter(l => l.trim())
       if (lines.length < 2) return
       const headers = parseCSVLine(lines[0]!)

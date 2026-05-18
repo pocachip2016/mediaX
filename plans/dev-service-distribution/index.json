@@ -1,9 +1,9 @@
 {
   "project": "mediaX",
   "phase": "dev-service-distribution",
-  "description": "Layer2 KT 서비스 도메인 신설. ContentDistribution(IPTV/OTT 유통채널 1:N), ServiceCategory(KT 큐레이션·랭킹), DeviceVariant(mobile/TV/PC). meta_core 분리 완료 후 착수.",
+  "description": "Layer2 서비스 도메인 신설. ContentDistribution(IPTV/OTT 유통채널 1:N), ServiceCategory(큐레이션·랭킹), DeviceVariant(mobile/TV/PC). meta_core 분리 완료 후 착수.",
   "decisions": {
-    "iptv_bulk": "KT 지니TV 실데이터 확보 조건부로 step1 실행",
+    "iptv_bulk": "실데이터 확보 조건부로 step1 실행",
     "ott_scope": "Watcha/Netflix Top10/Wave/Tving popularity — 직접 API 또는 public top chart",
     "distribution_vs_meta": "OTT/IPTV는 유통채널(ContentDistribution) 이며 메타권위(ExternalMetaSource)와 분리"
   },
@@ -11,12 +11,16 @@
     {
       "step": 0,
       "name": "distribution-schema",
-      "status": "pending"
+      "status": "completed",
+      "summary": "ContentDistribution/ServiceCategory/ServiceCategoryItem/DeviceVariant 4테이블 SQLAlchemy 모델 + alembic 0014 마이그레이션 + GET 3 엔드포인트 + pytest 8 pass",
+      "completed_at": "2026-05-16T00:00:00+09:00"
     },
     {
       "step": 1,
-      "name": "iptv-kt-bulk-import",
-      "status": "pending"
+      "name": "service-bulk-import",
+      "status": "completed",
+      "summary": "한국어 헤더 CSV 파서 확장(SMPTE→분, 개봉일→연도, 5.1CH 매핑, 화질 와이어링, 콘텐츠편성명 타이틀 별칭). 영상유형 extra_metadata 자동 보존. 성인19+ 5,142건 + Watcha 237건 DB import 완료, pytest pass.",
+      "completed_at": "2026-05-18T00:00:00+09:00"
     },
     {
       "step": 2,

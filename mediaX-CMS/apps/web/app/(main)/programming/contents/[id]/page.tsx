@@ -334,8 +334,17 @@ export default function ContentDetailPage() {
               <Link href="/programming/contents" className="text-slate-400 hover:text-slate-600 mt-1 flex-shrink-0">
                 <ArrowLeft className="h-5 w-5" />
               </Link>
-              <div className="min-w-0">
-                <h1 className="text-2xl font-bold text-slate-900 leading-tight">{content.title}</h1>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h1 className="text-2xl font-bold text-slate-900 leading-tight">{content.title}</h1>
+                  <Link
+                    href={`/programming/contents/${contentId}/recommend?return=list`}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-violet-100 text-violet-700 text-xs font-medium hover:bg-violet-200"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    추천 검수
+                  </Link>
+                </div>
                 {content.original_title && (
                   <p className="text-slate-500 text-sm mt-0.5">{content.original_title}</p>
                 )}

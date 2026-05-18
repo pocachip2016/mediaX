@@ -607,6 +607,49 @@ class PaginatedExternalItems(BaseModel):
     page: int
 
 
+class MappedExternalItem(BaseModel):
+    content_id: int
+    title: str
+    original_title: Optional[str]
+    content_type: str
+    status: str
+    production_year: Optional[int]
+    cp_name: Optional[str]
+    external_id: str
+    poster_url: Optional[str]
+    match_confidence: Optional[float]
+    matched_at: Optional[datetime]
+    quality_score: Optional[float]
+
+
+class PaginatedMappedItems(BaseModel):
+    items: list[MappedExternalItem]
+    total: int
+    page: int
+    size: int
+
+
+class KmdbCacheItem(BaseModel):
+    docid: str
+    title: str
+    title_eng: Optional[str]
+    prod_year: Optional[int]
+    genre: Optional[str]
+    nation: Optional[str]
+    poster_url: Optional[str]
+    first_fetched_at: datetime
+    last_fetched_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PaginatedKmdbCache(BaseModel):
+    items: list[KmdbCacheItem]
+    total: int
+    page: int
+
+
 # ── dev-api-consolidation: 18개 신규 엔드포인트 스키마 ──────────
 
 # Content Add Flow (4개)

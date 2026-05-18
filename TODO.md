@@ -1,23 +1,33 @@
 # TODO — mediaX
 
-> KT 지니TV VOD AI Transformation Platform. 구현 현황 표는 `CLAUDE.md` 참조.
+> VOD AI Transformation Platform. 구현 현황 표는 `CLAUDE.md` 참조.
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
 
-## Next (이번 마일스톤 — Dam 연동)
-- [ ] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (별도 task)
+## Next (이번 마일스톤)
+- [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)
 
 ## Later (백로그)
-- [ ] dev-service-distribution — ContentDistribution(IPTV/OTT), ServiceCategory, DeviceVariant
+- [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
 - [ ] 1.3 큐레이션 모듈 설계 확정
-
-## Later (백로그)
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] link-kmdb-to-contents — KMDB 캐시(673건) → contents 링크 (exact+fuzzy 매칭) + Beat 07:00 (2026-05-18)
+- [x] sqlite-to-postgres — SQLite → PostgreSQL 전환 완료 (alembic 0016·0017, 2,126건, .env 전환) (2026-05-18)
+- [x] kmdb-front-monitoring — KMDB 모니터링 페이지(KPI/동기화 로그/캐시 검색) + /kmdb/cache 엔드포인트 (2026-05-18)
+- [x] kobis-quota-backfill — KOBIS quota-aware 백필 Beat 06:30 KST (잔여 quota>1000일 때 current_year→1990 역순) (2026-05-18)
+- [x] dev-recommend-detail-page Step 1.6 — SecondaryAccordion (출연진·외부소스·AI이력 3개 collapsible) (2026-05-17)
+- [x] dev-kmdb-cache — KMDB 로컬 캐시(kmdb_movie_cache) + quota-aware 백필 Beat 06:00 KST + enrich 캐시 우선 조회 (2026-05-18)
+- [x] kmdb-year-param-fix — search_movie(year) YYYYMMDD 형식 버그 수정 (2026-05-18)
+- [x] dev-kmdb-verify — KMDB 4 레이어 검증 (live API · pytest · discovery · enrich) + year 파라미터 버그 발견 follow-up (2026-05-18)
+- [x] dev-recommend-cast-enrich Steps 2–4 — KobisClient.movie_info + enrich_external_credits(TMDB/KOBIS 헬퍼) + cast 5명 슬라이스 + enrich-credits endpoint (2026-05-17)
+- [x] dev-recommend-detail-page Steps 1.0~1.5 — 추천 상세 화면 기본 구조 (sticky 액션바·포스터·메타 3단·줄거리·AI 종합) (2026-05-17)
+- [x] dev-service-distribution Step 1 — service-bulk-import (한국어 헤더 CSV 파서 확장 + SMPTE 런타임 + 5,142건 import) (2026-05-18)
+- [x] dev-service-distribution Step 0 — distribution-schema (4테이블 모델 + alembic 0014 + GET 3 엔드포인트 + pytest 8 pass) (2026-05-16)
 - [x] dev-dam-poster-ingest P.1~P.3 — Dam poster 자동 등록 파이프라인 완료 (2026-05-16)
 - [x] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (2026-05-16)
 - [x] content-register Steps 1–3 — Hero card + 3탭 패널 + enrich=true 진입점 (2026-05-16)

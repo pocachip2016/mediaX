@@ -58,6 +58,11 @@ from api.programming.metadata.models.tmdb_cache import (
     TmdbSyncStatus,
 )
 
+# KMDB 로컬 캐시
+from api.programming.metadata.models.kmdb_cache import (
+    KmdbMovieCache,
+)
+
 __all__ = [
     # content
     "Content", "ContentMetadata", "CpEmailLog", "ContentBatchJob", "ContentActionLog", "ContentAuditLog",
@@ -73,4 +78,6 @@ __all__ = [
     # tmdb cache
     "TmdbMovieCache", "TmdbTvCache", "TmdbPersonCache", "TmdbSyncLog",
     "TmdbSyncSource", "TmdbSyncStatus",
+    # kmdb cache
+    "KmdbMovieCache",
 ]

@@ -80,20 +80,108 @@ def discover_kobis(self, mode: str = "box_office_daily"):
     default_retry_delay=300,
 )
 def discover_kmdb(self, mode: str = "new_release", days: int = 7):
-    """KMDB 발굴 태스크.
+    """KMDB 발굴 태스크 — SEED 발굴 + kmdb_movie_cache 동시 upsert + ExternalSyncLog 기록.
 
     mode: new_release | discover_drama | discover_movie
     """
     try:
+        import time
+        import uuid
+        from datetime import datetime
+
         from api.meta_core.discovery.kmdb_source import KmdbDiscoverySource
+        from api.meta_core.discovery.dedup import match_or_create_seed
+        from api.programming.metadata.models.tmdb_cache import (
+            TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus,
+        )
+        from api.programming.metadata.models.external import ExternalSourceType
+        from workers.tasks.kmdb_cache import _upsert_kmdb_movie
 
         db = SessionLocal()
+        t0 = time.monotonic()
+        run_id = str(uuid.uuid4())
+
+        # ExternalSyncLog 시작 행
+        log_row = TmdbSyncLog(
+            run_id=run_id,
+            source=TmdbSyncSource.kmdb_daily,
+            external_source=ExternalSourceType.kmdb,
+            status=TmdbSyncStatus.running,
+        )
+        db.add(log_row)
+        db.flush()
+
+        total = new_seeds = matched_existing = duplicates = alt_id_added = errors = 0
+        inserted = updated = unchanged_cache = 0
+
         try:
-            from api.meta_core.discovery.runner import run_discovery
             source = KmdbDiscoverySource(api_key=settings.KMDB_API_KEY, recent_days=days)
-            return run_discovery(db, source, mode)
-        finally:
-            db.close()
+            results = list(source.discover(mode))
+            total = len(results)
+
+            for result in results:
+                # kmdb_movie_cache upsert
+                try:
+                    outcome = _upsert_kmdb_movie(db, result.raw)
+                    if outcome == "inserted":
+                        inserted += 1
+                    elif outcome == "updated":
+                        updated += 1
+                    else:
+                        unchanged_cache += 1
+                except Exception as exc:
+                    logger.warning("[kmdb] cache upsert 실패 %s: %s", result.external_id, exc)
+                    errors += 1
+
+                # SEED 발굴 (기존 dedup 흐름)
+                try:
+                    _, action = match_or_create_seed(db, result)
+                    if action == "created":
+                        new_seeds += 1
+                    elif action == "matched_existing":
+                        matched_existing += 1
+                    elif action == "duplicate":
+                        duplicates += 1
+                    elif action == "alt_id_added":
+                        alt_id_added += 1
+                except Exception as exc:
+                    logger.warning("[kmdb] dedup 실패 %s: %s", result.external_id, exc)
+                    errors += 1
+
+            db.commit()
+
+            log_row.status = TmdbSyncStatus.completed
+        except Exception as exc:
+            logger.error("[kmdb] discover_kmdb.%s 실패: %s", mode, exc)
+            db.rollback()
+            log_row.status = TmdbSyncStatus.failed
+            errors += 1
+            raise
+
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        log_row.finished_at = datetime.utcnow()
+        log_row.items_fetched = total
+        log_row.items_inserted = inserted
+        log_row.items_updated = updated
+        log_row.items_unchanged = unchanged_cache
+        log_row.errors = errors
+        db.commit()
+
+        summary = {
+            "total": total,
+            "new_seeds": new_seeds,
+            "matched_existing": matched_existing,
+            "duplicates": duplicates,
+            "alt_id_added": alt_id_added,
+            "cache_inserted": inserted,
+            "cache_updated": updated,
+            "errors": errors,
+            "duration_ms": duration_ms,
+        }
+        logger.info("[kmdb] discover_kmdb.%s 완료 — %s", mode, summary)
+        db.close()
+        return summary
+
     except Exception as exc:
         raise self.retry(exc=exc)
 

@@ -12,6 +12,7 @@ celery_app = Celery(
         "workers.tasks.analytics",    # 리포트·정산 배치
         "workers.tasks.metadata",          # 메타 AI 분류·외부 메타 수집
         "workers.tasks.tmdb_cache",        # TMDB 로컬 캐시 백필·일일 증분
+        "workers.tasks.kmdb_cache",        # KMDB 로컬 캐시 백필·quota-aware Beat
         "workers.tasks.discovery_tasks",   # Phase C SEED 발굴
         "workers.websearch_tasks",         # Phase D WebSearch SEED 발굴
     ],
@@ -75,6 +76,14 @@ celery_app.conf.update(
             "schedule": crontab(hour=5, minute=30),
             "kwargs": {"mode": "new_release"},
         },
+        "backfill-kmdb-historical": {
+            "task": "workers.tasks.kmdb_cache.kmdb_quota_backfill_tick",
+            "schedule": crontab(hour=6, minute=0),
+        },
+        "backfill-kobis-historical": {
+            "task": "workers.tasks.metadata.kobis_quota_backfill_tick",
+            "schedule": crontab(hour=6, minute=30),
+        },
         "discover-tmdb-weekly": {
             "task": "workers.tasks.discovery_tasks.discover_tmdb",
             "schedule": crontab(hour=6, minute=0, day_of_week=0),
@@ -91,6 +100,11 @@ celery_app.conf.update(
             "task": "workers.tasks.metadata.sync_primary_posters_to_dam",
             "schedule": crontab(hour=6, minute=0),
         },
+        # KMDB 캐시 → contents 링크 — 매일 07:00 KST (kmdb 캐시 백필 완료 후, idempotent)
+        "link-kmdb-to-contents": {
+            "task": "workers.tasks.metadata.link_kmdb_cache_to_contents",
+            "schedule": crontab(hour=7, minute=0),
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},
@@ -101,6 +115,7 @@ celery_app.conf.update(
         "workers.tasks.analytics.*":             {"queue": "analytics"},
         "workers.tasks.metadata.*":              {"queue": "metadata"},
         "workers.tasks.tmdb_cache.*":            {"queue": "metadata"},
+        "workers.tasks.kmdb_cache.*":            {"queue": "metadata"},
         "workers.tasks.discovery_tasks.*":       {"queue": "metadata"},
     },
 )

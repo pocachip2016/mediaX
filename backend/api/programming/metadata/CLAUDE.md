@@ -27,7 +27,7 @@
 ### 확장 (0002 마이그레이션)
 | 테이블 | 설명 |
 |--------|------|
-| `genre_codes` | 장르 마스터 — 대분류/소분류 계층, 지니TV 표준 20개 기본 시딩 |
+| `genre_codes` | 장르 마스터 — 대분류/소분류 계층, 표준 20개 기본 시딩 |
 | `tag_codes` | 태그 마스터 (mood/theme/keyword/ai) |
 | `content_genres` | 콘텐츠-장르 M:N (is_primary, source) |
 | `content_tags` | 콘텐츠-태그 M:N (confidence_score) |
@@ -112,6 +112,7 @@ PUT  /api/programming/metadata/video/{id}             # 영상메타 수정
 POST /api/programming/metadata/video/bulk-complete    # 영상메타 일괄 완료
 GET  /api/programming/metadata/service-readiness      # 글자+이미지+영상 완료 통계
 GET  /api/programming/metadata/tmdb                   # TMDB 매핑 콘텐츠 목록 — 필터: content_type, search(ilike)
+POST /api/programming/metadata/contents/{id}/enrich-credits  # 외부 소스(TMDB/KOBIS) credits 단건 보강
 ```
 
 ## Score Conventions

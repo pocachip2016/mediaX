@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import { X, Check, AlertCircle, Sparkles, Pencil } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { SourceBadge } from "@/components/source-badge"
@@ -134,7 +134,7 @@ export function MetadataDiffPanel({
 
             {/* conflict rows — group per field */}
             {recommendations.conflicts.map((rec) => (
-              <>
+              <React.Fragment key={rec.field}>
                 {rec.recommendations.map((r, idx) => (
                   <tr
                     key={`${rec.field}-${r.source_id}`}
@@ -212,7 +212,7 @@ export function MetadataDiffPanel({
                     </tr>
                   )
                 })()}
-              </>
+              </React.Fragment>
             ))}
           </tbody>
         </table>

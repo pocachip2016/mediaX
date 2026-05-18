@@ -83,3 +83,10 @@ class KobisClient:
         data = self._get("/boxoffice/searchWeeklyBoxOfficeList.json",
                          {"targetDt": target_dt, "weekGb": week_gb})
         return data.get("boxOfficeResult", {}).get("weeklyBoxOfficeList", [])
+
+    # ── 영화 상세 ──────────────────────────────────────────────────────────────
+
+    def movie_info(self, movie_cd: str) -> dict:
+        """searchMovieInfo — 영화 상세 (actors/directors/companys/showTm/audits)."""
+        data = self._get("/movie/searchMovieInfo.json", {"movieCd": movie_cd})
+        return data.get("movieInfoResult", {}).get("movieInfo", {})

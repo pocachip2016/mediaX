@@ -51,3 +51,7 @@ class QuotaManager:
             return int(val) if val else 0
         except redis.RedisError:
             return 0
+
+    def daily_remaining(self, api: str, daily_limit: int) -> int:
+        """오늘 남은 quota 수 반환 (음수가 되면 0으로 clamp)."""
+        return max(0, daily_limit - self.current_count(api))

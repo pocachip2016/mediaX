@@ -63,8 +63,8 @@ class KmdbClient:
         """제목(+연도)으로 영화 검색 → 후보 목록 반환."""
         params: dict[str, Any] = {"query": title, "listCount": "5"}
         if year:
-            params["releaseDts"] = str(year)
-            params["releaseDte"] = str(year)
+            params["releaseDts"] = f"{year}0101"
+            params["releaseDte"] = f"{year}1231"
         data = self._get(params)
         try:
             return data["Data"][0]["Result"]
@@ -97,6 +97,25 @@ class KmdbClient:
             return data["Data"][0]["Result"]
         except (KeyError, IndexError, TypeError):
             return []
+
+    def search_year(self, year: int, start: int = 0,
+                    list_count: int = 100) -> tuple[list[dict], int]:
+        """특정 연도 영화 페이지 조회 → (items, total_count).
+
+        startCount 노출로 호출부에서 페이지네이션 제어 가능.
+        """
+        data = self._get({
+            "releaseDts": f"{year}0101",
+            "releaseDte": f"{year}1231",
+            "listCount": str(list_count),
+            "startCount": str(start),
+        })
+        try:
+            results = data["Data"][0]["Result"]
+            total = int(data["Data"][0].get("TotalCount", 0))
+            return results, total
+        except (KeyError, IndexError, TypeError, ValueError):
+            return [], 0
 
     def iter_collection(self, collection: str = _DEFAULT_COLLECTION,
                         list_count: int = 100):

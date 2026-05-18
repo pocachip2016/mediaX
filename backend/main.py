@@ -24,7 +24,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="미디어AX API",
-    description="KT 지니TV VOD AI Transformation Platform",
+    description="VOD AI Transformation Platform",
     version="0.1.0",
     lifespan=lifespan,
 )
