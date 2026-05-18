@@ -80,9 +80,8 @@ def enrich_content(content_id: int, db: Session) -> EnrichResult:
             result.sources_skipped.append("tmdb:no_key")
 
     if "kmdb" in needed_sources:
-        client = KmdbClient(api_key=kmdb_key)
         try:
-            raws = client.search_movie(content.title, year=content.production_year)
+            raws = _fetch_kmdb_with_cache(db, content)
             for raw in raws[:3]:
                 candidate = _upsert_candidate(db, ExternalSourceType.kmdb, raw)
                 result.candidates_upserted += 1
@@ -110,6 +109,41 @@ def _needed_sources(gap_report) -> set[str]:
     for g in gap_report.missing_fields:
         sources.update(g.recommended_sources)
     return sources
+
+
+def _fetch_kmdb_with_cache(db: Session, content: Content) -> list[dict]:
+    """KMDB enrich: 캐시 우선 조회 → miss 시 API 호출 + 캐시 upsert.
+
+    cache hit/miss 는 INFO 레벨로 로깅.
+    """
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+    from workers.tasks.kmdb_cache import _upsert_kmdb_movie
+
+    # 1. 캐시 조회 (title + prod_year 일치)
+    q = db.query(KmdbMovieCache).filter(KmdbMovieCache.title == content.title)
+    if content.production_year:
+        q = q.filter(KmdbMovieCache.prod_year == content.production_year)
+    cached = q.limit(3).all()
+
+    if cached:
+        logger.info("[enrich] KMDB cache HIT content_id=%d title=%r year=%s (%d건)",
+                    content.id, content.title, content.production_year, len(cached))
+        return [c.raw_json for c in cached if c.raw_json]
+
+    # 2. cache miss → API 호출
+    logger.info("[enrich] KMDB cache MISS content_id=%d title=%r — API 호출",
+                content.id, content.title)
+    client = KmdbClient(api_key=settings.KMDB_API_KEY)
+    raws = client.search_movie(content.title, year=content.production_year)
+
+    # 3. 결과를 캐시에 저장 (다음 번 enrich 에서 hit)
+    for raw in raws:
+        try:
+            _upsert_kmdb_movie(db, raw)
+        except Exception as exc:
+            logger.warning("[enrich] KMDB cache upsert 실패: %s", exc)
+
+    return raws
 
 
 def _fetch_tmdb(content: Content, api_key: str) -> dict | None:

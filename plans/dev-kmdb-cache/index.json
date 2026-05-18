@@ -1,0 +1,56 @@
+{
+  "project": "mediaX",
+  "phase": "dev-kmdb-cache",
+  "description": "KMDB 로컬 캐시 테이블(kmdb_movie_cache) 신설 + quota-aware 백필 Beat (06:00 KST). enrich 시 외부 API 재호출 방지.",
+  "steps": [
+    {
+      "step": 1,
+      "name": "kmdb-cache-model",
+      "status": "completed",
+      "summary": "KmdbMovieCache ORM(14컬럼) + alembic 0015(kmdb_movie_cache 테이블 + TmdbSyncSource enum 2값) + __init__ re-export",
+      "completed_at": "2026-05-18T00:00:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "kmdb-upsert-helper",
+      "status": "completed",
+      "summary": "_upsert_kmdb_movie(db, raw) → inserted/updated/unchanged 3가지 결과. 변경감지: title/poster_url/synopsis",
+      "completed_at": "2026-05-18T00:00:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "kmdb-daily-sync",
+      "status": "completed",
+      "summary": "discover_kmdb 태스크 재구성 — SEED 발굴 + _upsert_kmdb_movie 동시 실행 + ExternalSyncLog(source=kmdb_daily) 기록",
+      "completed_at": "2026-05-18T00:00:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "kmdb-backfill-task",
+      "status": "completed",
+      "summary": "KmdbClient.search_year(year, start, list_count) 추가 + backfill_kmdb Celery 태스크(1년치 페이지네이션, quota 초과 시 graceful 종료) + celery_app include",
+      "completed_at": "2026-05-18T00:00:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "kmdb-quota-aware-beat",
+      "status": "completed",
+      "summary": "QuotaManager.daily_remaining 헬퍼 + kmdb_quota_backfill_tick(잔여<200 skip, 미백필 최소연도 .delay) + Beat entry backfill-kmdb-historical 06:00 KST",
+      "completed_at": "2026-05-18T00:00:00+09:00"
+    },
+    {
+      "step": 6,
+      "name": "kmdb-enrich-cache-read",
+      "status": "completed",
+      "summary": "_fetch_kmdb_with_cache 헬퍼 — 캐시 hit 시 raw_json 재사용(API 스킵), miss 시 search_movie + upsert. hit/miss INFO 로깅",
+      "completed_at": "2026-05-18T00:00:00+09:00"
+    },
+    {
+      "step": 7,
+      "name": "wrap",
+      "status": "completed",
+      "summary": "index.json summary 채우기 + TODO.md Done 이동 + CLAUDE.md 구현 현황 갱신",
+      "completed_at": "2026-05-18T00:00:00+09:00"
+    }
+  ]
+}

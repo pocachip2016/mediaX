@@ -12,6 +12,7 @@ celery_app = Celery(
         "workers.tasks.analytics",    # 리포트·정산 배치
         "workers.tasks.metadata",          # 메타 AI 분류·외부 메타 수집
         "workers.tasks.tmdb_cache",        # TMDB 로컬 캐시 백필·일일 증분
+        "workers.tasks.kmdb_cache",        # KMDB 로컬 캐시 백필·quota-aware Beat
         "workers.tasks.discovery_tasks",   # Phase C SEED 발굴
         "workers.websearch_tasks",         # Phase D WebSearch SEED 발굴
     ],
@@ -74,6 +75,10 @@ celery_app.conf.update(
             "task": "workers.tasks.discovery_tasks.discover_kmdb",
             "schedule": crontab(hour=5, minute=30),
             "kwargs": {"mode": "new_release"},
+        },
+        "backfill-kmdb-historical": {
+            "task": "workers.tasks.kmdb_cache.kmdb_quota_backfill_tick",
+            "schedule": crontab(hour=6, minute=0),
         },
         "discover-tmdb-weekly": {
             "task": "workers.tasks.discovery_tasks.discover_tmdb",

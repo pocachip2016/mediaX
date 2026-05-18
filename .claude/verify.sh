@@ -2972,9 +2972,231 @@ finally:
     echo "=== PASS ==="
     ;;
 
+  kmdb-enrich-cache-read)
+    echo "=== kmdb-enrich-cache-read: enrich 캐시 우선 조회 구조 ==="
+    # 1. 임포트 + 코드 구조 확인
+    python3 -c "
+from api.meta_core.enrich import enrich_content, _fetch_kmdb_with_cache
+import inspect
+src = inspect.getsource(_fetch_kmdb_with_cache)
+assert 'KmdbMovieCache' in src, 'KmdbMovieCache 조회 없음'
+assert '_upsert_kmdb_movie' in src, 'cache upsert 없음'
+assert 'cache HIT' in src, 'cache hit 로깅 없음'
+assert 'cache MISS' in src, 'cache miss 로깅 없음'
+print('  ✓ _fetch_kmdb_with_cache 구조 OK')
+"
+    # 2. enrich_content KMDB 섹션이 _fetch_kmdb_with_cache 를 호출하는지 확인
+    python3 -c "
+from api.meta_core.enrich import enrich_content
+import inspect
+src = inspect.getsource(enrich_content)
+assert '_fetch_kmdb_with_cache' in src, 'enrich_content 에 cache 함수 미사용'
+print('  ✓ enrich_content → _fetch_kmdb_with_cache 연결 OK')
+"
+    # 3. KmdbMovieCache 직접 조회 + raw_json 가 있으면 cache hit 경로 검증 (DB 수준)
+    python3 -c "
+import sqlite3, json
+conn = sqlite3.connect('media_ax_dev.db')
+# 테스트용 캐시 행 삽입
+docid = 'VERIF|99998'
+raw = {'DOCID': docid, 'title': '__verify_enrich__', 'prodYear': '2000'}
+conn.execute('''
+    INSERT OR REPLACE INTO kmdb_movie_cache
+    (docid, title, prod_year, raw_json, first_fetched_at, last_fetched_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+''', (docid, '__verify_enrich__', 2000, json.dumps(raw)))
+conn.commit()
+# 조회 확인
+row = conn.execute(\"SELECT docid, title FROM kmdb_movie_cache WHERE title='__verify_enrich__'\").fetchone()
+assert row and row[0] == docid
+conn.execute(\"DELETE FROM kmdb_movie_cache WHERE docid=?\", (docid,))
+conn.commit()
+conn.close()
+print('  ✓ kmdb_movie_cache 캐시 조회 경로 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-quota-aware-beat)
+    echo "=== kmdb-quota-aware-beat: tick 태스크 + Beat entry + daily_remaining ==="
+    # 1. daily_remaining 헬퍼
+    python3 -c "
+from shared.quota_manager import QuotaManager
+import inspect
+src = inspect.getsource(QuotaManager.daily_remaining)
+assert 'daily_limit' in src and 'current_count' in src
+print('  ✓ QuotaManager.daily_remaining OK')
+"
+    # 2. kmdb_quota_backfill_tick 임포트 + 구조
+    python3 -c "
+from workers.tasks.kmdb_cache import kmdb_quota_backfill_tick
+import inspect
+src = inspect.getsource(kmdb_quota_backfill_tick)
+assert 'daily_remaining' in src, 'daily_remaining 미사용'
+assert 'backfill_kmdb.delay' in src, '.delay() 비동기 위임 없음'
+assert '_QUOTA_THRESHOLD' in src or '200' in src, 'quota 임계치 없음'
+print('  ✓ kmdb_quota_backfill_tick 구조 OK')
+"
+    # 3. Beat entry 등록 확인
+    python3 -c "
+from workers.celery_app import celery_app
+schedule = celery_app.conf.beat_schedule
+assert 'backfill-kmdb-historical' in schedule, 'Beat entry 없음'
+entry = schedule['backfill-kmdb-historical']
+assert entry['task'] == 'workers.tasks.kmdb_cache.kmdb_quota_backfill_tick'
+print('  ✓ Beat entry backfill-kmdb-historical OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-backfill-task)
+    echo "=== kmdb-backfill-task: backfill_kmdb 태스크 + search_year + celery include ==="
+    # 1. search_year 추가 확인
+    python3 -c "
+from api.meta_core.clients.kmdb_client import KmdbClient
+import inspect
+src = inspect.getsource(KmdbClient.search_year)
+assert 'releaseDts' in src and 'releaseDte' in src and 'startCount' in src
+print('  ✓ KmdbClient.search_year OK')
+"
+    # 2. backfill_kmdb 태스크 임포트 + 구조 확인
+    python3 -c "
+from workers.tasks.kmdb_cache import backfill_kmdb
+import inspect
+src = inspect.getsource(backfill_kmdb)
+assert 'search_year' in src, 'search_year 미사용'
+assert 'KmdbDailyLimitExceeded' in src, 'quota 예외 처리 없음'
+assert 'kmdb_backfill' in src, 'TmdbSyncSource.kmdb_backfill 미기록'
+assert 'target_year' in src, 'target_year 미설정'
+print('  ✓ backfill_kmdb 구조 OK')
+"
+    # 3. celery_app include 확인
+    python3 -c "
+from workers.celery_app import celery_app
+assert 'workers.tasks.kmdb_cache' in celery_app.conf.include, 'celery include 없음'
+print('  ✓ celery_app include OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-daily-sync)
+    echo "=== kmdb-daily-sync: discover_kmdb 임포트 + ExternalSyncLog 기록 구조 ==="
+    # 1. 임포트 + 코드 구조 확인
+    python3 -c "
+from workers.tasks.discovery_tasks import discover_kmdb
+import inspect
+src = inspect.getsource(discover_kmdb)
+assert '_upsert_kmdb_movie' in src, '_upsert_kmdb_movie 호출 없음'
+assert 'TmdbSyncLog' in src or 'ExternalSyncLog' in src, 'SyncLog 기록 없음'
+assert 'TmdbSyncSource.kmdb_daily' in src, 'kmdb_daily source 미설정'
+assert 'ExternalSourceType.kmdb' in src, 'external_source kmdb 미설정'
+print('  ✓ discover_kmdb 구조 OK')
+"
+    # 2. SQLite DB에서 external_sync_log 테이블 + TmdbSyncSource enum 컬럼 확인
+    python3 -c "
+import sqlite3
+conn = sqlite3.connect('media_ax_dev.db')
+tables = [t[0] for t in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall()]
+assert 'external_sync_log' in tables, 'external_sync_log 테이블 없음'
+cols = [c[1] for c in conn.execute('PRAGMA table_info(external_sync_log)').fetchall()]
+for c in ['external_source', 'items_fetched', 'items_inserted', 'items_updated']:
+    assert c in cols, f'{c} 컬럼 없음'
+conn.close()
+print('  ✓ external_sync_log 스키마 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-upsert-helper)
+    echo "=== kmdb-upsert-helper: _upsert_kmdb_movie 3가지 결과 ==="
+    python3 -c "
+from workers.tasks.kmdb_cache import _upsert_kmdb_movie
+from shared.database import SessionLocal
+
+RAW_BASE = {
+    'DOCID': 'TEST|99999',
+    'title': '테스트영화',
+    'titleEng': 'Test Movie',
+    'prodYear': '2010',
+    'nation': '한국',
+    'genre': '드라마',
+    'directors': {'director': [{'directorNm': '홍길동'}]},
+    'actors': {'actor': [{'actorNm': '김철수'}]},
+    'plots': {'plot': [{'plotText': '테스트 시놉시스'}]},
+}
+RAW_UPDATED = dict(RAW_BASE, title='테스트영화(수정)', plots={'plot': [{'plotText': '수정된 시놉시스'}]})
+
+db = SessionLocal()
+try:
+    # 혹시 이전 테스트 데이터 정리
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+    old = db.get(KmdbMovieCache, 'TEST|99999')
+    if old:
+        db.delete(old)
+        db.commit()
+
+    r1 = _upsert_kmdb_movie(db, RAW_BASE)
+    db.commit()
+    assert r1 == 'inserted', f'1회차 기대 inserted, 실제 {r1}'
+    print(f'  ✓ 1회차: {r1}')
+
+    r2 = _upsert_kmdb_movie(db, RAW_BASE)
+    db.commit()
+    assert r2 == 'unchanged', f'2회차 기대 unchanged, 실제 {r2}'
+    print(f'  ✓ 2회차: {r2}')
+
+    r3 = _upsert_kmdb_movie(db, RAW_UPDATED)
+    db.commit()
+    assert r3 == 'updated', f'3회차 기대 updated, 실제 {r3}'
+    print(f'  ✓ 3회차: {r3}')
+
+    # 정리
+    row = db.get(KmdbMovieCache, 'TEST|99999')
+    db.delete(row)
+    db.commit()
+finally:
+    db.close()
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-cache-model)
+    echo "=== kmdb-cache-model: KmdbMovieCache ORM + migration 0015 ==="
+    # 1. 모델 import + TmdbSyncSource enum 값 확인
+    python3 -c "
+from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+from api.programming.metadata.models.tmdb_cache import TmdbSyncSource
+assert KmdbMovieCache.__tablename__ == 'kmdb_movie_cache'
+assert TmdbSyncSource.kmdb_daily == 'kmdb_daily'
+assert TmdbSyncSource.kmdb_backfill == 'kmdb_backfill'
+print('  ✓ KmdbMovieCache import + TmdbSyncSource enum OK')
+"
+    # 2. __init__ re-export 확인
+    python3 -c "
+from api.programming.metadata.models import KmdbMovieCache
+print('  ✓ __init__ re-export OK')
+"
+    # 3. SQLite에서 migration 0015 적용 후 테이블 존재 확인
+    python3 -c "
+import sqlite3
+conn = sqlite3.connect('media_ax_dev.db')
+tables = [t[0] for t in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall()]
+assert 'kmdb_movie_cache' in tables, f'kmdb_movie_cache 테이블 없음 (현재 테이블: {tables})'
+cols = [c[1] for c in conn.execute('PRAGMA table_info(kmdb_movie_cache)').fetchall()]
+for c in ['docid', 'title', 'prod_year', 'directors', 'actors', 'raw_json']:
+    assert c in cols, f'{c} 컬럼 없음'
+conn.close()
+print('  ✓ kmdb_movie_cache 테이블 + 컬럼 OK')
+"
+    # 4. migration 파일 존재 확인
+    [ -f "alembic/versions/0015_kmdb_cache.py" ] || { echo "MISSING: 0015_kmdb_cache.py"; exit 1; }
+    echo "  ✓ 0015_kmdb_cache.py"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model"
     exit 1
     ;;
 esac

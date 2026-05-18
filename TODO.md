@@ -9,7 +9,6 @@
 ## Next (이번 마일스톤)
 
 ## Later (백로그)
-- [ ] kmdb-year-param-fix — search_movie(year) 파라미터를 YYYYMMDD 형식으로 수정 (현재 str(year)="2019" → 빈 결과)
 - [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
 - [ ] 1.3 큐레이션 모듈 설계 확정
@@ -17,6 +16,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-kmdb-cache — KMDB 로컬 캐시(kmdb_movie_cache) + quota-aware 백필 Beat 06:00 KST + enrich 캐시 우선 조회 (2026-05-18)
+- [x] kmdb-year-param-fix — search_movie(year) YYYYMMDD 형식 버그 수정 (2026-05-18)
 - [x] dev-kmdb-verify — KMDB 4 레이어 검증 (live API · pytest · discovery · enrich) + year 파라미터 버그 발견 follow-up (2026-05-18)
 - [x] dev-recommend-cast-enrich Steps 2–4 — KobisClient.movie_info + enrich_external_credits(TMDB/KOBIS 헬퍼) + cast 5명 슬라이스 + enrich-credits endpoint (2026-05-17)
 - [x] dev-recommend-detail-page Steps 1.0~1.5 — 추천 상세 화면 기본 구조 (sticky 액션바·포스터·메타 3단·줄거리·AI 종합) (2026-05-17)
