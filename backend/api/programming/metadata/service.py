@@ -489,6 +489,7 @@ def process_batch_rows(
                 "poster_url": row.get("poster_url"),
                 "production_year": production_year,
                 "audio_channels": row.get("audio_channels"),
+                "video_resolution": row.get("video_resolution"),
                 "extra_metadata": row.get("extra_metadata"),
             }.items() if v}
 
@@ -545,6 +546,7 @@ def process_batch_rows(
                 content_id=content.id,
                 quality_score=0.0,
                 audio_channels=row.get("audio_channels") or None,
+                video_resolution=row.get("video_resolution") or None,
                 extra_metadata=row.get("extra_metadata") or None,
             )
             db.add(meta)

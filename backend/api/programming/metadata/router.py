@@ -368,29 +368,50 @@ async def batch_upload(
     rows = []
     try:
         KNOWN_COLUMNS = {
-            "title", "제목", "production_year", "제작연도", "content_type", "타입",
-            "cp_name", "CP사", "synopsis", "시놉시스", "cast", "출연진",
-            "directors", "감독", "genres", "장르", "country", "제작국가",
-            "runtime", "런타임", "rating_age", "시청등급", "poster_url", "포스터URL",
-            "audio_channels", "음성채널",
+            "title", "제목", "콘텐츠명",
+            "production_year", "제작연도", "개봉일",
+            "content_type", "타입",  # 영상유형은 제외 → extra_metadata 자동 보존
+            "cp_name", "CP사", "CP명",
+            "synopsis", "시놉시스",
+            "cast", "출연진",
+            "directors", "감독",
+            "genres", "장르",
+            "country", "제작국가",
+            "runtime", "런타임", "상용시간(RT)",
+            "rating_age", "시청등급",
+            "poster_url", "포스터URL",
+            "audio_channels", "음성채널", "5.1CH",
+            "video_resolution", "화질",
         }
 
         def _extract_row(get_fn) -> dict:
             """공통 필드 추출 — CSV/Excel 모두 사용"""
+            raw_audio = get_fn(["audio_channels", "음성채널", "5.1CH"])
+            smpte_runtime = get_fn(["상용시간(RT)"])
+            raw_year_date = get_fn(["개봉일"])
             return {
-                "title": get_fn(["title", "제목"]),
-                "production_year": _safe_int(get_fn(["production_year", "제작연도"])),
-                "content_type": _normalize_content_type(get_fn(["content_type", "타입"]) or "movie"),
-                "cp_name": get_fn(["cp_name", "CP사"]) or cp_name,
+                "title": get_fn(["title", "제목", "콘텐츠명"]),
+                "production_year": (
+                    _safe_int(get_fn(["production_year", "제작연도"]))
+                    or _parse_year(raw_year_date)
+                ),
+                "content_type": _normalize_content_type(
+                    get_fn(["content_type", "타입", "영상유형"]) or "movie"
+                ),
+                "cp_name": get_fn(["cp_name", "CP사", "CP명"]) or cp_name,
                 "synopsis": get_fn(["synopsis", "시놉시스"]),
                 "cast": get_fn(["cast", "출연진"]),
                 "directors": get_fn(["directors", "감독"]),
                 "genres": get_fn(["genres", "장르"]),
                 "country": get_fn(["country", "제작국가"]),
-                "runtime": _safe_int(get_fn(["runtime", "런타임"])),
+                "runtime": (
+                    _safe_int(get_fn(["runtime", "런타임"]))
+                    or _parse_smpte_runtime(smpte_runtime)
+                ),
                 "rating_age": get_fn(["rating_age", "시청등급"]),
                 "poster_url": get_fn(["poster_url", "포스터URL"]) or None,
-                "audio_channels": get_fn(["audio_channels", "음성채널"]) or None,
+                "audio_channels": _map_audio_channels(raw_audio),
+                "video_resolution": get_fn(["video_resolution", "화질"]) or None,
             }
 
         if file.filename.lower().endswith(".csv"):
@@ -630,9 +651,40 @@ def _safe_int(val) -> Optional[int]:
         return None
 
 
+def _parse_smpte_runtime(val: str) -> Optional[int]:
+    """HH:MM:SS:FF → 분 (FF 무시, 1분 미만은 1 반환)"""
+    if not val:
+        return None
+    parts = val.split(":")
+    try:
+        h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+        total = h * 60 + m + round(s / 60)
+        return max(total, 1)
+    except (IndexError, ValueError):
+        return None
+
+
+def _parse_year(val: str) -> Optional[int]:
+    """'2026-03-23' 또는 '2026' → 2026"""
+    if not val or len(val) < 4:
+        return None
+    try:
+        return int(val[:4])
+    except (ValueError, TypeError):
+        return None
+
+
+def _map_audio_channels(val: str) -> Optional[str]:
+    """5.1CH 컬럼 값 매핑: '1'→'5.1CH', '2'→'Stereo', 그 외 passthrough"""
+    if not val:
+        return None
+    mapping = {"1": "5.1CH", "2": "Stereo"}
+    return mapping.get(val.strip(), val.strip() or None)
+
+
 def _normalize_content_type(val: str) -> str:
     mapping = {
-        "영화": "movie", "movie": "movie",
+        "영화": "movie", "movie": "movie", "본편": "movie", "부속": "movie", "소장": "movie",
         "시리즈": "series", "series": "series", "드라마": "series",
         "시즌": "season", "season": "season",
         "에피소드": "episode", "episode": "episode",

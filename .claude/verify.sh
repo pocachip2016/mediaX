@@ -3493,6 +3493,94 @@ PYEOF
     echo "=== PASS ==="
     ;;
 
+  service-bulk-import-parsers)
+    echo "=== service-bulk-import-parsers: 한국어 CSV 파서 단위 테스트 ==="
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+import sys
+sys.path.insert(0, "/app")
+
+# router 모듈에서 헬퍼 임포트
+from api.programming.metadata.router import (
+    _parse_smpte_runtime, _parse_year, _map_audio_channels, _normalize_content_type
+)
+
+# _parse_smpte_runtime
+assert _parse_smpte_runtime("01:09:52:04") == 70, f"got {_parse_smpte_runtime('01:09:52:04')}"
+assert _parse_smpte_runtime("00:59:30:00") == 60, f"got {_parse_smpte_runtime('00:59:30:00')}"
+assert _parse_smpte_runtime("00:00:45:00") == 1
+assert _parse_smpte_runtime("") is None
+assert _parse_smpte_runtime(None) is None
+print("  ✓ _parse_smpte_runtime OK")
+
+# _parse_year
+assert _parse_year("2026-03-23") == 2026
+assert _parse_year("2026") == 2026
+assert _parse_year("") is None
+assert _parse_year(None) is None
+assert _parse_year("abc") is None
+print("  ✓ _parse_year OK")
+
+# _map_audio_channels
+assert _map_audio_channels("1") == "5.1CH"
+assert _map_audio_channels("2") == "Stereo"
+assert _map_audio_channels("Atmos") == "Atmos"
+assert _map_audio_channels("") is None
+assert _map_audio_channels(None) is None
+print("  ✓ _map_audio_channels OK")
+
+# _normalize_content_type
+assert _normalize_content_type("본편") == "movie"
+assert _normalize_content_type("부속") == "movie"
+assert _normalize_content_type("소장") == "movie"
+assert _normalize_content_type("시리즈") == "series"
+assert _normalize_content_type("영화") == "movie"
+assert _normalize_content_type("unknown") == "movie"
+print("  ✓ _normalize_content_type OK")
+
+print("  ✓ 모든 파서 테스트 통과")
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
+  service-bulk-import)
+    echo "=== service-bulk-import: 한국어 CSV E2E import 검증 ==="
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+from shared.database import SessionLocal
+from sqlalchemy import text
+
+db = SessionLocal()
+try:
+    total = db.execute(text("SELECT count(*) FROM contents")).scalar()
+    assert total > 100, f"contents 너무 적음: {total}"
+    print(f"  ✓ contents {total}건")
+
+    # audio_channels=Stereo 존재 확인
+    stereo = db.execute(text("SELECT count(*) FROM content_metadata WHERE audio_channels='Stereo'")).scalar()
+    assert stereo > 100, f"Stereo audio 너무 적음: {stereo}"
+    print(f"  ✓ audio_channels Stereo {stereo}건")
+
+    # video_resolution=HD 존재 확인
+    hd = db.execute(text("SELECT count(*) FROM content_metadata WHERE video_resolution='HD'")).scalar()
+    assert hd > 100, f"HD resolution 너무 적음: {hd}"
+    print(f"  ✓ video_resolution HD {hd}건")
+
+    # extra_metadata에 영상유형 보존 확인
+    extra = db.execute(text("SELECT count(*) FROM content_metadata WHERE extra_metadata->>'영상유형' IS NOT NULL")).scalar()
+    assert extra > 100, f"extra_metadata 영상유형 너무 적음: {extra}"
+    print(f"  ✓ extra_metadata 영상유형 {extra}건")
+
+    # runtime이 raw_json에 저장됐는지 확인 (외부소스)
+    runtime_count = db.execute(text("SELECT count(*) FROM external_meta_sources WHERE raw_json->>'runtime' IS NOT NULL")).scalar()
+    assert runtime_count > 100, f"runtime raw_json 너무 적음: {runtime_count}"
+    print(f"  ✓ runtime in raw_json {runtime_count}건")
+
+    print("  ✓ E2E import 검증 완료")
+finally:
+    db.close()
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
   link-kmdb-to-contents)
     echo "=== link-kmdb-to-contents: KMDB 캐시 → contents 링크 태스크 ==="
     # 1. 태스크 import + Beat 스케줄 등록 확인
