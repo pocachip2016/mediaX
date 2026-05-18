@@ -14,6 +14,8 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from sqlalchemy.exc import IntegrityError
+
 from api.meta_core.discovery.base import DiscoverySource
 from api.meta_core.discovery.dedup import match_or_create_seed
 
@@ -42,7 +44,8 @@ def run_discovery(db: "Session", source: DiscoverySource, mode: str, **kwargs) -
         total = len(results)
         for result in results:
             try:
-                _, action = match_or_create_seed(db, result)
+                with db.begin_nested():
+                    _, action = match_or_create_seed(db, result)
                 if action == "created":
                     new_seeds += 1
                 elif action == "matched_existing":
@@ -51,6 +54,11 @@ def run_discovery(db: "Session", source: DiscoverySource, mode: str, **kwargs) -
                     duplicates += 1
                 elif action == "alt_id_added":
                     alt_id_added += 1
+            except IntegrityError:
+                # 동일 (source_type, external_id) 중복 — savepoint만 롤백, 루프 계속
+                duplicates += 1
+                logger.debug("[discovery] dup skip (IntegrityError): %s/%s",
+                             result.source_type, result.external_id)
             except Exception as exc:
                 logger.warning("[discovery] dedup 실패 %s/%s: %s",
                                result.source_type, result.external_id, exc)
