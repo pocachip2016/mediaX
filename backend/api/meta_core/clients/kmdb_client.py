@@ -63,8 +63,8 @@ class KmdbClient:
         """제목(+연도)으로 영화 검색 → 후보 목록 반환."""
         params: dict[str, Any] = {"query": title, "listCount": "5"}
         if year:
-            params["releaseDts"] = str(year)
-            params["releaseDte"] = str(year)
+            params["releaseDts"] = f"{year}0101"
+            params["releaseDte"] = f"{year}1231"
         data = self._get(params)
         try:
             return data["Data"][0]["Result"]

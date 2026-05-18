@@ -2809,6 +2809,23 @@ print('  ✓ 모든 step completed')
     echo "=== PASS ==="
     ;;
 
+  kmdb-year-param-fix)
+    echo "=== kmdb-year-param-fix: search_movie year → YYYYMMDD 형식 ==="
+    python3 -c "
+from shared.config import settings
+from api.meta_core.clients.kmdb_client import KmdbClient
+
+client = KmdbClient(settings.KMDB_API_KEY)
+results = client.search_movie('기생충', 2019)
+assert len(results) >= 1, f'year 필터 결과 없음: {results}'
+years = {r.get('prodYear', '') for r in results}
+print(f'  ✓ search_movie(기생충, 2019): {len(results)}건, prodYears={years}')
+assert any('2019' in y or '2018' in y for y in years), f'연도 범위 이상: {years}'
+print('  ✓ YYYYMMDD 형식 파라미터 정상 동작')
+"
+    echo "=== PASS ==="
+    ;;
+
   kmdb-live-search)
     echo "=== kmdb-live-search: KmdbClient 실제 외부 API 호출 ==="
     python3 -c "
