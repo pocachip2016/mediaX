@@ -202,9 +202,9 @@ export default function KmdbPage() {
       {/* 동기화 로그 */}
       <div>
         <h3 className="text-sm font-medium mb-3">동기화 로그</h3>
-        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+        <div className="rounded-xl border bg-card shadow-sm overflow-y-auto max-h-[200px]">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b">
+            <thead className="bg-muted border-b sticky top-0 z-10">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">소스</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">상태</th>
