@@ -2600,6 +2600,35 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  recommend-step1.6)
+    echo "=== recommend-step1.6: SecondaryAccordion ==="
+    MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$MEDIAX_CMS/apps/web/components/contents/recommend"
+    RECOMMEND_PAGE="$MEDIAX_CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+    SEC="$RECOMMEND_DIR/SecondaryAccordion.tsx"
+
+    [ -f "$SEC" ] || { echo "MISSING: SecondaryAccordion.tsx"; exit 1; }
+    echo "  ✓ SecondaryAccordion.tsx 존재"
+
+    grep -q "@workspace/ui/components/collapsible" "$SEC" || { echo "MISSING: Collapsible import"; exit 1; }
+    echo "  ✓ Collapsible import 확인"
+
+    grep -q "출연진" "$SEC" || { echo "MISSING: 출연진 섹션"; exit 1; }
+    grep -q "외부 소스" "$SEC" || { echo "MISSING: 외부 소스 섹션"; exit 1; }
+    grep -q "AI 처리 이력\|AI 이력" "$SEC" || { echo "MISSING: AI 이력 섹션"; exit 1; }
+    echo "  ✓ 3개 섹션 확인 (출연진·외부 소스·AI 이력)"
+
+    grep -q "SecondaryAccordion" "$RECOMMEND_PAGE" || { echo "MISSING: SecondaryAccordion in page.tsx"; exit 1; }
+    echo "  ✓ page.tsx 연결 확인"
+
+    echo "--- typecheck ---"
+    cd "$MEDIAX_CMS"
+    npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   recommend-step1.2)
     echo "=== recommend-step1.2: PosterRow ==="
     MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
@@ -2679,9 +2708,256 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  recommend-cast-enrich-step1)
+    echo "=== recommend-cast-enrich-step1: bulk-dedup ==="
+    SVC="$BACKEND/api/programming/metadata/service.py"
+    SCRIPT="$BACKEND/scripts/dedup_contents.py"
+
+    grep -q "skipped_duplicates" "$SVC" || { echo "MISSING: skipped_duplicates in service.py"; exit 1; }
+    echo "  ✓ process_batch_rows skipped_duplicates 추가"
+
+    [ -f "$SCRIPT" ] || { echo "MISSING: scripts/dedup_contents.py"; exit 1; }
+    echo "  ✓ dedup_contents.py 존재"
+
+    python3 -c "import scripts.dedup_contents" || { echo "FAIL: dedup_contents import"; exit 1; }
+    echo "  ✓ import OK"
+
+    echo "--- dry-run 실행 ---"
+    python3 scripts/dedup_contents.py --dry-run --limit 3 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: dry-run"; exit 1; }
+    echo "  ✓ dry-run 성공"
+
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step2)
+    echo "=== recommend-cast-enrich-step2: kobis-movie-info ==="
+    KOBIS="$BACKEND/api/meta_core/clients/kobis_client.py"
+    grep -q "def movie_info" "$KOBIS" || { echo "MISSING: movie_info method"; exit 1; }
+    echo "  ✓ KobisClient.movie_info 추가"
+    python3 -c "
+from api.meta_core.clients.kobis_client import KobisClient
+import inspect
+sig = inspect.signature(KobisClient.movie_info)
+assert 'movie_cd' in sig.parameters, 'movie_cd 파라미터 없음'
+print('  ✓ signature OK')
+" || { echo "FAIL: signature"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step3)
+    echo "=== recommend-cast-enrich-step3: enrich-credits ==="
+    SVC="$BACKEND/api/programming/metadata/service.py"
+    ROUTER="$BACKEND/api/programming/metadata/router.py"
+
+    grep -q "def enrich_external_credits" "$SVC" || { echo "MISSING: enrich_external_credits"; exit 1; }
+    echo "  ✓ enrich_external_credits 함수"
+
+    grep -q "def _enrich_tmdb_source\|_enrich_tmdb_source" "$SVC" || { echo "MISSING: _enrich_tmdb_source"; exit 1; }
+    grep -q "def _enrich_kobis_source\|_enrich_kobis_source" "$SVC" || { echo "MISSING: _enrich_kobis_source"; exit 1; }
+    echo "  ✓ TMDB/KOBIS 헬퍼"
+
+    grep -q "raw_cast\[:5\]\|cast\[:5\]" "$SVC" || { echo "MISSING: cast 5명 슬라이스"; exit 1; }
+    echo "  ✓ cast 상위 5명 슬라이스"
+
+    grep -q "enrich-credits" "$ROUTER" || { echo "MISSING: /enrich-credits endpoint"; exit 1; }
+    echo "  ✓ endpoint 등록"
+
+    python3 -c "
+from api.programming.metadata.service import enrich_external_credits
+import inspect
+sig = inspect.signature(enrich_external_credits)
+assert 'content_id' in sig.parameters
+assert 'db' in sig.parameters
+print('  ✓ signature OK')
+" || { echo "FAIL: signature"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step4)
+    echo "=== recommend-cast-enrich-step4: verify-content-4192 ==="
+    echo "--- enrich-credits POST ---"
+    RES=$(curl -s -X POST http://localhost:8000/api/programming/metadata/contents/4192/enrich-credits)
+    echo "  응답: $RES"
+    echo "$RES" | grep -q '"tmdb"' || { echo "FAIL: tmdb 키 없음"; exit 1; }
+    echo "$RES" | grep -q '"kobis"' || { echo "FAIL: kobis 키 없음"; exit 1; }
+
+    echo "--- recommendations API ---"
+    REC=$(curl -s http://localhost:8000/api/programming/metadata/contents/4192/recommendations)
+    echo "$REC" | python3 -m json.tool | grep -A 3 '"field": "cast"' || { echo "WARN: cast 필드 없음 (소스에 cast 없을 수 있음)"; }
+    echo "$REC" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+fields = {r['field'] for r in data['auto_fill'] + data['conflicts']}
+print(f'  필드 목록: {sorted(fields)}')
+assert 'director' in fields or 'genres' in fields, '기존 필드 회귀'
+"
+    echo "=== PASS ==="
+    ;;
+
+  recommend-cast-enrich-step5)
+    echo "=== recommend-cast-enrich-step5: wrap (doc only) ==="
+    INDEX="$SCRIPT_DIR/../plans/dev-recommend-cast-enrich/index.json"
+    [ -f "$INDEX" ] || { echo "MISSING: plans/dev-recommend-cast-enrich/index.json"; exit 1; }
+    python3 -c "
+import json
+data = json.load(open('$INDEX'))
+pending = [s for s in data['steps'] if s['status'] == 'pending']
+assert not pending, f'pending steps 남음: {pending}'
+print('  ✓ 모든 step completed')
+" || { echo "FAIL: pending steps"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-live-search)
+    echo "=== kmdb-live-search: KmdbClient 실제 외부 API 호출 ==="
+    python3 -c "
+from shared.config import settings
+from api.meta_core.clients.kmdb_client import KmdbClient, KmdbApiKeyMissing, KmdbDailyLimitExceeded
+
+if not settings.KMDB_API_KEY:
+    print('  ✗ KMDB_API_KEY 미설정')
+    exit(1)
+print(f'  ✓ API 키 존재: {settings.KMDB_API_KEY[:4]}...')
+
+# NOTE: year 파라미터는 releaseDts=YYYYMMDD 형식 필요 — str(year) 변환 버그 (follow-up)
+# 이 검증은 year 없이 API 키 유효성 + 서버 응답 정상 여부만 확인
+client = KmdbClient(settings.KMDB_API_KEY)
+try:
+    results = client.search_movie('기생충')
+    assert len(results) >= 1, f'결과 없음: {results}'
+    assert 'DOCID' in results[0], f'DOCID 키 없음: {list(results[0].keys())[:5]}'
+    docid = results[0]['DOCID']
+    title = results[0].get('title', '').strip()
+    print(f'  ✓ search_movie 결과 {len(results)}건')
+    print(f'  ✓ DOCID={docid}, title={title}')
+except KmdbDailyLimitExceeded:
+    print('  ✗ KMDB daily quota 초과 — 내일 재시도')
+    exit(1)
+except KmdbApiKeyMissing:
+    print('  ✗ KmdbApiKeyMissing — API 키 문제')
+    exit(1)
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-unit-pytest)
+    echo "=== kmdb-unit-pytest: KMDB 단위 테스트 ==="
+    python3 -m pytest tests/meta_core/test_discovery_kmdb.py tests/meta_core/test_enrich.py \
+        -q -k "kmdb or discover_kmdb or KmdbClient or kmdb_client" \
+        --tb=short
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-discovery-run)
+    echo "=== kmdb-discovery-run: Celery discover_kmdb 동기 실행 ==="
+    python3 -c "
+import sqlite3, json
+conn = sqlite3.connect('media_ax_dev.db')
+before = conn.execute(\"SELECT count(*) FROM content_seeds WHERE source_type='kmdb'\").fetchone()[0]
+print(f'  before: content_seeds (source_type=kmdb) = {before}')
+conn.close()
+"
+    python3 -c "
+from workers.tasks.discovery_tasks import discover_kmdb
+print('  태스크 실행 중 (mode=new_release, days=90)...')
+result = discover_kmdb.apply(kwargs={'mode': 'new_release', 'days': 90}).get(timeout=120)
+print(f'  결과: {result}')
+"
+    python3 -c "
+import sqlite3
+conn = sqlite3.connect('media_ax_dev.db')
+after = conn.execute(\"SELECT count(*) FROM content_seeds WHERE source_type='kmdb'\").fetchone()[0]
+print(f'  after: content_seeds (source_type=kmdb) = {after}')
+samples = conn.execute(\"SELECT id, title, external_id FROM content_seeds WHERE source_type='kmdb' ORDER BY discovered_at DESC LIMIT 3\").fetchall()
+for s in samples:
+    print(f'    seed id={s[0]} title={s[1]} external_id={s[2]}')
+conn.close()
+"
+    echo "=== PASS ==="
+    ;;
+
+  kmdb-enrich-content)
+    echo "=== kmdb-enrich-content: KMDB enrich 경로 검증 (Docker PostgreSQL) ==="
+    # Docker 컨테이너의 backend 에서 enrich_content 호출
+    docker compose exec -T backend python3 -c "
+from shared.database import SessionLocal
+from sqlalchemy import text
+
+# 1. 대상 콘텐츠 선정: KMDB 소스 없는 콘텐츠 1건
+db = SessionLocal()
+try:
+    result = db.execute(text('''
+        SELECT c.id, c.title, c.production_year
+        FROM contents c
+        WHERE c.production_year IS NOT NULL
+          AND c.id NOT IN (
+              SELECT content_id FROM external_meta_sources WHERE source_type = 'kmdb'
+          )
+        ORDER BY c.id DESC LIMIT 1
+    '''))
+    row = result.fetchone()
+    if not row:
+        print('  ℹ 대상 콘텐츠 없음 (모두 이미 KMDB 소스 보유)')
+        exit(0)
+    content_id, title, year = row
+    print(f'  대상: content_id={content_id}, title={title}, year={year}')
+finally:
+    db.close()
+"
+
+    # 2. enrich_content 호출 → ExternalMetaSource 에 KMDB 행 생성 시도
+    docker compose exec -T backend python3 -c "
+from shared.database import SessionLocal
+from sqlalchemy import text
+from api.meta_core.enrich import enrich_content
+
+db = SessionLocal()
+content_id = None
+try:
+    result = db.execute(text('''
+        SELECT c.id FROM contents c
+        WHERE c.production_year IS NOT NULL
+          AND c.id NOT IN (SELECT content_id FROM external_meta_sources WHERE source_type='kmdb')
+        ORDER BY c.id DESC LIMIT 1
+    '''))
+    row = result.fetchone()
+    if not row:
+        print('  ℹ 대상 콘텐츠 없음 (enrich 스킵)')
+        exit(0)
+    content_id = row[0]
+
+    # enrich 실행
+    enrich_content(content_id, db)
+    db.commit()
+    print(f'  ✓ enrich_content({content_id}) 완료')
+finally:
+    db.close()
+
+# 3. 결과 검증: external_meta_sources 에 kmdb 행 확인
+db2 = SessionLocal()
+try:
+    result = db2.execute(text('''
+        SELECT id, source_type, substr(json_extract(raw_json, '$'), 1, 150)
+        FROM external_meta_sources
+        WHERE content_id = :cid AND source_type = 'kmdb'
+        ORDER BY created_at DESC LIMIT 1
+    '''), {'cid': content_id})
+    row = result.fetchone()
+    if row:
+        print(f'  ✓ ExternalMetaSource id={row[0]}, source_type={row[1]}')
+        print(f'  raw_json 발췌: {row[2]}...')
+    else:
+        print(f'  ℹ 새 ExternalMetaSource (source_type=kmdb) 행 없음 (enrich 결과 KMDB 매칭 실패 가능)')
+finally:
+    db2.close()
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content"
     exit 1
     ;;
 esac

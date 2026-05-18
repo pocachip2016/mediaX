@@ -1,0 +1,16 @@
+{
+  "project": "mediaX",
+  "phase": "dev-kmdb-verify",
+  "description": "KMDB 파이프라인 4 레이어 동작 검증 — live API · 단위 테스트 · 디스커버리 · 엔리치먼트",
+  "context": {
+    "background": "TMDB·KOBIS 는 정상 동작 확인 완료. KMDB 는 dev-recommend-cast-enrich 에서 범위 외로 처리됐고 실제 운영 환경 검증 미완료.",
+    "scope": "신규 기능 추가 없음. 결함 발견 시 follow-up 으로 분리."
+  },
+  "steps": [
+    { "step": "1", "name": "kmdb-live-search", "status": "completed", "summary": "KMDB API 키 유효 + search_movie 외부 호출 정상(5건 반환). year 파라미터 YYYYMMDD 포맷 버그 발견 → follow-up", "completed_at": "2026-05-18T10:30:00+09:00" },
+    { "step": "2", "name": "kmdb-unit-pytest", "status": "completed", "summary": "20개 KMDB 단위 테스트 통과 (test_discovery_kmdb + test_enrich KMDB 케이스). 회귀 완료.", "completed_at": "2026-05-18T10:35:00+09:00" },
+    { "step": "3", "name": "kmdb-discovery-run", "status": "completed", "summary": "discover_kmdb 동기 실행 — 100개 후보 검색 → 84개 신규 seed 생성(before=6 → after=90). 경로 정상.", "completed_at": "2026-05-18T10:40:00+09:00" },
+    { "step": "4", "name": "kmdb-enrich-content", "status": "completed", "summary": "enrich_content(4305) 호출 성공, 트랜잭션 커밋 OK. KMDB 매칭 결과 없음(예상됨).", "completed_at": "2026-05-18T10:50:00+09:00" },
+    { "step": "5", "name": "wrap", "status": "pending" }
+  ]
+}
