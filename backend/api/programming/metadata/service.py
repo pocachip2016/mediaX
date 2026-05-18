@@ -1697,8 +1697,8 @@ async def bulk_enrich(
     sync_mode: bool = False,
 ) -> "JobStatusOut":
     """Bulk 외부 재매칭"""
-    from api.programming.metadata.schemas import JobStatusOut
-    from workers.metadata_tasks import process_bulk_enrich
+    from api.programming.metadata.schemas import BulkActionResponse
+    from workers.tasks.metadata import enrich_content_metadata
 
     # 모든 상태 허용
     contents = db.query(Content).filter(Content.id.in_(ids)).all()
@@ -1721,20 +1721,16 @@ async def bulk_enrich(
         job.status = "done"
         job.success_count = len(valid_ids)
     else:
-        process_bulk_enrich.delay(job.id)
+        for content_id in valid_ids:
+            enrich_content_metadata.delay(content_id)
 
     db.add(job)
     db.commit()
 
-    return JobStatusOut(
-        id=job.id,
-        status=job.status,
-        action_type="bulk_enrich",
-        target_count=len(valid_ids),
-        completed_count=job.success_count,
-        failed_count=job.failed_count,
-        progress_percent=0 if job.status == "pending" else 100,
-        created_at=job.created_at,
+    return BulkActionResponse(
+        job_id=str(job.id),
+        ids_accepted=len(valid_ids),
+        ids_rejected=len(invalid_ids),
         errors=[f"ID {id} 없음" for id in invalid_ids] if invalid_ids else None,
     )
 
