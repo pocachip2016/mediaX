@@ -95,8 +95,13 @@ class Content(Base):
     tags = relationship("ContentTag", back_populates="content", cascade="all, delete-orphan")
     credits = relationship("ContentCredit", back_populates="content", cascade="all, delete-orphan")
     images = relationship("ContentImage", back_populates="content", cascade="all, delete-orphan")
+    # NOTE: external_sources 는 의도적으로 delete cascade 미설정.
+    # external_meta_sources 는 TMDB/KOBIS 수집 결과(SSOT·재구축 고비용)이므로
+    # 부모 Content 삭제 시 함께 지우면 안 됨. content_id 가 nullable + FK NO ACTION
+    # 이므로 기본 cascade(save-update, merge) 동작이 부모 삭제 시 content_id 를
+    # NULL 로 비워 행을 보존한다.
     external_sources = relationship(
-        "ExternalMetaSource", back_populates="content", cascade="all, delete-orphan"
+        "ExternalMetaSource", back_populates="content"
     )
     ai_results = relationship(
         "ContentAIResult", back_populates="content", cascade="all, delete-orphan"
