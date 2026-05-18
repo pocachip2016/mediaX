@@ -12,7 +12,7 @@ components/
 ## layout/sidebar.tsx
 - `docsNav` (config/docs.ts)에서 네비게이션 자동 생성 — 하드코딩 없음
 - `SECTION_ICONS`: base path → LucideIcon 매핑
-- 로고: 축소 시 "MX" 배지, 확장 시 "MediaX" + KT alpha 로고
+- 로고: 축소 시 "MX" 배지, 확장 시 "MediaX" 로고
 - `NavGroup`: Collapsible 섹션, 클릭으로 토글
 
 ## layout/header.tsx
