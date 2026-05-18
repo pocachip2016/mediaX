@@ -4,7 +4,6 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-service-distribution Step 1 — service-bulk-import (실데이터 확보 대기)
 
 ## Next (이번 마일스톤)
 
@@ -26,6 +25,7 @@
 - [x] dev-kmdb-verify — KMDB 4 레이어 검증 (live API · pytest · discovery · enrich) + year 파라미터 버그 발견 follow-up (2026-05-18)
 - [x] dev-recommend-cast-enrich Steps 2–4 — KobisClient.movie_info + enrich_external_credits(TMDB/KOBIS 헬퍼) + cast 5명 슬라이스 + enrich-credits endpoint (2026-05-17)
 - [x] dev-recommend-detail-page Steps 1.0~1.5 — 추천 상세 화면 기본 구조 (sticky 액션바·포스터·메타 3단·줄거리·AI 종합) (2026-05-17)
+- [x] dev-service-distribution Step 1 — service-bulk-import (한국어 헤더 CSV 파서 확장 + SMPTE 런타임 + 5,142건 import) (2026-05-18)
 - [x] dev-service-distribution Step 0 — distribution-schema (4테이블 모델 + alembic 0014 + GET 3 엔드포인트 + pytest 8 pass) (2026-05-16)
 - [x] dev-dam-poster-ingest P.1~P.3 — Dam poster 자동 등록 파이프라인 완료 (2026-05-16)
 - [x] dev-meta-intelligence Phase D — WebSearch 기반 콘텐츠 발굴 (2026-05-16)

@@ -17,8 +17,10 @@
     },
     {
       "step": 1,
-      "name": "iptv-kt-bulk-import",
-      "status": "pending"
+      "name": "service-bulk-import",
+      "status": "completed",
+      "summary": "한국어 헤더 CSV 파서 확장(SMPTE→분, 개봉일→연도, 5.1CH 매핑, 화질 와이어링, 콘텐츠편성명 타이틀 별칭). 영상유형 extra_metadata 자동 보존. 성인19+ 5,142건 + Watcha 237건 DB import 완료, pytest pass.",
+      "completed_at": "2026-05-18T00:00:00+09:00"
     },
     {
       "step": 2,

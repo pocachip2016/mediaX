@@ -368,7 +368,7 @@ async def batch_upload(
     rows = []
     try:
         KNOWN_COLUMNS = {
-            "title", "제목", "콘텐츠명",
+            "title", "제목", "콘텐츠명", "콘텐츠편성명",
             "production_year", "제작연도", "개봉일",
             "content_type", "타입",  # 영상유형은 제외 → extra_metadata 자동 보존
             "cp_name", "CP사", "CP명",
@@ -390,7 +390,7 @@ async def batch_upload(
             smpte_runtime = get_fn(["상용시간(RT)"])
             raw_year_date = get_fn(["개봉일"])
             return {
-                "title": get_fn(["title", "제목", "콘텐츠명"]),
+                "title": get_fn(["title", "제목", "콘텐츠명", "콘텐츠편성명"]),
                 "production_year": (
                     _safe_int(get_fn(["production_year", "제작연도"]))
                     or _parse_year(raw_year_date)
