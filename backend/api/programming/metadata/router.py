@@ -367,6 +367,14 @@ async def batch_upload(
     # CSV 파싱 (Excel은 추후 openpyxl 연동)
     rows = []
     try:
+        KNOWN_COLUMNS = {
+            "title", "제목", "production_year", "제작연도", "content_type", "타입",
+            "cp_name", "CP사", "synopsis", "시놉시스", "cast", "출연진",
+            "directors", "감독", "genres", "장르", "country", "제작국가",
+            "runtime", "런타임", "rating_age", "시청등급", "poster_url", "포스터URL",
+            "audio_channels", "음성채널",
+        }
+
         def _extract_row(get_fn) -> dict:
             """공통 필드 추출 — CSV/Excel 모두 사용"""
             return {
@@ -382,10 +390,22 @@ async def batch_upload(
                 "runtime": _safe_int(get_fn(["runtime", "런타임"])),
                 "rating_age": get_fn(["rating_age", "시청등급"]),
                 "poster_url": get_fn(["poster_url", "포스터URL"]) or None,
+                "audio_channels": get_fn(["audio_channels", "음성채널"]) or None,
             }
 
         if file.filename.lower().endswith(".csv"):
-            text = content_bytes.decode("utf-8-sig", errors="replace")
+            text = None
+            for encoding in ("utf-8-sig", "cp949", "euc-kr"):
+                try:
+                    text = content_bytes.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if text is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="지원하지 않는 파일 인코딩 (UTF-8/CP949/EUC-KR 만 지원)",
+                )
             reader = csv.DictReader(io.StringIO(text))
             for row in reader:
                 def _csv_get(col_names, _row=row):
@@ -394,7 +414,11 @@ async def batch_upload(
                         if v:
                             return v.strip()
                     return ""
-                rows.append(_extract_row(_csv_get))
+                extracted = _extract_row(_csv_get)
+                extra = {k: v.strip() for k, v in row.items() if k not in KNOWN_COLUMNS and v and str(v).strip()}
+                if extra:
+                    extracted["extra_metadata"] = extra
+                rows.append(extracted)
         else:
             # Excel 지원 — openpyxl 없으면 에러 메시지 반환
             try:
@@ -410,7 +434,15 @@ async def batch_upload(
                             if idx is not None and _cells[idx]:
                                 return str(_cells[idx]).strip()
                         return ""
-                    rows.append(_extract_row(_excel_get))
+                    extracted = _extract_row(_excel_get)
+                    extra = {
+                        headers[i]: str(v).strip()
+                        for i, v in enumerate(row_cells)
+                        if v is not None and str(v).strip() and headers[i] not in KNOWN_COLUMNS
+                    }
+                    if extra:
+                        extracted["extra_metadata"] = extra
+                    rows.append(extracted)
             except ImportError:
                 raise HTTPException(
                     status_code=422,

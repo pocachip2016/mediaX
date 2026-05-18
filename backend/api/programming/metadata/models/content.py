@@ -157,6 +157,10 @@ class ContentMetadata(Base):
     drm_type = Column(String(50))               # "Widevine", "PlayReady", "FairPlay"
     preview_clip_url = Column(String(1000))
 
+    # 업로드 확장 필드
+    audio_channels = Column(String(20))              # "5.1CH", "Stereo", "Atmos"
+    extra_metadata = Column(JSON)                    # CSV 미매핑 컬럼 흡수 {"헤더": "값"}
+
     # 처리 이력
     ai_processed_at = Column(DateTime(timezone=True))
     reviewed_by = Column(String(200))

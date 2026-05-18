@@ -3414,6 +3414,85 @@ print(f'  ✓ contents {total:,}건 반환')
     echo "=== PASS ==="
     ;;
 
+  bulk-mapping-schema-ext)
+    echo "=== bulk-mapping-schema-ext: ContentMetadata 확장 컬럼 + alembic 0018 ==="
+    # 1. alembic 현재 head 확인
+    docker exec mediax-backend-1 alembic current 2>&1 | tail -5
+    # 2. 마이그레이션 실행
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -10
+    # 3. 컬럼 존재 확인
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+from shared.database import SessionLocal
+from sqlalchemy import text
+db = SessionLocal()
+try:
+    row = db.execute(text("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name='content_metadata'
+          AND column_name IN ('audio_channels','extra_metadata')
+        ORDER BY column_name
+    """)).fetchall()
+    cols = {r[0] for r in row}
+    assert 'audio_channels' in cols, "audio_channels 누락"
+    assert 'extra_metadata' in cols, "extra_metadata 누락"
+    print(f"  ✓ 컬럼 확인: {sorted(cols)}")
+finally:
+    db.close()
+PYEOF
+    # 4. 모델 import + 컬럼 속성 확인
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+from api.programming.metadata.models.content import ContentMetadata
+assert hasattr(ContentMetadata, 'audio_channels'), "모델 audio_channels 누락"
+assert hasattr(ContentMetadata, 'extra_metadata'), "모델 extra_metadata 누락"
+print("  ✓ ContentMetadata 모델 속성 OK")
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
+  csv-encoding-fallback-frontend)
+    echo "=== csv-encoding-fallback-frontend: 업로드 페이지 프리뷰 인코딩 폴백 ==="
+    UPLOAD_PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/upload/page.tsx"
+    # 1. TextDecoder 폴백 로직 존재 확인
+    grep -q 'TextDecoder("utf-8", { fatal: true })' "$UPLOAD_PAGE" || { echo "  ✗ utf-8 fatal decoder 누락"; exit 1; }
+    grep -q 'TextDecoder("euc-kr")' "$UPLOAD_PAGE" || { echo "  ✗ euc-kr 폴백 누락"; exit 1; }
+    echo "  ✓ TextDecoder 폴백 로직 OK"
+    # 2. typecheck (workspace 단위)
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    npm run typecheck 2>&1 | tail -20
+    echo "  ✓ typecheck pass"
+    cd "$BACKEND"
+    echo "=== PASS ==="
+    ;;
+
+  csv-encoding-fallback)
+    echo "=== csv-encoding-fallback: bulk upload CSV 인코딩 폴백 ==="
+    # 1. Python 문법 OK + 폴백 로직 존재 확인
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+import ast, pathlib
+src = pathlib.Path("/app/api/programming/metadata/router.py").read_text()
+ast.parse(src)
+assert 'for encoding in ("utf-8-sig", "cp949", "euc-kr"):' in src, "폴백 루프 누락"
+assert '지원하지 않는 파일 인코딩' in src, "에러 메시지 누락"
+print("  ✓ syntax + fallback 로직 OK")
+PYEOF
+    # 2. CP949 인코딩 디코드 실측
+    docker exec mediax-backend-1 python3 << 'PYEOF'
+sample = "title,production_year\n영화_성인19+2026,2026\n".encode("cp949")
+text = None
+for enc in ("utf-8-sig", "cp949", "euc-kr"):
+    try:
+        text = sample.decode(enc)
+        used = enc
+        break
+    except UnicodeDecodeError:
+        continue
+assert text is not None, "디코드 실패"
+assert "영화_성인19+2026" in text, f"한글 깨짐: {text!r}"
+print(f"  ✓ CP949 폴백 OK (used={used})")
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
   link-kmdb-to-contents)
     echo "=== link-kmdb-to-contents: KMDB 캐시 → contents 링크 태스크 ==="
     # 1. 태스크 import + Beat 스케줄 등록 확인

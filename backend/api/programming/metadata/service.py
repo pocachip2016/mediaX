@@ -488,6 +488,8 @@ def process_batch_rows(
                 "rating_age": row.get("rating_age"),
                 "poster_url": row.get("poster_url"),
                 "production_year": production_year,
+                "audio_channels": row.get("audio_channels"),
+                "extra_metadata": row.get("extra_metadata"),
             }.items() if v}
 
             # Dedup: 같은 (title, year, cp) 매칭하는 기존 콘텐츠 조회
@@ -539,7 +541,12 @@ def process_batch_rows(
             db.add(content)
             db.flush()
 
-            meta = ContentMetadata(content_id=content.id, quality_score=0.0)
+            meta = ContentMetadata(
+                content_id=content.id,
+                quality_score=0.0,
+                audio_channels=row.get("audio_channels") or None,
+                extra_metadata=row.get("extra_metadata") or None,
+            )
             db.add(meta)
             db.flush()
 
