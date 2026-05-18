@@ -55,7 +55,7 @@ def test_get_categories_empty(db):
 
 
 def test_get_categories_filter_platform(db):
-    db.add(ServiceCategory(name="지니TV 추천", category_type="recommendation", platform="iptv_genie"))
+    db.add(ServiceCategory(name="IPTV 추천", category_type="recommendation", platform="iptv_genie"))
     db.add(ServiceCategory(name="Watcha TOP10", category_type="ranking", platform="ott_watcha"))
     db.commit()
     result = service.get_categories(db, platform="iptv_genie")

@@ -27,7 +27,7 @@
 ### 확장 (0002 마이그레이션)
 | 테이블 | 설명 |
 |--------|------|
-| `genre_codes` | 장르 마스터 — 대분류/소분류 계층, 지니TV 표준 20개 기본 시딩 |
+| `genre_codes` | 장르 마스터 — 대분류/소분류 계층, 표준 20개 기본 시딩 |
 | `tag_codes` | 태그 마스터 (mood/theme/keyword/ai) |
 | `content_genres` | 콘텐츠-장르 M:N (is_primary, source) |
 | `content_tags` | 콘텐츠-태그 M:N (confidence_score) |

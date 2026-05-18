@@ -28,7 +28,7 @@ class TagType(str, enum.Enum):
 
 
 class GenreCode(Base):
-    """장르 마스터 — 지니TV 표준 장르 코드 기반 계층 구조"""
+    """장르 마스터 — 표준 장르 코드 기반 계층 구조"""
     __tablename__ = "genre_codes"
 
     id = Column(Integer, primary_key=True, index=True)

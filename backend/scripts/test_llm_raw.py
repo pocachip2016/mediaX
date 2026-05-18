@@ -9,7 +9,7 @@ from api.programming.metadata.ai_engine import GENRES, MOOD_TAGS, RATING_OPTIONS
 async def main():
     p = GeminiProvider()
     system_prompt = (
-        "당신은 한국 OTT 플랫폼 지니TV의 콘텐츠 메타데이터 전문가입니다. "
+        "당신은 한국 VOD 플랫폼의 콘텐츠 메타데이터 전문가입니다. "
         "주어진 콘텐츠 정보를 바탕으로 정확한 메타데이터를 JSON 형식으로 생성하세요."
     )
     user_prompt = f"""다음 콘텐츠의 메타데이터를 생성해 주세요.

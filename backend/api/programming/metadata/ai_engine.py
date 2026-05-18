@@ -112,7 +112,7 @@ def _cached_web_search(query: str, db: Session, ttl_days: int = 7) -> list:
 
 AI_ENGINE = getattr(settings, "AI_ENGINE", "gemini")
 
-# 장르 목록 (지니TV 표준 코드 기반)
+# 장르 목록 (표준 코드 기반)
 GENRES = [
     "액션", "드라마", "코미디", "로맨스", "스릴러", "공포", "SF", "판타지",
     "애니메이션", "다큐멘터리", "예능", "키즈", "교육", "스포츠", "음악",
@@ -243,7 +243,7 @@ async def _generate_metadata_with_engine(
     process_content_ai에서 ContentAIResult 기록 시 사용.
     """
     system_prompt = (
-        "당신은 한국 OTT 플랫폼 지니TV의 콘텐츠 메타데이터 전문가입니다. "
+        "당신은 한국 VOD 플랫폼의 콘텐츠 메타데이터 전문가입니다. "
         "주어진 콘텐츠 정보를 바탕으로 정확한 메타데이터를 JSON 형식으로 생성하세요."
     )
 

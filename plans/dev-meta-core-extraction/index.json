@@ -1,7 +1,7 @@
 {
   "project": "mediaX",
   "phase": "dev-meta-core-extraction",
-  "description": "ContentMetadata 의 Layer1(canonical meta) / Layer2(KT 서비스) 혼재 정리. meta_core 모듈 신설, ExternalMetaSource 통합, external_sync_log 일반화, KOBIS sync 완성(Dam에서 이관), 레거시 컬럼 제거.",
+  "description": "ContentMetadata 의 Layer1(canonical meta) / Layer2(서비스) 혼재 정리. meta_core 모듈 신설, ExternalMetaSource 통합, external_sync_log 일반화, KOBIS sync 완성(Dam에서 이관), 레거시 컬럼 제거.",
   "steps": [
     {
       "step": 0,
