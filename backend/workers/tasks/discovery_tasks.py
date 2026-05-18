@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task, chord, group
+from sqlalchemy.exc import IntegrityError
 
 from shared.database import SessionLocal
 from shared.config import settings
@@ -133,9 +134,10 @@ def discover_kmdb(self, mode: str = "new_release", days: int = 7):
                     logger.warning("[kmdb] cache upsert 실패 %s: %s", result.external_id, exc)
                     errors += 1
 
-                # SEED 발굴 (기존 dedup 흐름)
+                # SEED 발굴 — SAVEPOINT로 중복 IntegrityError 격리
                 try:
-                    _, action = match_or_create_seed(db, result)
+                    with db.begin_nested():
+                        _, action = match_or_create_seed(db, result)
                     if action == "created":
                         new_seeds += 1
                     elif action == "matched_existing":
@@ -144,6 +146,9 @@ def discover_kmdb(self, mode: str = "new_release", days: int = 7):
                         duplicates += 1
                     elif action == "alt_id_added":
                         alt_id_added += 1
+                except IntegrityError:
+                    duplicates += 1
+                    logger.debug("[kmdb] dup skip (IntegrityError): %s", result.external_id)
                 except Exception as exc:
                     logger.warning("[kmdb] dedup 실패 %s: %s", result.external_id, exc)
                     errors += 1

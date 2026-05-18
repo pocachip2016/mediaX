@@ -219,5 +219,6 @@ def match_or_create_seed(
         last_seen_at=now,
     )
     db.add(seed)
+    db.flush()  # IntegrityError를 savepoint 내에서 즉시 발생 — batch commit까지 지연 방지
     logger.debug("[dedup] created: %s/%s", result.source_type, result.external_id)
     return seed, "created"
