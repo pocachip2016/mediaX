@@ -1,6 +1,6 @@
 @../CLAUDE.md
 
-# mediaX — KT 지니TV VOD AI Transformation Platform
+# mediaX — VOD AI Transformation Platform
 
 ## 프로젝트 구조
 ```

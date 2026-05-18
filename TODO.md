@@ -1,10 +1,10 @@
 # TODO — mediaX
 
-> KT 지니TV VOD AI Transformation Platform. 구현 현황 표는 `CLAUDE.md` 참조.
+> VOD AI Transformation Platform. 구현 현황 표는 `CLAUDE.md` 참조.
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-service-distribution Step 1 — iptv-kt-bulk-import (KT 실데이터 확보 조건부)
+- [ ] dev-service-distribution Step 1 — service-bulk-import (실데이터 확보 대기)
 
 ## Next (이번 마일스톤)
 
