@@ -16,75 +16,9 @@ import { PosterRow } from "@/components/contents/recommend/PosterRow"
 import { ShortMetaGrid } from "@/components/contents/recommend/ShortMetaGrid"
 import { SynopsisRow } from "@/components/contents/recommend/SynopsisRow"
 import { AISummaryBottom } from "@/components/contents/recommend/AISummaryBottom"
+import { SecondaryAccordion } from "@/components/contents/recommend/SecondaryAccordion"
 import { useContentReviewActions } from "@/hooks/useContentReviewActions"
 import { getReturnPath, getReturnHref } from "@/lib/recommendDerive"
-
-const MOCK_RECOMMENDATIONS: RecommendationsOut = {
-  content_id: 0,
-  missing_fields: [],
-  auto_fill: [
-    {
-      field: "genres",
-      status: "auto",
-      recommendations: [{ source_type: "tmdb", source_id: 2, value: "드라마/스릴러", confidence: 0.94 }],
-      ai_synthesis: null,
-    },
-    {
-      field: "cp_name",
-      status: "auto",
-      recommendations: [{ source_type: "watcha", source_id: 1, value: "CJ E&M", confidence: 0.92 }],
-      ai_synthesis: null,
-    },
-    {
-      field: "runtime",
-      status: "auto",
-      recommendations: [
-        { source_type: "tmdb", source_id: 2, value: "132분", confidence: 0.94 },
-        { source_type: "watcha", source_id: 1, value: "132분", confidence: 1.0 },
-      ],
-      ai_synthesis: null,
-    },
-    {
-      field: "country",
-      status: "auto",
-      recommendations: [{ source_type: "tmdb", source_id: 2, value: "South Korea", confidence: 0.96 }],
-      ai_synthesis: null,
-    },
-    {
-      field: "production_year",
-      status: "auto",
-      recommendations: [{ source_type: "tmdb", source_id: 2, value: "2019", confidence: 0.99 }],
-      ai_synthesis: null,
-    },
-    {
-      field: "director",
-      status: "auto",
-      recommendations: [{ source_type: "watcha", source_id: 1, value: "봉준호", confidence: 0.98 }],
-      ai_synthesis: null,
-    },
-    {
-      field: "cast",
-      status: "auto",
-      recommendations: [{ source_type: "watcha", source_id: 1, value: "송강호 · 이순신 · 조진웅", confidence: 0.95 }],
-      ai_synthesis: null,
-    },
-  ],
-  conflicts: [
-    {
-      field: "synopsis",
-      status: "conflict",
-      recommendations: [
-        { source_type: "watcha", source_id: 1, value: "가난한 박씨 가족은 부잣집에 하나 둘씩 취업하며 묘한 공생 관계를 형성해간다.", confidence: 0.5 },
-        { source_type: "tmdb", source_id: 2, value: "A poor family schemes to become employed by a wealthy Park family.", confidence: 0.94 },
-      ],
-      ai_synthesis: {
-        source_type: "ai", source_id: 99,
-        value: "경제적으로 어려운 박씨 일가는 재벌 박 사장 가족의 집에 한 명씩 취업하며 공생 관계를 형성해가지만, 숨겨진 비밀이 드러나면서 예기치 못한 사건이 벌어진다.",
-        confidence: 0.79,
-      },
-    },
-  ],
-}
 
 export default function ContentRecommendDetailPage() {
   const params = useParams()
@@ -97,8 +31,10 @@ export default function ContentRecommendDetailPage() {
 
   const [content, setContent] = useState<ContentDetail | null>(null)
   const [recommendations, setRecommendations] = useState<RecommendationsOut>({
-    ...MOCK_RECOMMENDATIONS,
     content_id: contentId,
+    missing_fields: [],
+    auto_fill: [],
+    conflicts: [],
   })
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -117,26 +53,12 @@ export default function ContentRecommendDetailPage() {
   }, [contentId])
 
   const fetchAll = useCallback(async () => {
-    try {
-      const [updatedContent, updatedRecs] = await Promise.all([
-        metadataApi.getContent(contentId),
-        metadataApi.getRecommendations(contentId),
-      ])
-      setContent(updatedContent)
-      // 개발 단계: 항상 MOCK 사용 (backend API 데이터 구조 불일치 시)
-      const recData = updatedRecs && updatedRecs.auto_fill && updatedRecs.auto_fill.length > 0
-        ? updatedRecs
-        : { ...MOCK_RECOMMENDATIONS, content_id: contentId }
-      setRecommendations(recData)
-    } catch (error) {
-      // API 실패시 MOCK 데이터 사용
-      const updatedContent = await metadataApi.getContent(contentId)
-      setContent(updatedContent)
-      setRecommendations({
-        ...MOCK_RECOMMENDATIONS,
-        content_id: contentId,
-      })
-    }
+    const [updatedContent, updatedRecs] = await Promise.all([
+      metadataApi.getContent(contentId),
+      metadataApi.getRecommendations(contentId).catch(() => null),
+    ])
+    setContent(updatedContent)
+    setRecommendations(updatedRecs ?? { content_id: contentId, missing_fields: [], auto_fill: [], conflicts: [] })
   }, [contentId])
 
   useEffect(() => {
@@ -238,10 +160,8 @@ export default function ContentRecommendDetailPage() {
           />
         )}
 
-        {/* Step 1.6 */}
-        <div className="border border-dashed border-slate-300 rounded-lg p-6 text-sm text-slate-400 bg-white">
-          📁 보조 정보 (Step 1.6)
-        </div>
+        {/* Step 1.6 — SecondaryAccordion */}
+        <SecondaryAccordion content={content} />
       </div>
 
       {/* 승인/반려 모달 — BulkActionModal 재사용 (단건) */}

@@ -16,6 +16,9 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] kmdb-front-monitoring — KMDB 모니터링 페이지(KPI/동기화 로그/캐시 검색) + /kmdb/cache 엔드포인트 (2026-05-18)
+- [x] kobis-quota-backfill — KOBIS quota-aware 백필 Beat 06:30 KST (잔여 quota>1000일 때 current_year→1990 역순) (2026-05-18)
+- [x] dev-recommend-detail-page Step 1.6 — SecondaryAccordion (출연진·외부소스·AI이력 3개 collapsible) (2026-05-17)
 - [x] dev-kmdb-cache — KMDB 로컬 캐시(kmdb_movie_cache) + quota-aware 백필 Beat 06:00 KST + enrich 캐시 우선 조회 (2026-05-18)
 - [x] kmdb-year-param-fix — search_movie(year) YYYYMMDD 형식 버그 수정 (2026-05-18)
 - [x] dev-kmdb-verify — KMDB 4 레이어 검증 (live API · pytest · discovery · enrich) + year 파라미터 버그 발견 follow-up (2026-05-18)

@@ -23,7 +23,7 @@
     { "step": "1.3", "name": "short-meta-3grid", "status": "completed", "summary": "ShortMetaGrid + MetaCell·DiffCell·RecomCell + classifyField helper (7행 × 3열)", "completed_at": "2026-05-17T00:00:00+09:00" },
     { "step": "1.4", "name": "synopsis-row", "status": "completed", "summary": "SynopsisRow (현재값+Diff 3소스+AI추천, 긴텍스트는 max-height+토글)", "completed_at": "2026-05-17T00:00:00+09:00" },
     { "step": "1.5", "name": "ai-summary-bottom", "status": "completed", "summary": "AISummaryBottom (avg신뢰도게이지+4칩+추천사유+bulk액션)", "completed_at": "2026-05-17T00:00:00+09:00" },
-    { "step": "1.6", "name": "secondary-accordion", "status": "pending" },
+    { "step": "1.6", "name": "secondary-accordion", "status": "completed", "summary": "SecondaryAccordion (출연진·제작진 / 외부 소스 / AI 처리 이력 3개 collapsible, 기본 닫힘) + 백엔드 get_content_recommendations missing 무관 전체 필드 반환 + MOCK 폴백 제거", "completed_at": "2026-05-17T00:00:00+09:00" },
     { "step": "1.7", "name": "preview-dialog-context-navigator", "status": "pending" },
     { "step": "1.8", "name": "wiring-states-responsive", "status": "pending" },
     { "step": "1.9", "name": "wrap", "status": "pending" }
