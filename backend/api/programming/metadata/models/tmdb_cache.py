@@ -38,6 +38,8 @@ class TmdbSyncSource(str, enum.Enum):
     kobis_backfill = "kobis_backfill"
     kmdb_daily = "kmdb_daily"
     kmdb_backfill = "kmdb_backfill"
+    tmdb_link = "tmdb_link"
+    kobis_link = "kobis_link"
     llm_merge = "llm_merge"
 
 
