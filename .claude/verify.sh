@@ -3309,6 +3309,69 @@ print('  ✓ tick 동기 실행 OK')
     echo "=== PASS ==="
     ;;
 
+  kobis-kmdb-mapped-contents)
+    echo "=== kobis-kmdb-mapped-contents: 매핑 콘텐츠 탐색 API + 타입체크 ==="
+    # 1. 백엔드 API 확인
+    python3 -c "
+import urllib.request, json
+# KOBIS
+r = urllib.request.urlopen('http://localhost:8000/api/programming/metadata/kobis/contents?size=5')
+d = json.loads(r.read())
+assert d['total'] > 0, f'KOBIS contents 0건'
+it = d['items'][0]
+for f in ['content_id','title','content_type','status','external_id']:
+    assert f in it, f'KOBIS 응답에 {f} 없음'
+print(f'  ✓ KOBIS /contents: total={d[\"total\"]}건, 필드 OK')
+
+# KMDB (0건이어도 스키마 OK면 통과)
+r2 = urllib.request.urlopen('http://localhost:8000/api/programming/metadata/kmdb/contents?size=5')
+d2 = json.loads(r2.read())
+assert 'total' in d2 and 'items' in d2, 'KMDB 응답 스키마 오류'
+print(f'  ✓ KMDB /contents: total={d2[\"total\"]}건 (enrich 전 0 정상)')
+"
+    # 2. 프론트 타입체크
+    cd /home/ktalpha/Work/mediaX/mediaX-CMS && npm run typecheck 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  kobis-api-fix)
+    echo "=== kobis-api-fix: KOBIS API 파라미터 수정 검증 ==="
+    docker exec mediax-worker-1 bash -c "cd /app && python3 << 'PYEOF'
+import httpx
+from shared.config import settings
+
+# 1. backfill: searchMovieList YYYY 포맷
+resp = httpx.get(
+    'http://www.kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json',
+    params={'key': settings.KOBIS_API_KEY, 'openStartDt': '2025', 'openEndDt': '2025', 'itemPerPage': '1', 'curPage': '1'},
+    timeout=15.0,
+)
+r = resp.json().get('movieListResult', {})
+assert r.get('movieList'), f'backfill 0건: {resp.text[:200]}'
+print('  ✓ backfill searchMovieList YYYY 포맷 OK')
+
+# 2. sync_kobis: searchDailyBoxOfficeList YYYYMMDD 포맷
+from datetime import datetime, timedelta, timezone
+date_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y%m%d')
+resp2 = httpx.get(
+    'http://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json',
+    params={'key': settings.KOBIS_API_KEY, 'targetDt': date_str},
+    timeout=15.0,
+)
+movies = resp2.json().get('boxOfficeResult', {}).get('dailyBoxOfficeList', [])
+assert movies, f'daily 0건: {resp2.text[:200]}'
+print(f'  ✓ sync_kobis dailyBoxOfficeList {date_str} {len(movies)}건 OK')
+
+# 3. 실제 task 실행
+from workers.tasks.metadata import sync_kobis
+r = sync_kobis()
+assert 'total_from_kobis' in r or 'skipped' in r, f'sync_kobis 응답 이상: {r}'
+print(f'  ✓ sync_kobis 실행: {r}')
+PYEOF
+"
+    echo "=== PASS ==="
+    ;;
+
   sqlite-to-postgres)
     echo "=== sqlite-to-postgres: SQLite → PostgreSQL 전환 검증 ==="
     PG_URL="postgresql://media_ax:media_ax@localhost:5432/media_ax"
@@ -3351,9 +3414,47 @@ print(f'  ✓ contents {total:,}건 반환')
     echo "=== PASS ==="
     ;;
 
+  link-kmdb-to-contents)
+    echo "=== link-kmdb-to-contents: KMDB 캐시 → contents 링크 태스크 ==="
+    # 1. 태스크 import + Beat 스케줄 등록 확인
+    docker exec mediax-worker-1 python3 << 'PYEOF'
+from workers.tasks.metadata import link_kmdb_cache_to_contents
+from workers.celery_app import celery_app
+assert "link-kmdb-to-contents" in celery_app.conf.beat_schedule, "Beat 스케줄 미등록"
+print("  ✓ task import + beat schedule OK")
+PYEOF
+    # 2. 실제 실행 — 매칭 결과 확인
+    docker exec mediax-worker-1 python3 << 'PYEOF'
+import sys
+from workers.tasks.metadata import link_kmdb_cache_to_contents
+result = link_kmdb_cache_to_contents()
+print(f"  link_kmdb result: {result}")
+inserted = result.get("inserted", 0)
+unchanged = result.get("unchanged", 0)
+errors = result.get("errors", 0)
+assert errors == 0, f"errors={errors}"
+print(f"  ✓ inserted={inserted} unchanged={unchanged} errors={errors}")
+PYEOF
+    # 3. external_meta_sources 에 kmdb 레코드 존재 확인
+    docker exec mediax-worker-1 python3 << 'PYEOF'
+from shared.database import SessionLocal
+from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType
+db = SessionLocal()
+try:
+    cnt = db.query(ExternalMetaSource).filter(
+        ExternalMetaSource.source_type == ExternalSourceType.kmdb
+    ).count()
+    assert cnt > 0, f"external_meta_sources kmdb 0건"
+    print(f"  ✓ kmdb ExternalMetaSource {cnt:,}건")
+finally:
+    db.close()
+PYEOF
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents"
     exit 1
     ;;
 esac

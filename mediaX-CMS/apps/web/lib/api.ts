@@ -955,6 +955,28 @@ export interface PaginatedExternalItems {
   size: number
 }
 
+export interface MappedExternalItem {
+  content_id: number
+  title: string
+  original_title: string | null
+  content_type: string
+  status: ContentStatus
+  production_year: number | null
+  cp_name: string | null
+  external_id: string
+  poster_url: string | null
+  match_confidence: number | null
+  matched_at: string | null
+  quality_score: number | null
+}
+
+export interface PaginatedMappedItems {
+  items: MappedExternalItem[]
+  total: number
+  page: number
+  size: number
+}
+
 export interface KmdbCacheItem {
   docid: string
   title: string
@@ -1008,6 +1030,15 @@ function makeExternalApi(source: "kobis" | "kmdb") {
       if (params?.page) q.set("page", String(params.page))
       if (params?.size) q.set("size", String(params.size))
       return request<PaginatedExternalItems>(`${base}/search?${q}`)
+    },
+
+    listContents: (params?: { title?: string; content_type?: string; page?: number; size?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.title)        q.set("title",        params.title)
+      if (params?.content_type) q.set("content_type", params.content_type)
+      if (params?.page)         q.set("page",         String(params.page))
+      if (params?.size)         q.set("size",         String(params.size))
+      return request<PaginatedMappedItems>(`${base}/contents?${q}`)
     },
   }
 }

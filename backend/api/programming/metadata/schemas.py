@@ -607,6 +607,28 @@ class PaginatedExternalItems(BaseModel):
     page: int
 
 
+class MappedExternalItem(BaseModel):
+    content_id: int
+    title: str
+    original_title: Optional[str]
+    content_type: str
+    status: str
+    production_year: Optional[int]
+    cp_name: Optional[str]
+    external_id: str
+    poster_url: Optional[str]
+    match_confidence: Optional[float]
+    matched_at: Optional[datetime]
+    quality_score: Optional[float]
+
+
+class PaginatedMappedItems(BaseModel):
+    items: list[MappedExternalItem]
+    total: int
+    page: int
+    size: int
+
+
 class KmdbCacheItem(BaseModel):
     docid: str
     title: str

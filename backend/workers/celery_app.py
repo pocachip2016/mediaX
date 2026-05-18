@@ -100,6 +100,11 @@ celery_app.conf.update(
             "task": "workers.tasks.metadata.sync_primary_posters_to_dam",
             "schedule": crontab(hour=6, minute=0),
         },
+        # KMDB 캐시 → contents 링크 — 매일 07:00 KST (kmdb 캐시 백필 완료 후, idempotent)
+        "link-kmdb-to-contents": {
+            "task": "workers.tasks.metadata.link_kmdb_cache_to_contents",
+            "schedule": crontab(hour=7, minute=0),
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},

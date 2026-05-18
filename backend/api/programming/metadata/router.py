@@ -59,6 +59,7 @@ from api.programming.metadata.schemas import (
     PaginatedTmdbItems,
     TmdbCacheStats, TmdbSyncLogItem, PaginatedSyncLog, TmdbCacheRecentItem,
     ExternalSourceStats, PaginatedExternalItems, KmdbCacheItem, PaginatedKmdbCache,
+    MappedExternalItem, PaginatedMappedItems,
     BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
     UndoActionRequest, UndoActionOut,
     PromoteAIResultOut, ApplyExternalFieldsRequest,
@@ -653,6 +654,18 @@ def list_kobis_sync_log(
     return PaginatedSyncLog(items=items, total=total, page=page, size=size)
 
 
+@router.get("/kobis/contents", response_model=PaginatedMappedItems, summary="KOBIS 매핑 콘텐츠 목록")
+def list_kobis_contents(
+    title: Optional[str] = Query(None),
+    content_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_external_mapped_contents(db, "kobis", content_type=content_type, search=title, page=page, size=size)
+    return PaginatedMappedItems(items=items, total=total, page=page, size=size)
+
+
 @router.get("/kobis/search", response_model=PaginatedExternalItems, summary="KOBIS 캐시 검색")
 def search_kobis(
     title: Optional[str] = Query(None),
@@ -680,6 +693,18 @@ def list_kmdb_sync_log(
 ):
     items, total = service.list_external_source_sync_log(db, "kmdb", status=status, page=page, size=size)
     return PaginatedSyncLog(items=items, total=total, page=page, size=size)
+
+
+@router.get("/kmdb/contents", response_model=PaginatedMappedItems, summary="KMDB 매핑 콘텐츠 목록")
+def list_kmdb_contents(
+    title: Optional[str] = Query(None),
+    content_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    items, total = service.list_external_mapped_contents(db, "kmdb", content_type=content_type, search=title, page=page, size=size)
+    return PaginatedMappedItems(items=items, total=total, page=page, size=size)
 
 
 @router.get("/kmdb/search", response_model=PaginatedExternalItems, summary="KMDB 콘텐츠 매핑 검색")

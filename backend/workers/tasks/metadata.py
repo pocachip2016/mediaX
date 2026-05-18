@@ -252,16 +252,14 @@ def sync_kobis(target_date: str | None = None):
             db.commit()
             return {"skipped": True, "reason": "daily_limit_exceeded"}
         resp = httpx.get(
-            "http://www.kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json",
+            "http://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json",
             params={
                 "key": settings.KOBIS_API_KEY,
-                "openStartDt": date_str,
-                "openEndDt": date_str,
-                "itemPerPage": "100",
+                "targetDt": date_str,
             },
             timeout=15.0,
         )
-        movies = resp.json().get("movieListResult", {}).get("movieList", [])
+        movies = resp.json().get("boxOfficeResult", {}).get("dailyBoxOfficeList", [])
         log.items_fetched = len(movies)
 
         for movie in movies:
@@ -1085,8 +1083,8 @@ def backfill_kobis(year: int):
         inserted = updated = unchanged = errors = 0
         quota_hit = False
         page = 1
-        date_start = f"{year}0101"
-        date_end = f"{year}1231"
+        date_start = str(year)
+        date_end = str(year)
 
         while True:
             try:
@@ -1268,6 +1266,122 @@ def kobis_quota_backfill_tick():
     logger.info("[kobis-tick] quota=%d → year=%d 백필 트리거", remaining, target_year)
     backfill_kobis.delay(year=target_year)
     return {"triggered_year": target_year, "remaining": remaining}
+
+
+# ── KMDB 캐시 → contents 링크 ────────────────────────────
+
+@celery_app.task(name="workers.tasks.metadata.link_kmdb_cache_to_contents", max_retries=0)
+def link_kmdb_cache_to_contents():
+    """kmdb_movie_cache 전체를 순회하면서 contents 에 exact/fuzzy 매칭 후 ExternalMetaSource upsert.
+
+    - 이미 external_meta_sources 에 source_type='kmdb' + external_id=docid 로 존재하면 스킵
+    - 정확 매칭: Content.title == cache.title (movie 타입)
+    - fuzzy 폴백: prod_year 같은 후보군 중 SequenceMatcher ratio >= 0.85
+    - 매일 07:00 KST Beat 에서 실행 (idempotent)
+    """
+    from api.programming.metadata.models import (
+        Content, ContentType, ExternalMetaSource,
+        ExternalSourceType, TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus,
+    )
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+    from api.programming.metadata.ai_engine import _upsert_external_source
+
+    db = SessionLocal()
+    try:
+        log = TmdbSyncLog(
+            source=TmdbSyncSource.kmdb_backfill,
+            external_source=ExternalSourceType.kmdb,
+            status=TmdbSyncStatus.running,
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+
+        existing_docids = {
+            row[0]
+            for row in db.query(ExternalMetaSource.external_id)
+            .filter(ExternalMetaSource.source_type == ExternalSourceType.kmdb)
+            .all()
+        }
+
+        caches = db.query(KmdbMovieCache).all()
+        log.items_fetched = len(caches)
+
+        inserted = updated = unchanged = errors = 0
+
+        for cache in caches:
+            if cache.docid in existing_docids:
+                unchanged += 1
+                continue
+
+            content = (
+                db.query(Content)
+                .filter(
+                    Content.title == cache.title,
+                    Content.content_type == ContentType.movie,
+                )
+                .first()
+            )
+
+            fuzzy_confidence: float | None = None
+            if not content and cache.prod_year:
+                candidates = (
+                    db.query(Content)
+                    .filter(
+                        Content.content_type == ContentType.movie,
+                        Content.production_year == cache.prod_year,
+                    )
+                    .all()
+                )
+                best_ratio, best_cand = 0.0, None
+                for cand in candidates:
+                    ratio = difflib.SequenceMatcher(None, cache.title, cand.title).ratio()
+                    if ratio > best_ratio:
+                        best_ratio, best_cand = ratio, cand
+                if best_ratio >= 0.85:
+                    content = best_cand
+                    fuzzy_confidence = round(best_ratio, 4)
+
+            if not content:
+                continue
+
+            try:
+                raw = cache.raw_json or {"docid": cache.docid, "title": cache.title}
+                _upsert_external_source(
+                    db, content.id, ExternalSourceType.kmdb, cache.docid, raw
+                )
+                if fuzzy_confidence is not None:
+                    src = (
+                        db.query(ExternalMetaSource)
+                        .filter(
+                            ExternalMetaSource.content_id == content.id,
+                            ExternalMetaSource.source_type == ExternalSourceType.kmdb,
+                        )
+                        .first()
+                    )
+                    if src:
+                        src.match_confidence = fuzzy_confidence
+                inserted += 1
+            except Exception as exc:
+                logger.warning(f"[kmdb_link] content_id={content.id} 처리 실패: {exc}")
+                errors += 1
+
+        db.commit()
+
+        log.items_inserted = inserted
+        log.items_updated = updated
+        log.items_unchanged = unchanged
+        log.errors = errors
+        log.status = TmdbSyncStatus.completed if errors == 0 else TmdbSyncStatus.failed
+        log.finished_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(
+            f"[kmdb_link] inserted={inserted} unchanged={unchanged} errors={errors}"
+        )
+        return {"inserted": inserted, "unchanged": unchanged, "errors": errors}
+    finally:
+        db.close()
 
 
 # ── Dam poster catch-up ───────────────────────────────────
