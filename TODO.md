@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] sqlite-to-postgres — SQLite → PostgreSQL 전환 완료 (alembic 0016·0017, 2,126건, .env 전환) (2026-05-18)
 - [x] kmdb-front-monitoring — KMDB 모니터링 페이지(KPI/동기화 로그/캐시 검색) + /kmdb/cache 엔드포인트 (2026-05-18)
 - [x] kobis-quota-backfill — KOBIS quota-aware 백필 Beat 06:30 KST (잔여 quota>1000일 때 current_year→1990 역순) (2026-05-18)
 - [x] dev-recommend-detail-page Step 1.6 — SecondaryAccordion (출연진·외부소스·AI이력 3개 collapsible) (2026-05-17)

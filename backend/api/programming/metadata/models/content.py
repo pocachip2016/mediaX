@@ -119,11 +119,11 @@ class ContentMetadata(Base):
 
     # AI 생성 메타
     ai_synopsis = Column(Text)
-    ai_genre_primary = Column(String(100))
-    ai_genre_secondary = Column(String(100))
+    ai_genre_primary = Column(String(200))
+    ai_genre_secondary = Column(String(200))
     ai_mood_tags = Column(JSON)     # list[str]
     ai_cast = Column(JSON)
-    ai_rating_suggestion = Column(String(20))  # 전체/12세/15세/청불
+    ai_rating_suggestion = Column(String(200))  # 전체/12세/15세/청불
 
     # 외부 API 메타 (kobis_movie_cd/kobis_data/tmdb_id → external_meta_sources로 이관)
     tmdb_data = Column(JSON)

@@ -3194,6 +3194,55 @@ print('  ✓ kmdb_movie_cache 테이블 + 컬럼 OK')
     echo "=== PASS ==="
     ;;
 
+  data-migration-tool)
+    echo "=== data-migration-tool: 마이그레이션 스크립트 존재 + dry-run ==="
+    SCRIPT=/home/ktalpha/Work/mediaX/backend/scripts/migrate_sqlite_to_postgres.py
+    [ -f "$SCRIPT" ] || { echo "MISSING: $SCRIPT"; exit 1; }
+    echo "  ✓ migrate_sqlite_to_postgres.py 존재"
+    # dry-run 실행 — 총 건수 > 600,000 확인
+    OUT=$(docker exec \
+      -e DATABASE_URL=postgresql://media_ax:media_ax@postgres:5432/media_ax \
+      mediax-backend-1 \
+      python3 /app/scripts/migrate_sqlite_to_postgres.py \
+        --sqlite-path /app/media_ax_dev.db \
+        --pg-url postgresql://media_ax:media_ax@postgres:5432/media_ax \
+        --dry-run 2>&1)
+    echo "$OUT" | grep -q "SQLite 합계" || { echo "dry-run 출력 이상: $OUT"; exit 1; }
+    TOTAL=$(echo "$OUT" | grep "SQLite 합계" | grep -oE '[0-9,]+건' | head -1 | tr -d ',건')
+    [ "$TOTAL" -gt 600000 ] || { echo "FAIL: dry-run 총 건수 $TOTAL < 600000"; exit 1; }
+    echo "  ✓ dry-run 통과 — 총 ${TOTAL}건 이전 대상"
+    echo "=== PASS ==="
+    ;;
+
+  pg-schema-sync)
+    echo "=== pg-schema-sync: Postgres alembic 0016 (head) 적용 검증 ==="
+    # 1. alembic current = 0016
+    VER=$(docker exec -e DATABASE_URL=postgresql://media_ax:media_ax@postgres:5432/media_ax mediax-backend-1 alembic current 2>&1 | grep -o '[0-9]\{4\}')
+    [ "$VER" = "0016" ] || { echo "FAIL: alembic_version=$VER (expected 0016)"; exit 1; }
+    echo "  ✓ alembic_version=0016"
+    # 2. 필수 테이블 존재
+    for TBL in kmdb_movie_cache content_action_logs content_audit_logs content_distributions web_search_quota_log; do
+      docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+        "SELECT 1 FROM information_schema.tables WHERE table_name='$TBL'" | grep -q 1 \
+        || { echo "MISSING table: $TBL"; exit 1; }
+    done
+    echo "  ✓ 5개 신규 테이블 존재"
+    # 3. externalsourcetype ENUM에 bulk_upload / manual 포함
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT enumlabel FROM pg_enum JOIN pg_type ON enumtypid=pg_type.oid WHERE typname='externalsourcetype'" \
+      | grep -q "bulk_upload" || { echo "MISSING ENUM value: bulk_upload"; exit 1; }
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT enumlabel FROM pg_enum JOIN pg_type ON enumtypid=pg_type.oid WHERE typname='externalsourcetype'" \
+      | grep -q "manual" || { echo "MISSING ENUM value: manual"; exit 1; }
+    echo "  ✓ externalsourcetype ENUM: bulk_upload, manual 포함"
+    # 4. tmdbsyncsource ENUM에 kmdb_daily / kmdb_backfill 포함
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT enumlabel FROM pg_enum JOIN pg_type ON enumtypid=pg_type.oid WHERE typname='tmdbsyncsource'" \
+      | grep -q "kmdb_daily" || { echo "MISSING ENUM value: kmdb_daily"; exit 1; }
+    echo "  ✓ tmdbsyncsource ENUM: kmdb_daily/kmdb_backfill 포함"
+    echo "=== PASS ==="
+    ;;
+
   kobis-quota-backfill)
     echo "=== kobis-quota-backfill: KOBIS quota-aware backfill Beat ==="
     # 1. backfill_kobis 시그니처 (year: int)
@@ -3260,9 +3309,51 @@ print('  ✓ tick 동기 실행 OK')
     echo "=== PASS ==="
     ;;
 
+  sqlite-to-postgres)
+    echo "=== sqlite-to-postgres: SQLite → PostgreSQL 전환 검증 ==="
+    PG_URL="postgresql://media_ax:media_ax@localhost:5432/media_ax"
+    # 1. alembic head 확인
+    python3 -c "
+import subprocess, sys
+r = subprocess.run(
+    ['docker', 'exec', 'mediax-backend-1', 'bash', '-c',
+     'DATABASE_URL=postgresql://media_ax:media_ax@postgres:5432/media_ax alembic current'],
+    capture_output=True, text=True
+)
+out = r.stdout + r.stderr
+assert '0017' in out and 'head' in out, f'alembic head 아님: {out}'
+print('  ✓ alembic 0017 (head)')
+"
+    # 2. 컨테이너 DATABASE_URL 확인
+    python3 -c "
+import subprocess
+r = subprocess.run(
+    ['docker', 'exec', 'mediax-backend-1', 'bash', '-c', 'echo \$DATABASE_URL'],
+    capture_output=True, text=True
+)
+url = r.stdout.strip()
+assert 'postgresql' in url, f'DATABASE_URL이 SQLite: {url}'
+print(f'  ✓ DATABASE_URL = {url}')
+"
+    # 3. API health + contents row count
+    python3 -c "
+import urllib.request, json
+resp = urllib.request.urlopen('http://localhost:8000/health')
+h = json.loads(resp.read())
+assert h.get('status') == 'ok', f'health 실패: {h}'
+print('  ✓ /health ok')
+resp2 = urllib.request.urlopen('http://localhost:8000/api/programming/metadata/contents?limit=1')
+d = json.loads(resp2.read())
+total = d.get('total', 0)
+assert total > 0, f'contents 0건'
+print(f'  ✓ contents {total:,}건 반환')
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres"
     exit 1
     ;;
 esac
