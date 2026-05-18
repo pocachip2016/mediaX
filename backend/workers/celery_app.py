@@ -110,6 +110,11 @@ celery_app.conf.update(
             "task": "workers.tasks.metadata.link_tmdb_cache_to_contents",
             "schedule": crontab(hour=7, minute=30),
         },
+        # KOBIS 캐시 → contents 링크 — 매일 07:45 KST (kobis_movie_cache, idempotent)
+        "link-kobis-to-contents": {
+            "task": "workers.tasks.metadata.link_kobis_cache_to_contents",
+            "schedule": crontab(hour=7, minute=45),
+        },
     },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},

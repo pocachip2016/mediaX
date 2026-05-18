@@ -1062,10 +1062,13 @@ def backfill_kobis(year: int):
         logger.warning("[kobis_backfill] KOBIS_API_KEY 없음. 스킵.")
         return {"skipped": True, "reason": "no_api_key"}
 
+    from datetime import date as date_type
+
     from api.programming.metadata.models import (
         Content, ContentType, ExternalMetaSource,
         ExternalSourceType, TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus,
     )
+    from api.programming.metadata.models.kobis_cache import KobisMovieCache
     from api.programming.metadata.ai_engine import _upsert_external_source
 
     db = SessionLocal()
@@ -1114,6 +1117,41 @@ def backfill_kobis(year: int):
                     movie_cd = movie.get("movieCd", "")
                     if not movie_nm or not movie_cd:
                         continue
+
+                    # ── kobis_movie_cache upsert (always, content 매칭과 독립) ──
+                    open_dt_raw = movie.get("openDt", "") or ""
+                    open_dt = None
+                    if len(open_dt_raw) == 8 and open_dt_raw.isdigit():
+                        try:
+                            open_dt = date_type(int(open_dt_raw[:4]), int(open_dt_raw[4:6]), int(open_dt_raw[6:]))
+                        except ValueError:
+                            pass
+                    prdt_year_raw = movie.get("prdtYear", "") or ""
+                    prdt_year = int(prdt_year_raw) if prdt_year_raw and prdt_year_raw.isdigit() else None
+                    directors_raw = movie.get("directors") or {}
+                    directors_list = directors_raw.get("director", []) if isinstance(directors_raw, dict) else []
+
+                    cache_row = db.get(KobisMovieCache, movie_cd)
+                    if cache_row is None:
+                        db.add(KobisMovieCache(
+                            movie_cd=movie_cd,
+                            title=movie_nm,
+                            title_en=movie.get("movieNmEn") or None,
+                            open_dt=open_dt,
+                            prdt_year=prdt_year,
+                            type_nm=movie.get("typeNm") or None,
+                            prdt_stat_nm=movie.get("prdtStatNm") or None,
+                            nation_alt=movie.get("nationAlt") or None,
+                            genre_alt=movie.get("genreAlt") or None,
+                            rep_nation_nm=movie.get("repNationNm") or None,
+                            rep_genre_nm=movie.get("repGenreNm") or None,
+                            directors=directors_list,
+                            raw_json=movie,
+                        ))
+                    else:
+                        cache_row.title = movie_nm
+                        cache_row.raw_json = movie
+                    # ─────────────────────────────────────────────────────────────
 
                     existing = (
                         db.query(ExternalMetaSource)
@@ -1681,3 +1719,116 @@ def send_dam_webhook(event_type: str, content_id: int, title: str,
     except Exception as exc:
         logger.warning(f"[dam_webhook] 발신 실패 content_id={content_id}: {exc}")
         return {"error": str(exc)}
+
+
+# ── KOBIS 캐시 → contents 링크 ────────────────────────────
+
+@celery_app.task(name="workers.tasks.metadata.link_kobis_cache_to_contents", max_retries=0)
+def link_kobis_cache_to_contents():
+    """kobis_movie_cache 전체를 contents 에 title+year 매칭 후 ExternalMetaSource upsert.
+
+    - 이미 external_meta_sources 에 source_type='kobis' + external_id=movie_cd 로 존재하면 스킵
+    - 정확 매칭: Content.title == cache.title (movie 타입)
+    - fuzzy 폴백: prdt_year 같은 후보군 중 SequenceMatcher ratio >= 0.85
+    - 매일 07:45 KST Beat 에서 실행 (idempotent)
+    """
+    from api.programming.metadata.models import (
+        Content, ContentType, ExternalMetaSource,
+        ExternalSourceType, TmdbSyncLog, TmdbSyncSource, TmdbSyncStatus,
+    )
+    from api.programming.metadata.models.kobis_cache import KobisMovieCache
+    from api.programming.metadata.ai_engine import _upsert_external_source
+
+    db = SessionLocal()
+    try:
+        log = TmdbSyncLog(
+            source=TmdbSyncSource.kobis_link,
+            external_source=ExternalSourceType.kobis,
+            status=TmdbSyncStatus.running,
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+
+        existing_cds = {
+            row[0]
+            for row in db.query(ExternalMetaSource.external_id)
+            .filter(ExternalMetaSource.source_type == ExternalSourceType.kobis)
+            .all()
+        }
+
+        caches = db.query(KobisMovieCache).all()
+        log.items_fetched = len(caches)
+
+        inserted = unchanged = errors = 0
+
+        for cache in caches:
+            if cache.movie_cd in existing_cds:
+                unchanged += 1
+                continue
+
+            content = (
+                db.query(Content)
+                .filter(
+                    Content.title == cache.title,
+                    Content.content_type == ContentType.movie,
+                )
+                .first()
+            )
+
+            fuzzy_confidence: float | None = None
+            if not content and cache.prdt_year:
+                candidates = (
+                    db.query(Content)
+                    .filter(
+                        Content.content_type == ContentType.movie,
+                        Content.production_year == cache.prdt_year,
+                    )
+                    .all()
+                )
+                best_ratio, best_cand = 0.0, None
+                for cand in candidates:
+                    ratio = difflib.SequenceMatcher(None, cache.title, cand.title).ratio()
+                    if ratio > best_ratio:
+                        best_ratio, best_cand = ratio, cand
+                if best_ratio >= 0.85:
+                    content = best_cand
+                    fuzzy_confidence = round(best_ratio, 4)
+
+            if not content:
+                continue
+
+            try:
+                raw = cache.raw_json or {"movie_cd": cache.movie_cd, "title": cache.title}
+                _upsert_external_source(
+                    db, content.id, ExternalSourceType.kobis, cache.movie_cd, raw
+                )
+                if fuzzy_confidence is not None:
+                    src = (
+                        db.query(ExternalMetaSource)
+                        .filter(
+                            ExternalMetaSource.content_id == content.id,
+                            ExternalMetaSource.source_type == ExternalSourceType.kobis,
+                        )
+                        .first()
+                    )
+                    if src:
+                        src.match_confidence = fuzzy_confidence
+                inserted += 1
+            except Exception as exc:
+                logger.warning(f"[kobis_link] content_id={content.id} 처리 실패: {exc}")
+                errors += 1
+
+        db.commit()
+
+        log.items_inserted = inserted
+        log.items_unchanged = unchanged
+        log.errors = errors
+        log.status = TmdbSyncStatus.completed if errors == 0 else TmdbSyncStatus.failed
+        log.finished_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(f"[kobis_link] inserted={inserted} unchanged={unchanged} errors={errors}")
+        return {"inserted": inserted, "unchanged": unchanged, "errors": errors}
+    finally:
+        db.close()
