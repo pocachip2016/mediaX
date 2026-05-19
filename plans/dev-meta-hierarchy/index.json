@@ -127,13 +127,16 @@
       "step": 15,
       "name": "mh-fe-recommend",
       "phase": "E",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Phase E 추천 검수 UI — ExternalSourcePanel(5소스/tv 필터) + InheritedLockCell(상속 표기) + SeriesImpactBanner(영향도 경고) + BulkReviewQueue(계층 큐) + 분기 라우팅 통합. verify.sh 케이스 추가 완료. typecheck/lint pass",
+      "completed_at": "2026-05-19T13:05:33.237871+00:00"
     },
     {
       "step": 16,
       "name": "mh-wrap",
       "phase": "F",
-      "status": "pending"
+      "status": "pending",
+      "summary": "마무리: CLAUDE.md 구현 표 갱신 + Phase E 요약 추가 + 커밋 생성"
     }
   ]
 }

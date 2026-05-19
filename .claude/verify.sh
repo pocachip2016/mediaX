@@ -3769,9 +3769,47 @@ print('  ✓ ContentOut parent_id/season_number/episode_number OK')
     echo "=== PASS ==="
     ;;
 
+  mh-fe-recommend)
+    echo "=== mh-fe-recommend: Phase E 추천 검수 UI (계층 분기 + 외부소스 패널) ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    RECOMMEND_DIR="$CMS/apps/web/components/contents/recommend"
+    CELLS_DIR="$RECOMMEND_DIR/cells"
+    CONTENTS_DIR="$CMS/apps/web/components/contents"
+    RECOMMEND_PAGE="$CMS/apps/web/app/(main)/programming/contents/[id]/recommend/page.tsx"
+
+    echo "--- 15.A~E 컴포넌트 파일 존재 ---"
+    for f in ExternalSourcePanel.tsx SeriesImpactBanner.tsx; do
+      [ -f "$RECOMMEND_DIR/$f" ] || { echo "  ✗ 없음: recommend/$f"; exit 1; }
+      echo "  ✓ recommend/$f"
+    done
+    [ -f "$CELLS_DIR/InheritedLockCell.tsx" ] || { echo "  ✗ 없음: cells/InheritedLockCell.tsx"; exit 1; }
+    echo "  ✓ cells/InheritedLockCell.tsx"
+    [ -f "$CONTENTS_DIR/BulkReviewQueue.tsx" ] || { echo "  ✗ 없음: contents/BulkReviewQueue.tsx"; exit 1; }
+    echo "  ✓ contents/BulkReviewQueue.tsx"
+
+    echo "--- 15.B ShortMetaGrid inheritedFields prop ---"
+    grep -q "inheritedFields" "$RECOMMEND_DIR/ShortMetaGrid.tsx" && echo "  ✓ ShortMetaGrid inheritedFields OK" || { echo "  ✗ inheritedFields 없음"; exit 1; }
+
+    echo "--- 15.D page.tsx 통합 ---"
+    grep -q "ExternalSourcePanel" "$RECOMMEND_PAGE" && echo "  ✓ ExternalSourcePanel 통합 OK" || { echo "  ✗ ExternalSourcePanel 없음"; exit 1; }
+    grep -q "SeriesImpactBanner" "$RECOMMEND_PAGE" && echo "  ✓ SeriesImpactBanner 통합 OK" || { echo "  ✗ SeriesImpactBanner 없음"; exit 1; }
+    grep -q "content_type\|inheritedFields" "$RECOMMEND_PAGE" && echo "  ✓ content_type/inheritedFields 분기 OK" || { echo "  ✗ content_type 분기 없음"; exit 1; }
+
+    echo "--- 15.A movie→5소스 / tv→KMDB·KOBIS ⊘ 분기 ---"
+    grep -q "movieOnly" "$RECOMMEND_DIR/ExternalSourcePanel.tsx" && echo "  ✓ movieOnly 분기 OK" || { echo "  ✗ movieOnly 분기 없음"; exit 1; }
+    grep -q "kmdb" "$RECOMMEND_DIR/ExternalSourcePanel.tsx" && echo "  ✓ KMDB 소스 OK" || { echo "  ✗ KMDB 없음"; exit 1; }
+    grep -q "kobis" "$RECOMMEND_DIR/ExternalSourcePanel.tsx" && echo "  ✓ KOBIS 소스 OK" || { echo "  ✗ KOBIS 없음"; exit 1; }
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "^.* error " | head -10 || true
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend"
     exit 1
     ;;
 esac
