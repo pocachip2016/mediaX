@@ -37,6 +37,10 @@ from api.programming.metadata.schemas import (
 # ── Content CRUD ──────────────────────────────────────────
 
 def create_content(db: Session, data: ContentCreate) -> Content:
+    content_type = ContentType(data.content_type or "movie")
+    if content_type in {ContentType.season, ContentType.episode} and not data.parent_id:
+        raise ValueError(f"parent_id required for {content_type.value}")
+
     content = Content(**data.model_dump())
     db.add(content)
     db.flush()
@@ -57,6 +61,11 @@ def update_content(db: Session, content_id: int, data: ContentUpdate) -> Content
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise ValueError(f"Content {content_id} not found")
+
+    if hasattr(data, 'content_type') and data.content_type and data.content_type != content.content_type.value:
+        children_count = db.query(Content).filter(Content.parent_id == content_id).count()
+        if children_count > 0:
+            raise ValueError(f"Cannot change content_type: {children_count} children exist")
 
     raw_json = {k: v for k, v in data.model_dump().items() if v is not None}
     if raw_json:
@@ -272,7 +281,7 @@ def _build_diff(meta: Optional[ContentMetadata]) -> dict:
     return diff
 
 
-def _content_to_staging_item(content: Content) -> StagingItem:
+def _content_to_staging_item(content: Content, db: Optional[Session] = None) -> StagingItem:
     from api.programming.metadata.schemas import ContentOut, MetadataOut
     meta = content.metadata_record
     ext_sources = [
@@ -288,7 +297,13 @@ def _content_to_staging_item(content: Content) -> StagingItem:
     children = []
     for child in (content.children or []):
         if child.content_type in (ContentType.season, ContentType.episode):
-            children.append(_content_to_staging_item(child))
+            children.append(_content_to_staging_item(child, db))
+
+    # read-time 상속 (hierarchy 조회 시만 — db 없으면 skip)
+    inherited_meta = None
+    if db is not None and content.content_type in (ContentType.season, ContentType.episode):
+        from api.programming.metadata.inheritance import resolve_inherited_metadata
+        inherited_meta = resolve_inherited_metadata(content, db)
 
     return StagingItem(
         content=ContentOut.model_validate(content),
@@ -296,6 +311,7 @@ def _content_to_staging_item(content: Content) -> StagingItem:
         diff=_build_diff(meta),
         external_sources=ext_sources,
         children=children,
+        inherited_meta=inherited_meta,
     )
 
 
@@ -391,7 +407,7 @@ def get_content_hierarchy(db: Session, content_id: int) -> Optional[StagingItem]
     )
     if not content:
         return None
-    return _content_to_staging_item(content)
+    return _content_to_staging_item(content, db)
 
 
 # ── 파이프라인 현황 ────────────────────────────────────────
@@ -448,18 +464,335 @@ def create_batch_job(
     return job
 
 
+def _process_movie_row(
+    db: Session,
+    row: dict,
+    job: "ContentBatchJob",
+    idx: int,
+    errors: list,
+) -> str:
+    """단건 movie 행 → Content(waiting) 평면 insert.
+
+    반환: 'success' | 'skipped' (dedup 중복) | 'failed'
+    runtime 컬럼 값이 양의 정수이면 Content.runtime_minutes에 매핑한다.
+    """
+    from api.programming.metadata.models.external import ExternalSourceType
+    from workers.tasks.metadata import process_content_metadata
+
+    try:
+        title = (row.get("title") or "").strip()
+        if not title:
+            raise ValueError("제목 없음")
+
+        cp_name = row.get("cp_name") or job.cp_name
+        production_year = row.get("production_year")
+        runtime_raw = row.get("runtime")
+        runtime_val = runtime_raw if isinstance(runtime_raw, int) and runtime_raw > 0 else None
+        raw_json = {k: v for k, v in {
+            "title": title,
+            "synopsis": row.get("synopsis") or row.get("cp_synopsis"),
+            "cast": row.get("cast"),
+            "directors": row.get("directors"),
+            "genres": row.get("genres"),
+            "country": row.get("country"),
+            "runtime": runtime_val,
+            "rating_age": row.get("rating_age"),
+            "poster_url": row.get("poster_url"),
+            "production_year": production_year,
+            "audio_channels": row.get("audio_channels"),
+            "video_resolution": row.get("video_resolution"),
+            "extra_metadata": row.get("extra_metadata"),
+        }.items() if v}
+
+        row_content_type = ContentType(row.get("content_type") or "movie")
+        existing = (
+            db.query(Content)
+            .filter(
+                Content.title == title,
+                Content.production_year == production_year,
+                Content.cp_name == cp_name,
+                Content.content_type == row_content_type,
+            )
+            .first()
+        )
+
+        if existing:
+            ext_src = (
+                db.query(ExternalMetaSource)
+                .filter(
+                    ExternalMetaSource.content_id == existing.id,
+                    ExternalMetaSource.source_type == ExternalSourceType.bulk_upload,
+                )
+                .first()
+            )
+            if ext_src:
+                merged = dict(ext_src.raw_json or {})
+                for k, v in raw_json.items():
+                    if v and not merged.get(k):
+                        merged[k] = v
+                ext_src.raw_json = merged
+                ext_src.matched_at = datetime.utcnow()
+            else:
+                db.add(ExternalMetaSource(
+                    content_id=existing.id,
+                    source_type=ExternalSourceType.bulk_upload,
+                    raw_json=raw_json,
+                    matched_at=datetime.utcnow(),
+                ))
+            db.flush()
+            return "skipped"
+
+        content = Content(
+            title=title,
+            content_type=row_content_type,
+            status=ContentStatus.waiting,
+            cp_name=cp_name,
+            production_year=production_year,
+            runtime_minutes=runtime_val,
+        )
+        db.add(content)
+        db.flush()
+
+        meta = ContentMetadata(
+            content_id=content.id,
+            quality_score=0.0,
+            audio_channels=row.get("audio_channels") or None,
+            video_resolution=row.get("video_resolution") or None,
+            extra_metadata=row.get("extra_metadata") or None,
+        )
+        db.add(meta)
+        db.flush()
+
+        ext_src = ExternalMetaSource(
+            content_id=content.id,
+            source_type=ExternalSourceType.bulk_upload,
+            raw_json=raw_json,
+            matched_at=datetime.utcnow(),
+        )
+        db.add(ext_src)
+        db.flush()
+
+        resolve_metadata(db, content.id)
+
+        if row.get("poster_url"):
+            add_content_image(db, content.id, "poster", row["poster_url"], source="cp")
+
+        process_content_metadata.delay(content.id)
+        return "success"
+
+    except Exception as exc:
+        errors.append({"row": idx + 1, "title": row.get("title", ""), "error": str(exc)})
+        return "failed"
+
+
+def _process_series_rows(
+    db: Session,
+    job: "ContentBatchJob",
+    rows: list[dict],
+    errors: list,
+) -> dict:
+    """series 계층 bulk insert.
+
+    rows의 series_title(없으면 title) 기준 그룹핑 후 series→season→episode upsert.
+    parent_id 자동 링크. 메타는 raw_json에만 저장, read-time 상속(D3)으로 해석.
+    Celery 트리거는 series 노드만 (episode 개별 외부조회 폭주 방지).
+    """
+    from collections import defaultdict
+    from api.programming.metadata.models.external import ExternalSourceType
+    from workers.tasks.metadata import process_content_metadata
+
+    success = 0
+    failed = 0
+    skipped_duplicates = 0
+
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for i, row in enumerate(rows):
+        series_title = (row.get("series_title") or row.get("title") or "").strip()
+        if not series_title:
+            errors.append({"row": i + 1, "title": "", "error": "series_title 없음"})
+            failed += 1
+            continue
+        groups[series_title].append(row)
+
+    for series_title, group_rows in groups.items():
+        try:
+            cp_name = next(
+                (r.get("cp_name") for r in group_rows if r.get("cp_name")), None
+            ) or job.cp_name
+            production_year = next(
+                (r.get("production_year") for r in group_rows if r.get("production_year")), None
+            )
+
+            # series 단독 행(season/episode 없는 행) 우선으로 series 메타 추출
+            series_meta_row = next(
+                (r for r in group_rows
+                 if not r.get("season_number") and not r.get("episode_number")),
+                group_rows[0],
+            )
+            series_raw_json = {k: v for k, v in {
+                "title": series_title,
+                "synopsis": series_meta_row.get("synopsis") or series_meta_row.get("cp_synopsis"),
+                "cast": series_meta_row.get("cast"),
+                "directors": series_meta_row.get("directors"),
+                "genres": series_meta_row.get("genres"),
+                "country": series_meta_row.get("country"),
+                "rating_age": series_meta_row.get("rating_age"),
+                "poster_url": series_meta_row.get("poster_url"),
+                "production_year": production_year,
+            }.items() if v}
+
+            # series upsert
+            series = (
+                db.query(Content)
+                .filter(
+                    Content.title == series_title,
+                    Content.cp_name == cp_name,
+                    Content.content_type == ContentType.series,
+                )
+                .first()
+            )
+            if not series:
+                series = Content(
+                    title=series_title,
+                    content_type=ContentType.series,
+                    status=ContentStatus.waiting,
+                    cp_name=cp_name,
+                    production_year=production_year,
+                )
+                db.add(series)
+                db.flush()
+                db.add(ContentMetadata(content_id=series.id, quality_score=0.0))
+                db.add(ExternalMetaSource(
+                    content_id=series.id,
+                    source_type=ExternalSourceType.bulk_upload,
+                    raw_json=series_raw_json,
+                    matched_at=datetime.utcnow(),
+                ))
+                db.flush()
+                resolve_metadata(db, series.id)
+                process_content_metadata.delay(series.id)
+                success += 1
+            else:
+                skipped_duplicates += 1
+
+            # season/episode 행 처리
+            for row in group_rows:
+                season_num_raw = row.get("season_number")
+                ep_num_raw = row.get("episode_number")
+                if not season_num_raw:
+                    continue  # series 단독 행 — 이미 처리
+
+                try:
+                    season_num = int(season_num_raw)
+                    ep_num = int(ep_num_raw) if ep_num_raw else None
+
+                    # season upsert
+                    season = (
+                        db.query(Content)
+                        .filter(
+                            Content.parent_id == series.id,
+                            Content.content_type == ContentType.season,
+                            Content.season_number == season_num,
+                        )
+                        .first()
+                    )
+                    if not season:
+                        season_title = (
+                            row.get("title") if not ep_num else None
+                        ) or f"{series_title} 시즌 {season_num}"
+                        season = Content(
+                            title=season_title,
+                            content_type=ContentType.season,
+                            status=ContentStatus.waiting,
+                            parent_id=series.id,
+                            season_number=season_num,
+                            cp_name=cp_name,
+                        )
+                        db.add(season)
+                        db.flush()
+                        db.add(ContentMetadata(content_id=season.id, quality_score=0.0))
+                        db.flush()
+                        success += 1
+
+                    if not ep_num:
+                        continue
+
+                    # episode upsert
+                    episode = (
+                        db.query(Content)
+                        .filter(
+                            Content.parent_id == season.id,
+                            Content.content_type == ContentType.episode,
+                            Content.episode_number == ep_num,
+                        )
+                        .first()
+                    )
+                    if not episode:
+                        ep_title = (
+                            row.get("title")
+                            or f"{series_title} S{season_num:02d}E{ep_num:02d}"
+                        )
+                        runtime_raw = row.get("runtime")
+                        ep_runtime = (
+                            runtime_raw
+                            if isinstance(runtime_raw, int) and runtime_raw > 0
+                            else None
+                        )
+                        ep_raw_json = {k: v for k, v in {
+                            "title": ep_title,
+                            "synopsis": row.get("synopsis"),
+                            "runtime": ep_runtime,
+                        }.items() if v}
+                        episode = Content(
+                            title=ep_title,
+                            content_type=ContentType.episode,
+                            status=ContentStatus.waiting,
+                            parent_id=season.id,
+                            season_number=season_num,
+                            episode_number=ep_num,
+                            cp_name=cp_name,
+                            runtime_minutes=ep_runtime,
+                        )
+                        db.add(episode)
+                        db.flush()
+                        db.add(ContentMetadata(content_id=episode.id, quality_score=0.0))
+                        if ep_raw_json:
+                            db.add(ExternalMetaSource(
+                                content_id=episode.id,
+                                source_type=ExternalSourceType.bulk_upload,
+                                raw_json=ep_raw_json,
+                                matched_at=datetime.utcnow(),
+                            ))
+                        db.flush()
+                        success += 1
+
+                except Exception as exc:
+                    errors.append({
+                        "row": 0,
+                        "title": row.get("title", series_title),
+                        "error": str(exc),
+                    })
+                    failed += 1
+
+        except Exception as exc:
+            errors.append({"row": 0, "title": series_title, "error": str(exc)})
+            failed += 1
+
+    return {"success": success, "failed": failed, "skipped_duplicates": skipped_duplicates}
+
+
 def process_batch_rows(
     db: Session,
     job: ContentBatchJob,
     rows: list[dict],
 ) -> dict:
-    """파싱된 배치 행 → Content(waiting) + ExternalMetaSource(bulk_upload) → resolve_metadata.
+    """파싱된 배치 행 → movie/series 경로 분리 후 처리.
 
-    Dedup 규칙: (title, production_year, cp_name) 매칭하는 기존 Content가 있으면
-    신규 생성 안 함. 기존 bulk_upload raw_json에 **빈 값만** 채움 (덮어쓰기 X).
+    movie: _process_movie_row 평면 insert + runtime_minutes 매핑.
+    series/season/episode: _process_series_rows 위임 (Step 9 구현).
+    Dedup 키: (title, production_year, cp_name, content_type).
     """
-    from api.programming.metadata.models.external import ExternalSourceType
-    from workers.tasks.metadata import process_content_metadata
+    from api.programming.metadata.content_kind import is_tv_type
 
     job.status = "processing"
     job.total_count = len(rows)
@@ -470,111 +803,25 @@ def process_batch_rows(
     skipped_duplicates = 0
     errors = []
 
-    for i, row in enumerate(rows):
-        try:
-            title = (row.get("title") or "").strip()
-            if not title:
-                raise ValueError("제목 없음")
+    movie_rows = [(i, row) for i, row in enumerate(rows)
+                  if not is_tv_type(row.get("content_type") or "movie")]
+    tv_rows = [row for row in rows
+               if is_tv_type(row.get("content_type") or "movie")]
 
-            cp_name = row.get("cp_name") or job.cp_name
-            production_year = row.get("production_year")
-            raw_json = {k: v for k, v in {
-                "title": title,
-                "synopsis": row.get("synopsis") or row.get("cp_synopsis"),
-                "cast": row.get("cast"),
-                "directors": row.get("directors"),
-                "genres": row.get("genres"),
-                "country": row.get("country"),
-                "runtime": row.get("runtime"),
-                "rating_age": row.get("rating_age"),
-                "poster_url": row.get("poster_url"),
-                "production_year": production_year,
-                "audio_channels": row.get("audio_channels"),
-                "video_resolution": row.get("video_resolution"),
-                "extra_metadata": row.get("extra_metadata"),
-            }.items() if v}
-
-            # Dedup: 같은 (title, year, cp) 매칭하는 기존 콘텐츠 조회
-            existing = (
-                db.query(Content)
-                .filter(
-                    Content.title == title,
-                    Content.production_year == production_year,
-                    Content.cp_name == cp_name,
-                )
-                .first()
-            )
-
-            if existing:
-                # 기존 bulk_upload raw_json에 빈 값만 채움
-                ext_src = (
-                    db.query(ExternalMetaSource)
-                    .filter(
-                        ExternalMetaSource.content_id == existing.id,
-                        ExternalMetaSource.source_type == ExternalSourceType.bulk_upload,
-                    )
-                    .first()
-                )
-                if ext_src:
-                    merged = dict(ext_src.raw_json or {})
-                    for k, v in raw_json.items():
-                        if v and not merged.get(k):
-                            merged[k] = v
-                    ext_src.raw_json = merged
-                    ext_src.matched_at = datetime.utcnow()
-                else:
-                    db.add(ExternalMetaSource(
-                        content_id=existing.id,
-                        source_type=ExternalSourceType.bulk_upload,
-                        raw_json=raw_json,
-                        matched_at=datetime.utcnow(),
-                    ))
-                db.flush()
-                skipped_duplicates += 1
-                continue
-
-            content = Content(
-                title=title,
-                content_type=ContentType(row.get("content_type") or "movie"),
-                status=ContentStatus.waiting,
-                cp_name=cp_name,
-                production_year=production_year,
-            )
-            db.add(content)
-            db.flush()
-
-            meta = ContentMetadata(
-                content_id=content.id,
-                quality_score=0.0,
-                audio_channels=row.get("audio_channels") or None,
-                video_resolution=row.get("video_resolution") or None,
-                extra_metadata=row.get("extra_metadata") or None,
-            )
-            db.add(meta)
-            db.flush()
-
-            ext_src = ExternalMetaSource(
-                content_id=content.id,
-                source_type=ExternalSourceType.bulk_upload,
-                raw_json=raw_json,
-                matched_at=datetime.utcnow(),
-            )
-            db.add(ext_src)
-            db.flush()
-
-            # resolution: credits/genres/이미지 분산 저장
-            resolve_metadata(db, content.id)
-
-            # 포스터 이미지 등록 (poster_url이 있으면)
-            if row.get("poster_url"):
-                add_content_image(db, content.id, "poster", row["poster_url"], source="cp")
-
-            process_content_metadata.delay(content.id)
+    for i, row in movie_rows:
+        result = _process_movie_row(db, row, job, i, errors)
+        if result == "success":
             success += 1
-
-        except Exception as exc:
+        elif result == "skipped":
+            skipped_duplicates += 1
+        else:
             failed += 1
-            errors.append({"row": i + 1, "title": row.get("title", ""), "error": str(exc)})
+
+    if tv_rows:
+        tv_result = _process_series_rows(db, job, tv_rows, errors)
+        success += tv_result["success"]
+        failed += tv_result["failed"]
+        skipped_duplicates += tv_result["skipped_duplicates"]
 
     job.success_count = success
     job.failed_count = failed
@@ -1872,21 +2119,39 @@ async def bulk_recall(
     )
 
 
+def _collect_descendant_ids(db: Session, root_ids: list[int]) -> list[int]:
+    """BFS로 root_ids의 모든 자손 Content id 수집 (root 포함)."""
+    seen: set[int] = set(root_ids)
+    queue: list[int] = list(root_ids)
+    while queue:
+        children = (
+            db.query(Content.id)
+            .filter(Content.parent_id.in_(queue))
+            .all()
+        )
+        next_ids = [row[0] for row in children if row[0] not in seen]
+        seen.update(next_ids)
+        queue = next_ids
+    return list(seen)
+
+
 async def bulk_delete(
     db: Session,
     ids: list[int],
     reason: Optional[str] = None,
     sync_mode: bool = False,
 ) -> "BulkActionResponse":
-    """Bulk soft delete (is_deleted=True)"""
+    """Bulk soft delete (is_deleted=True) — 자손 season/episode cascade 전파."""
     from api.programming.metadata.schemas import BulkActionResponse
 
     contents = db.query(Content).filter(Content.id.in_(ids)).all()
     valid_ids = [c.id for c in contents]
     invalid_ids = [id for id in ids if id not in {c.id for c in contents}]
 
-    for c in contents:
-        c.is_deleted = True
+    all_ids = _collect_descendant_ids(db, valid_ids)
+    db.query(Content).filter(Content.id.in_(all_ids)).update(
+        {"is_deleted": True}, synchronize_session=False
+    )
 
     db.commit()
 

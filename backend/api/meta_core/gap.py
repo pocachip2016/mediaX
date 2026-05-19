@@ -12,11 +12,18 @@ analyze_gap_batch(db, **filters) → list[GapReport]
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
-from api.programming.metadata.models.content import Content, ContentMetadata
+from api.programming.metadata.models.content import Content, ContentMetadata, ContentType
 from api.programming.metadata.models.external import ExternalMetaSource
 from api.programming.metadata.models.image import ContentImage, ImageType
 from api.programming.metadata.models.person import ContentCredit, CreditRole
 from api.programming.metadata.models.taxonomy import ContentGenre
+
+# inheritance dict 키 → gap field 이름 매핑
+_INHERIT_TO_GAP: dict[str, str] = {
+    "poster_url":    "poster",
+    "synopsis":      "synopsis",
+    "primary_genre": "primary_genre",
+}
 
 # 소스 추천 (필드 → 우선 소스 목록)
 _SOURCE_MAP: dict[str, list[str]] = {
@@ -156,6 +163,18 @@ def analyze_gap(content_id: int, db: Session) -> GapReport:
     ) is not None
     if not has_primary_genre:
         gaps.append(_gap("primary_genre", "no_primary"))
+
+    # season/episode — 상속 가능 필드는 갭 미보고 (불필요한 enrich 방지)
+    if content.content_type in (ContentType.season, ContentType.episode):
+        from api.programming.metadata.inheritance import resolve_inherited_metadata
+        inherited = resolve_inherited_metadata(content, db)
+        if inherited:
+            inheritable_gaps = {
+                _INHERIT_TO_GAP[k]
+                for k in inherited
+                if k in _INHERIT_TO_GAP
+            }
+            gaps = [g for g in gaps if g.field_name not in inheritable_gaps]
 
     return GapReport(
         content_id=content_id,

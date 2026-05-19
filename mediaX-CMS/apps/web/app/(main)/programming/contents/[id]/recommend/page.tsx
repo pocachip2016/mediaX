@@ -9,6 +9,7 @@ import {
   type ContentDetail,
   type RecommendationsOut,
   type PosterCandidateOut,
+  type StagingItem,
 } from "@/lib/api"
 import { BulkActionModal } from "@/components/contents/BulkActionModal"
 import { StickyActionBar, deriveMode } from "@/components/contents/recommend/StickyActionBar"
@@ -17,6 +18,9 @@ import { ShortMetaGrid } from "@/components/contents/recommend/ShortMetaGrid"
 import { SynopsisRow } from "@/components/contents/recommend/SynopsisRow"
 import { AISummaryBottom } from "@/components/contents/recommend/AISummaryBottom"
 import { SecondaryAccordion } from "@/components/contents/recommend/SecondaryAccordion"
+import { ExternalSourcePanel } from "@/components/contents/recommend/ExternalSourcePanel"
+import { SeriesImpactBanner } from "@/components/contents/recommend/SeriesImpactBanner"
+import type { BreadcrumbParent } from "@/components/contents/detail/BreadcrumbNav"
 import { useContentReviewActions } from "@/hooks/useContentReviewActions"
 import { getReturnPath, getReturnHref } from "@/lib/recommendDerive"
 
@@ -37,6 +41,8 @@ export default function ContentRecommendDetailPage() {
     conflicts: [],
   })
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
+  const [hierarchy, setHierarchy] = useState<StagingItem | null>(null)
+  const [parentChain, setParentChain] = useState<BreadcrumbParent[]>([])
   const [loading, setLoading] = useState(true)
   const [previewOpen, setPreviewOpen] = useState(false)
 
@@ -53,18 +59,47 @@ export default function ContentRecommendDetailPage() {
   }, [contentId])
 
   const fetchAll = useCallback(async () => {
-    const [updatedContent, updatedRecs] = await Promise.all([
+    const [updatedContent, updatedRecs, updatedHierarchy] = await Promise.all([
       metadataApi.getContent(contentId),
       metadataApi.getRecommendations(contentId).catch(() => null),
+      metadataApi.getHierarchy(contentId).catch(() => null),
     ])
     setContent(updatedContent)
     setRecommendations(updatedRecs ?? { content_id: contentId, missing_fields: [], auto_fill: [], conflicts: [] })
+    setHierarchy(updatedHierarchy)
   }, [contentId])
 
   useEffect(() => {
     setLoading(true)
     fetchAll().finally(() => setLoading(false))
   }, [fetchAll])
+
+  // 부모 체인 빌드 — detail/page.tsx 패턴 동일
+  useEffect(() => {
+    if (!content || content.parent_id == null) {
+      setParentChain([])
+      return
+    }
+    let cancelled = false
+    const buildChain = async () => {
+      const chain: BreadcrumbParent[] = []
+      try {
+        let pid: number | null | undefined = content.parent_id
+        let guard = 0
+        while (pid != null && guard < 5) {
+          const p = await metadataApi.getContent(pid)
+          chain.unshift({ id: p.id, title: p.title, content_type: p.content_type })
+          pid = p.parent_id
+          guard += 1
+        }
+        if (!cancelled) setParentChain(chain)
+      } catch {
+        if (!cancelled) setParentChain([])
+      }
+    }
+    void buildChain()
+    return () => { cancelled = true }
+  }, [content])
 
   useEffect(() => {
     posterRecommendApi
@@ -92,6 +127,28 @@ export default function ContentRecommendDetailPage() {
 
   const mode = deriveMode(content?.status)
 
+  // 계층 derived 값
+  const inheritedFields = Object.keys(hierarchy?.inherited_meta ?? {})
+  const isMovie = content?.content_type === "movie"
+  const isSeries = content?.content_type === "series"
+  const isEpisode = content?.content_type === "episode"
+
+  const seasonCount = isSeries
+    ? (hierarchy?.children ?? []).filter((c) => c.content.content_type === "season").length
+    : 0
+  const episodeCount = isSeries
+    ? (hierarchy?.children ?? []).reduce((sum, s) => sum + (s.children?.length ?? 0), 0)
+    : 0
+
+  // 시리즈 조상 — tv-type에서 외부 조회 단위 타이틀
+  const seriesAncestor = parentChain.find((p) => p.content_type === "series")
+  const lookupTargetTitle = !isMovie && seriesAncestor ? seriesAncestor.title : undefined
+
+  // episode → 시리즈 검수 링크
+  const seriesReviewHref = isEpisode && seriesAncestor
+    ? `/programming/contents/${seriesAncestor.id}/recommend`
+    : undefined
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48 text-slate-500">
@@ -115,9 +172,22 @@ export default function ContentRecommendDetailPage() {
         returnLabel={returnInfo.label}
         returnHref={returnInfo.href}
         onPreview={() => setPreviewOpen(true)}
+        breadcrumbParents={parentChain.length > 0 ? parentChain : undefined}
+        seriesReviewHref={seriesReviewHref}
       />
 
+      {isSeries && (
+        <SeriesImpactBanner seasonCount={seasonCount} episodeCount={episodeCount} />
+      )}
+
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">
+        {/* Step 15.1 — ExternalSourcePanel */}
+        <ExternalSourcePanel
+          content={content}
+          lookupTargetTitle={lookupTargetTitle}
+          onComplete={() => void fetchAll()}
+        />
+
         {/* Step 1.2 — PosterRow */}
         <PosterRow
           contentId={contentId}
@@ -133,6 +203,7 @@ export default function ContentRecommendDetailPage() {
           recommendations={recommendations}
           appliedFields={actions.appliedFields}
           onApply={actions.applyRec}
+          inheritedFields={inheritedFields.length > 0 ? inheritedFields : undefined}
         />
 
         {/* Step 1.4 — SynopsisRow */}

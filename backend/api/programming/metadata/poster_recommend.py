@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 
 from api.programming.metadata.models import ContentImage, ImageType, ExternalMetaSource
 from api.programming.metadata.models.external import ExternalSourceType
-from api.programming.metadata.models.content import Content, ContentType
+from api.programming.metadata.models.content import Content
+from api.programming.metadata.content_kind import is_tv_type
 from api.programming.metadata.tmdb_client import TmdbClient
 from shared.config import settings
 
@@ -74,7 +75,7 @@ async def fetch_tmdb_poster_candidates(
         return []
 
     tmdb_id = int(src.external_id)
-    is_tv = content.content_type in (ContentType.series,)
+    is_tv = is_tv_type(content)
 
     async def _fetch(tc: TmdbClient) -> dict:
         if is_tv:

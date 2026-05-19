@@ -4,6 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
+- [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)
 
 ## Next (이번 마일스톤)
 - [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)
@@ -16,6 +17,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-meta-hierarchy Phase A~E — content_kind SSOT + read-time 상속 + bulk movie/series + FE 검색/3탭/추천 조건부 분기 (Steps 0~16, 38 tests, verify.sh 통합) (2026-05-19)
+- [x] dev-meta-hierarchy Phase C — bulk movie/series 파이프라인 분리 (Steps 8~10) (2026-05-19)
 - [x] 외부 소스 동기화 진단 — Beat 타임존 UTC→KST 수정, CP 메일 폴링 빈도 조정, Backfill 정상화 (2026-05-19)
 - [x] 외부 소스 대시보드 — 통합 sync log + TMDB/KOBIS 로컬 캐시 UI (2026-05-18)
 - [x] link-kmdb-to-contents — KMDB 캐시(673건) → contents 링크 (exact+fuzzy 매칭) + Beat 07:00 (2026-05-18)

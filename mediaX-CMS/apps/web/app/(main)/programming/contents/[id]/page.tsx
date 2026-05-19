@@ -2,17 +2,20 @@
 
 import { useEffect, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import Link from "next/link"
 import {
-  ArrowLeft, Check, X, RotateCcw, Eye, AlertCircle, Film, ChevronDown, Sparkles,
+  RotateCcw, AlertCircle, Film, ChevronDown, Sparkles,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
-import { metadataApi, imageMetaApi, posterRecommendApi, damApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, type DamAssetsOut, resolvePosterUrl } from "@/lib/api"
+import { metadataApi, imageMetaApi, posterRecommendApi, damApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, type DamAssetsOut, type StagingItem, resolvePosterUrl } from "@/lib/api"
 import { SourceBadge } from "@/components/source-badge"
 import { MetadataDiffPanel } from "@/components/contents/MetadataDiffPanel"
 import { MetadataEnrichPanel } from "@/components/contents/MetadataEnrichPanel"
 import { VisualAssetCandidatePanel } from "@/components/contents/VisualAssetCandidatePanel"
+import { DetailLeafLayout } from "@/components/contents/detail/DetailLeafLayout"
+import { DetailContainerLayout } from "@/components/contents/detail/DetailContainerLayout"
+import { isLeafType } from "@/components/contents/detail/contentType"
+import type { BreadcrumbParent } from "@/components/contents/detail/BreadcrumbNav"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
@@ -47,13 +50,6 @@ function TabCountBadge({ tab }: { tab: "sources" | "ai" }) {
   return <span className="text-xs font-medium text-slate-500 ml-2">{count}</span>
 }
 
-function MissingBadge() {
-  return (
-    <span className="text-xs text-slate-400 border border-dashed border-slate-200 rounded px-1.5 py-0.5">
-      Missing
-    </span>
-  )
-}
 
 export default function ContentDetailPage() {
   const params = useParams()
@@ -76,6 +72,10 @@ export default function ContentDetailPage() {
   const [recDismissed, setRecDismissed] = useState(false)
   const [showEnrich, setShowEnrich] = useState(false)
 
+  const [parentChain, setParentChain] = useState<BreadcrumbParent[]>([])
+  const [childrenItems, setChildrenItems] = useState<StagingItem[]>([])
+  const [childrenLoading, setChildrenLoading] = useState(false)
+
   useEffect(() => {
     const fetchContent = async () => {
       try {
@@ -89,6 +89,48 @@ export default function ContentDetailPage() {
     }
     fetchContent()
   }, [contentId])
+
+  // 부모 체인(브레드크럼) — season: [series], episode: [series, season]
+  useEffect(() => {
+    if (!content || content.parent_id == null) {
+      setParentChain([])
+      return
+    }
+    let cancelled = false
+    const buildChain = async () => {
+      const chain: BreadcrumbParent[] = []
+      try {
+        let pid: number | null | undefined = content.parent_id
+        let guard = 0
+        while (pid != null && guard < 5) {
+          const p = await metadataApi.getContent(pid)
+          chain.unshift({ id: p.id, title: p.title, content_type: p.content_type })
+          pid = p.parent_id
+          guard += 1
+        }
+        if (!cancelled) setParentChain(chain)
+      } catch {
+        if (!cancelled) setParentChain([])
+      }
+    }
+    void buildChain()
+    return () => { cancelled = true }
+  }, [content])
+
+  // Container(series/season) 자식 목록 — hierarchy 재사용
+  useEffect(() => {
+    if (!content || isLeafType(content.content_type)) {
+      setChildrenItems([])
+      return
+    }
+    let cancelled = false
+    setChildrenLoading(true)
+    metadataApi.getHierarchy(content.id)
+      .then((item) => { if (!cancelled) setChildrenItems(item.children ?? []) })
+      .catch(() => { if (!cancelled) setChildrenItems([]) })
+      .finally(() => { if (!cancelled) setChildrenLoading(false) })
+    return () => { cancelled = true }
+  }, [content])
 
   // Auto-enable EnrichPanel when enrich=true query param present
   useEffect(() => {
@@ -284,16 +326,7 @@ export default function ContentDetailPage() {
 
   const statusInfo = (STATUS_BADGE[content.status] ?? STATUS_BADGE.waiting)!
   const qualityScore = content.quality_score ?? 0
-  const posterSrc = resolvePosterUrl(content.poster_url)
-  const contentTypeLabel =
-    content.content_type === "movie" ? "영화"
-    : content.content_type === "series" ? "시리즈"
-    : content.content_type === "season" ? "시즌"
-    : "에피소드"
 
-  const directors = content.credits.filter(
-    (c) => c.role.toLowerCase().includes("director") || c.role === "감독"
-  )
   const leads = content.credits
     .filter((c) => ["actor", "cast", "주연", "출연"].includes(c.role.toLowerCase()))
     .sort((a, b) => (a.cast_order ?? 99) - (b.cast_order ?? 99))
@@ -311,160 +344,37 @@ export default function ContentDetailPage() {
     country: content.country ?? null,
   }
 
+  // Container(series/season) → 자식 목록 레이아웃으로 디스패치
+  if (!isLeafType(content.content_type)) {
+    return (
+      <DetailContainerLayout
+        content={content}
+        contentId={contentId}
+        parentChain={parentChain}
+        statusInfo={statusInfo}
+        qualityScore={qualityScore}
+        childrenItems={childrenItems}
+        childrenLoading={childrenLoading}
+        onReprocess={handlePartialReprocess}
+        onLock={handleLockFields}
+        onPreviewClip={handleRequestPreviewClip}
+      />
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="mb-6">
-      <div className="bg-white rounded-lg border border-slate-200 p-6">
-        <div className="flex gap-6">
-          {/* 포스터 (2:3 비율) */}
-          <div className="flex-shrink-0 w-44">
-            <div className="aspect-[2/3] rounded-xl overflow-hidden bg-slate-100 flex items-center justify-center shadow-sm">
-              {posterSrc ? (
-                <img src={posterSrc} alt={content.title} className="w-full h-full object-cover" />
-              ) : (
-                <Film className="h-12 w-12 text-slate-300" />
-              )}
-            </div>
-          </div>
-
-          {/* 메타 정보 */}
-          <div className="flex-1 min-w-0 flex flex-col">
-            {/* 제목 */}
-            <div className="flex items-start gap-3 min-w-0 mb-2">
-              <Link href="/programming/contents" className="text-slate-400 hover:text-slate-600 mt-1 flex-shrink-0">
-                <ArrowLeft className="h-5 w-5" />
-              </Link>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h1 className="text-2xl font-bold text-slate-900 leading-tight">{content.title}</h1>
-                  <Link
-                    href={`/programming/contents/${contentId}/recommend?return=list`}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-violet-100 text-violet-700 text-xs font-medium hover:bg-violet-200"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    추천 검수
-                  </Link>
-                </div>
-                {content.original_title && (
-                  <p className="text-slate-500 text-sm mt-0.5">{content.original_title}</p>
-                )}
-              </div>
-            </div>
-
-            {/* 장르 칩 */}
-            {content.genres.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {content.genres.map((g) => (
-                  <span
-                    key={g.genre.id}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium bg-slate-50 border border-slate-200",
-                      g.is_primary && "border-blue-300 bg-blue-50 text-blue-800",
-                    )}
-                  >
-                    {g.genre.name_ko}
-                    {g.source && <SourceBadge source={g.source} />}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* 기본 메타 필드 */}
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600 mb-3">
-              <span className="inline-flex items-center gap-1">
-                <span className="text-slate-400">유형</span> {contentTypeLabel}
-              </span>
-              {content.production_year && (
-                <span className="inline-flex items-center gap-1">
-                  <span className="text-slate-400">📅</span> {content.production_year}
-                </span>
-              )}
-              {content.cp_name && (
-                <span className="inline-flex items-center gap-1">
-                  <span className="text-slate-400">🏢</span> {content.cp_name}
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1">
-                <span className="text-slate-400">⏱</span>
-                {content.runtime_minutes ? `${content.runtime_minutes}분` : <MissingBadge />}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="text-slate-400">🌐</span>
-                {content.country || <MissingBadge />}
-              </span>
-            </div>
-
-            {/* 감독 / 주연 / 줄거리 */}
-            <div className="space-y-1.5 mb-3 text-sm">
-              <div className="flex gap-2 items-center">
-                <span className="text-slate-400 w-10 flex-shrink-0">감독</span>
-                {directors.length > 0
-                  ? <span className="text-slate-800">{directors.map((d) => d.person.name_ko).join(" · ")}</span>
-                  : <MissingBadge />}
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-slate-400 w-10 flex-shrink-0">주연</span>
-                {leads.length > 0
-                  ? <span className="text-slate-800">{leads.map((l) => l.person.name_ko).join(" · ")}</span>
-                  : <MissingBadge />}
-              </div>
-              <div className="flex gap-2 items-start">
-                <span className="text-slate-400 w-10 flex-shrink-0 mt-0.5">줄거리</span>
-                {synopsis
-                  ? <p className="text-slate-700 leading-snug line-clamp-2">{synopsis}</p>
-                  : <MissingBadge />}
-              </div>
-            </div>
-
-            {/* 검수 상태 · 품질 점수 · 액션 버튼 */}
-            <div className="mt-auto pt-3 border-t border-slate-100">
-              <div className="flex items-center gap-3 mb-2.5">
-                <div className={cn("inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium", statusInfo.color)}>
-                  {statusInfo.emoji} {statusInfo.label}
-                </div>
-                <span className="text-slate-400 text-xs">#{content.id}</span>
-                <div className="flex-1 flex items-center gap-2 ml-2">
-                  <div className="flex-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-amber-500 h-full" style={{ width: `${qualityScore}%` }} />
-                  </div>
-                  <span className="font-bold text-sm text-amber-700 w-8 text-right">{qualityScore}</span>
-                </div>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Link
-                  href={`/programming/contents/${content.id}/edit`}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm"
-                >
-                  ✏️ 편집
-                </Link>
-                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-100 text-green-700 font-medium hover:bg-green-200 text-sm">
-                  <Check className="h-4 w-4" />
-                  승인
-                </button>
-                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200 text-sm">
-                  <X className="h-4 w-4" />
-                  반려
-                </button>
-                <button onClick={handlePartialReprocess} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 text-orange-700 font-medium hover:bg-orange-200 text-sm">
-                  <RotateCcw className="h-4 w-4" />
-                  AI 재처리
-                </button>
-                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 text-sm">
-                  <Eye className="h-4 w-4" />
-                  외부 재매칭
-                </button>
-                <button onClick={handleLockFields} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
-                  🔒 잠금
-                </button>
-                <button onClick={handleRequestPreviewClip} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 text-sm">
-                  <Film className="h-4 w-4" />
-                  Preview clip
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <DetailLeafLayout
+        content={content}
+        contentId={contentId}
+        parentChain={parentChain}
+        statusInfo={statusInfo}
+        qualityScore={qualityScore}
+        onReprocess={handlePartialReprocess}
+        onLock={handleLockFields}
+        onPreviewClip={handleRequestPreviewClip}
+      />
 
       {/* 추천 패널 */}
       {recommendations && !recDismissed && (recommendations.auto_fill.length > 0 || recommendations.conflicts.length > 0) && (
