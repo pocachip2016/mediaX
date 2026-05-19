@@ -30,7 +30,7 @@ celery_app.conf.update(
     beat_schedule={
         "poll-cp-emails": {
             "task": "workers.tasks.metadata.poll_cp_emails",
-            "schedule": 300,  # 5분
+            "schedule": crontab(hour=0, minute=0),  # 매일 자정 (00:00 KST)
         },
         "sync-kobis-daily": {
             "task": "workers.tasks.metadata.sync_kobis",

@@ -54,6 +54,8 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/.env
+    environment:
+      - TZ=Asia/Seoul
     depends_on:
       - postgres
       - redis
@@ -69,6 +71,7 @@ services:
       - ./backend/.env
     environment:
       - PYTHONPATH=/app
+      - TZ=Asia/Seoul
     depends_on:
       - postgres
       - redis
@@ -83,6 +86,7 @@ services:
       - ./backend/.env
     environment:
       - PYTHONPATH=/app
+      - TZ=Asia/Seoul
     depends_on:
       - redis
       - worker
