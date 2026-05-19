@@ -4,8 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [x] dev-meta-hierarchy Phase B — write integrity (mh-dedup-delete + mh-write-guards, Steps 6~7) (2026-05-19)
-- [x] dev-meta-hierarchy Phase C — bulk movie/series 파이프라인 분리 (Steps 8~10) (2026-05-19)
+- [ ] dev-meta-hierarchy Phase D — FE 설계 (Steps 11~15: 검색·bulk UI·3탭·추천화면 조건부)
 
 ## Next (이번 마일스톤)
 - [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)
@@ -18,6 +17,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-meta-hierarchy Phase C — bulk movie/series 파이프라인 분리 (Steps 8~10) (2026-05-19)
 - [x] dev-meta-hierarchy Phase A — content_kind SSOT + read-time inheritance + gap-aware analyzer (Steps 0~5, 38 tests) (2026-05-19)
 - [x] 외부 소스 동기화 진단 — Beat 타임존 UTC→KST 수정, CP 메일 폴링 빈도 조정, Backfill 정상화 (2026-05-19)
 - [x] 외부 소스 대시보드 — 통합 sync log + TMDB/KOBIS 로컬 캐시 UI (2026-05-18)
