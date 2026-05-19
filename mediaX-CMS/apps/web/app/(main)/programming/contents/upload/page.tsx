@@ -10,6 +10,7 @@ import { TemplateModeToggle } from "@/components/contents/upload/TemplateModeTog
 import { MovieFieldsTable } from "@/components/contents/upload/MovieFieldsTable"
 import { SeriesFieldsTable } from "@/components/contents/upload/SeriesFieldsTable"
 import { ModeMismatchWarning } from "@/components/contents/upload/ModeMismatchWarning"
+import { BulkReviewQueue } from "@/components/contents/BulkReviewQueue"
 import {
   validateAgainstMode,
   type TemplateMode,
@@ -157,20 +158,27 @@ export default function UploadPage() {
       </div>
 
       {result && (
-        <div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-200 flex items-start gap-3">
-          <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-medium text-green-800">업로드 완료</p>
-            <p className="text-sm text-green-700 mt-1">
-              성공 {result.success}건 / 실패 {result.failed}건 (Job #{result.job_id})
-            </p>
-            <button
-              onClick={() => router.push("/programming/contents")}
-              className="mt-2 text-sm underline text-green-700 hover:text-green-900"
-            >
-              콘텐츠 목록으로 이동 →
-            </button>
+        <div className="mb-6 space-y-4">
+          <div className="p-4 rounded-xl bg-green-50 border border-green-200 flex items-start gap-3">
+            <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium text-green-800">업로드 완료</p>
+              <p className="text-sm text-green-700 mt-1">
+                성공 {result.success}건 / 실패 {result.failed}건 (Job #{result.job_id})
+              </p>
+              <div className="mt-2 flex items-center gap-4">
+                <button
+                  onClick={() => router.push("/programming/contents")}
+                  className="text-sm underline text-green-700 hover:text-green-900"
+                >
+                  콘텐츠 목록으로 이동 →
+                </button>
+                <span className="text-green-300">│</span>
+                <span className="text-sm font-medium text-blue-700">추천 검수 큐 ↓</span>
+              </div>
+            </div>
           </div>
+          <BulkReviewQueue />
         </div>
       )}
 

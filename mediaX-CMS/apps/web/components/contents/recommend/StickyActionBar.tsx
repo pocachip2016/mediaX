@@ -5,6 +5,8 @@ import { ArrowLeft, Check, X, RotateCcw, Search, Lock, Edit, Play, Eye, Loader2 
 import { cn } from "@workspace/ui/lib/utils"
 import type { ContentDetail } from "@/lib/api"
 import type { useContentReviewActions } from "@/hooks/useContentReviewActions"
+import { BreadcrumbNav } from "@/components/contents/detail/BreadcrumbNav"
+import type { BreadcrumbParent } from "@/components/contents/detail/BreadcrumbNav"
 
 export type PageMode = "review" | "readonly" | "processing"
 
@@ -35,20 +37,36 @@ interface Props {
   returnLabel: string
   returnHref: string
   onPreview: () => void
+  breadcrumbParents?: BreadcrumbParent[]
+  seriesReviewHref?: string
 }
 
-export function StickyActionBar({ content, mode, actions, returnLabel, returnHref, onPreview }: Props) {
+export function StickyActionBar({ content, mode, actions, returnLabel, returnHref, onPreview, breadcrumbParents, seriesReviewHref }: Props) {
   const badge = STATUS_BADGE[content.status] ?? STATUS_BADGE.waiting!
   const qualityScore = content.quality_score ?? 0
 
   return (
     <div className="sticky top-0 z-30 bg-white border-b shadow-sm">
       {/* 브레드크럼 행 */}
-      <div className="px-4 pt-2 pb-1">
+      <div className="px-4 pt-2 pb-1 flex items-center gap-3 flex-wrap">
         <Link href={returnHref} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
           <ArrowLeft className="h-3.5 w-3.5" />
           {returnLabel}
         </Link>
+        {breadcrumbParents && breadcrumbParents.length > 0 && (
+          <>
+            <span className="text-slate-300 text-sm">│</span>
+            <BreadcrumbNav parents={breadcrumbParents} />
+          </>
+        )}
+        {seriesReviewHref && (
+          <Link
+            href={seriesReviewHref}
+            className="ml-auto text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            → 시리즈 검수로 이동
+          </Link>
+        )}
       </div>
 
       {/* 콘텐츠 정보 + 액션 행 */}

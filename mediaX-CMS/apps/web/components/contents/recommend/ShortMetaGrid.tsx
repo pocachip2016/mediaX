@@ -6,6 +6,7 @@ import { classifyField } from "@/lib/recommendDerive"
 import { MetaCell } from "./cells/MetaCell"
 import { DiffCell } from "./cells/DiffCell"
 import { RecomCell } from "./cells/RecomCell"
+import { InheritedLockCell } from "./cells/InheritedLockCell"
 
 const FIELDS = [
   { field: "genres",          label: "장르",   icon: "🎭" },
@@ -59,9 +60,10 @@ type Props = {
   recommendations: RecommendationsOut | null
   appliedFields: Set<string>
   onApply: (rec: FieldRecommendation, source: SourceFieldRec) => Promise<void>
+  inheritedFields?: string[]
 }
 
-export function ShortMetaGrid({ content, recommendations, appliedFields, onApply }: Props) {
+export function ShortMetaGrid({ content, recommendations, appliedFields, onApply, inheritedFields }: Props) {
   return (
     <div className="bg-white rounded-lg border overflow-hidden">
       {/* 컬럼 헤더 — sticky 처리 안 함 (7행이라 noise) */}
@@ -77,6 +79,7 @@ export function ShortMetaGrid({ content, recommendations, appliedFields, onApply
         const rec = findRec(recommendations, field)
         const kind = classifyField(rec)
         const isApplied = appliedFields.has(field)
+        const isInherited = inheritedFields?.includes(field) ?? false
 
         return (
           <div
@@ -86,19 +89,31 @@ export function ShortMetaGrid({ content, recommendations, appliedFields, onApply
               idx > 0 && "border-t border-slate-100"
             )}
           >
-            <MetaCell label={label} icon={icon} value={value} kind={kind} isApplied={isApplied} />
-            <DiffCell
-              rec={rec}
-              kind={kind}
-              isApplied={isApplied}
-              onApply={(src) => onApply(rec!, src)}
-            />
-            <RecomCell
-              rec={rec}
-              kind={kind}
-              isApplied={isApplied}
-              onApply={(src) => onApply(rec!, src)}
-            />
+            {isInherited ? (
+              <>
+                <div className="relative">
+                  <MetaCell label={label} icon={icon} value={value} kind={kind} isApplied={isApplied} />
+                  <span className="absolute top-1 right-1 text-[10px] text-slate-400">🔒</span>
+                </div>
+                <InheritedLockCell />
+              </>
+            ) : (
+              <>
+                <MetaCell label={label} icon={icon} value={value} kind={kind} isApplied={isApplied} />
+                <DiffCell
+                  rec={rec}
+                  kind={kind}
+                  isApplied={isApplied}
+                  onApply={(src) => onApply(rec!, src)}
+                />
+                <RecomCell
+                  rec={rec}
+                  kind={kind}
+                  isApplied={isApplied}
+                  onApply={(src) => onApply(rec!, src)}
+                />
+              </>
+            )}
           </div>
         )
       })}

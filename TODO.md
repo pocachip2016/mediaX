@@ -4,7 +4,8 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-meta-hierarchy Step 15 — FE 추천 UI (ExternalSourcePanel + InheritedLockCell + SeriesImpactBanner + BulkReviewQueue)
+- [ ] dev-meta-hierarchy Step 15.6 — verify.sh mh-fe-recommend 케이스 추가 + 통합 검증
+- [ ] dev-meta-hierarchy Step 16 — mh-wrap (마무리 커밋·CLAUDE.md 갱신)
 
 ## Next (이번 마일스톤)
 - [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)
