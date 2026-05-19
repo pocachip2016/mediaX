@@ -453,7 +453,8 @@ async def _async_backfill_tmdb(db, api_key: str, batch: int) -> dict:
         for content, ext_src in targets:
             try:
                 tmdb_id = ext_src.external_id
-                is_series = content.content_type == ContentType.series
+                from api.programming.metadata.content_kind import is_tv_type
+                is_series = is_tv_type(content)
                 detail_url = (
                     f"https://api.themoviedb.org/3/tv/{tmdb_id}"
                     if is_series
@@ -620,17 +621,21 @@ async def _tmdb_search_and_save(content, db, api_key: str) -> dict | None:
         Content, ContentStatus, ContentMetadata,
     )
 
-    is_series = content.content_type in (ContentType.series,)
+    from api.programming.metadata.content_kind import is_tv_type, external_lookup_target
+    is_series = is_tv_type(content)
+    lookup = external_lookup_target(content, db)
 
     # 영화/시리즈 구분 검색
-    search_url = (
-        "https://api.themoviedb.org/3/search/tv"
-        if is_series
-        else "https://api.themoviedb.org/3/search/movie"
-    )
-    params = {"api_key": api_key, "query": content.title, "language": "ko-KR"}
-    if content.production_year:
-        params["year"] = content.production_year
+    if is_series:
+        search_url = "https://api.themoviedb.org/3/search/tv"
+        params = {"api_key": api_key, "query": lookup.title, "language": "ko-KR"}
+        if lookup.production_year:
+            params["first_air_date_year"] = lookup.production_year
+    else:
+        search_url = "https://api.themoviedb.org/3/search/movie"
+        params = {"api_key": api_key, "query": lookup.title, "language": "ko-KR"}
+        if lookup.production_year:
+            params["year"] = lookup.production_year
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:

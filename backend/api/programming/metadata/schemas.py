@@ -209,6 +209,7 @@ class StagingItem(BaseModel):
     diff: dict[str, Any] = Field(default_factory=dict)   # cp vs ai 필드 비교
     external_sources: list[ExternalSourceOut] = Field(default_factory=list)
     children: list["StagingItem"] = Field(default_factory=list)  # 시리즈 계층
+    inherited_meta: Optional[dict[str, Any]] = None       # read-time 상속값 (season/episode only)
 
     model_config = {"from_attributes": True}
 

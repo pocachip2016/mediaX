@@ -14,7 +14,7 @@ enrich_content 단위 테스트 — 외부 HTTP 호출을 monkeypatch 로 차단
 import pytest
 from unittest.mock import MagicMock, patch
 
-from api.meta_core.enrich import enrich_content, _upsert_candidate, _parse_candidate_fields
+from api.meta_core.enrich import enrich_content, _upsert_candidate, _parse_candidate_fields, _needed_sources, _fetch_tmdb
 from api.meta_core.models.intelligence import MetadataCandidate, MatchEdge, FieldSuggestion
 from api.programming.metadata.models.content import Content, ContentType, ContentStatus, ContentMetadata
 from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
@@ -177,6 +177,83 @@ def test_upsert_candidate_deduplicates(db):
 
     assert c1.id == c2.id
     assert len(db.query(MetadataCandidate).all()) == 1
+
+
+# ── 7. content_type-aware 라우팅 ──────────────────────────────────────────────
+
+def test_needed_sources_tv_drops_kmdb_kobis():
+    """series/season/episode gap_report 에서 kmdb·kobis 는 제거돼야 한다."""
+    from dataclasses import dataclass, field as dc_field
+
+    @dataclass
+    class FakeGap:
+        recommended_sources: list
+
+    @dataclass
+    class FakeReport:
+        content_type: str
+        missing_fields: list
+
+    report_series = FakeReport(
+        content_type="series",
+        missing_fields=[FakeGap(["tmdb", "kmdb", "kobis"])],
+    )
+    sources = _needed_sources(report_series)
+    assert "kmdb" not in sources
+    assert "kobis" not in sources
+    assert "tmdb" in sources
+
+    report_episode = FakeReport(
+        content_type="episode",
+        missing_fields=[FakeGap(["tmdb", "kmdb"])],
+    )
+    sources_ep = _needed_sources(report_episode)
+    assert "kmdb" not in sources_ep
+    assert "tmdb" in sources_ep
+
+
+def test_fetch_tmdb_episode_uses_tv_endpoint(db):
+    """episode content 는 /search/tv 를 호출하고 series 조상의 타이틀을 사용한다."""
+    series = Content(title="오징어 게임", content_type=ContentType.series, production_year=2021)
+    db.add(series); db.flush()
+    season = Content(title="오징어 게임 시즌1", content_type=ContentType.season, parent_id=series.id)
+    db.add(season); db.flush()
+    episode = Content(title="오징어 게임 E01", content_type=ContentType.episode, parent_id=season.id)
+    db.add(episode); db.flush()
+
+    captured_url = {}
+
+    def mock_get(url, params=None, timeout=None):
+        captured_url["url"] = url
+        captured_url["query"] = (params or {}).get("query")
+        resp = MagicMock()
+        resp.json.return_value = {"results": []}
+        return resp
+
+    with patch("api.meta_core.enrich.httpx.get", side_effect=mock_get):
+        _fetch_tmdb(episode, "fake_key", db)
+
+    assert "/search/tv" in captured_url["url"], f"Expected /search/tv, got {captured_url['url']}"
+    assert captured_url["query"] == "오징어 게임", f"Expected series title, got {captured_url['query']}"
+
+
+def test_fetch_tmdb_movie_uses_movie_endpoint(db):
+    """movie content 는 /search/movie 를 호출한다."""
+    movie = Content(title="기생충", content_type=ContentType.movie, production_year=2019)
+    db.add(movie); db.flush()
+
+    captured_url = {}
+
+    def mock_get(url, params=None, timeout=None):
+        captured_url["url"] = url
+        resp = MagicMock()
+        resp.json.return_value = {"results": []}
+        return resp
+
+    with patch("api.meta_core.enrich.httpx.get", side_effect=mock_get):
+        _fetch_tmdb(movie, "fake_key", db)
+
+    assert "/search/movie" in captured_url["url"]
 
 
 # ── 6. parse_candidate_fields — KMDb 파싱 ────────────────────────────────────

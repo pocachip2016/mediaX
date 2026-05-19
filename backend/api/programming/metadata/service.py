@@ -272,7 +272,7 @@ def _build_diff(meta: Optional[ContentMetadata]) -> dict:
     return diff
 
 
-def _content_to_staging_item(content: Content) -> StagingItem:
+def _content_to_staging_item(content: Content, db: Optional[Session] = None) -> StagingItem:
     from api.programming.metadata.schemas import ContentOut, MetadataOut
     meta = content.metadata_record
     ext_sources = [
@@ -288,7 +288,13 @@ def _content_to_staging_item(content: Content) -> StagingItem:
     children = []
     for child in (content.children or []):
         if child.content_type in (ContentType.season, ContentType.episode):
-            children.append(_content_to_staging_item(child))
+            children.append(_content_to_staging_item(child, db))
+
+    # read-time 상속 (hierarchy 조회 시만 — db 없으면 skip)
+    inherited_meta = None
+    if db is not None and content.content_type in (ContentType.season, ContentType.episode):
+        from api.programming.metadata.inheritance import resolve_inherited_metadata
+        inherited_meta = resolve_inherited_metadata(content, db)
 
     return StagingItem(
         content=ContentOut.model_validate(content),
@@ -296,6 +302,7 @@ def _content_to_staging_item(content: Content) -> StagingItem:
         diff=_build_diff(meta),
         external_sources=ext_sources,
         children=children,
+        inherited_meta=inherited_meta,
     )
 
 
@@ -391,7 +398,7 @@ def get_content_hierarchy(db: Session, content_id: int) -> Optional[StagingItem]
     )
     if not content:
         return None
-    return _content_to_staging_item(content)
+    return _content_to_staging_item(content, db)
 
 
 # ── 파이프라인 현황 ────────────────────────────────────────

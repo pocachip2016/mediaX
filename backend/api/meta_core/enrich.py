@@ -68,7 +68,7 @@ def enrich_content(content_id: int, db: Session) -> EnrichResult:
 
     if "tmdb" in needed_sources:
         if tmdb_key:
-            raw = _fetch_tmdb(content, tmdb_key)
+            raw = _fetch_tmdb(content, tmdb_key, db)
             if raw:
                 candidate = _upsert_candidate(db, ExternalSourceType.tmdb, raw)
                 result.candidates_upserted += 1
@@ -105,9 +105,22 @@ def enrich_content(content_id: int, db: Session) -> EnrichResult:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _needed_sources(gap_report) -> set[str]:
+    from api.programming.metadata.content_kind import TV_TYPES
+    from api.programming.metadata.models.content import ContentType
+
     sources: set[str] = set()
     for g in gap_report.missing_fields:
         sources.update(g.recommended_sources)
+
+    # KMDB/KOBIS 는 영화 전용 DB — tv-type(series/season/episode) 에는 적용 안 함
+    try:
+        ct = ContentType(gap_report.content_type)
+    except ValueError:
+        ct = None
+    if ct in TV_TYPES:
+        sources.discard("kmdb")
+        sources.discard("kobis")
+
     return sources
 
 
@@ -146,13 +159,28 @@ def _fetch_kmdb_with_cache(db: Session, content: Content) -> list[dict]:
     return raws
 
 
-def _fetch_tmdb(content: Content, api_key: str) -> dict | None:
-    from api.programming.metadata.models.content import ContentType
-    is_series = content.content_type == ContentType.series
-    url = _TMDB_SEARCH_TV if is_series else _TMDB_SEARCH_MOVIE
-    params: dict[str, Any] = {"api_key": api_key, "query": content.title, "language": "ko-KR"}
-    if content.production_year:
-        params["year"] = content.production_year
+def _fetch_tmdb(content: Content, api_key: str, db: Session) -> dict | None:
+    from api.programming.metadata.content_kind import external_lookup_target, tmdb_search_kind
+
+    # season/episode 는 시리즈 조상으로 조회 — 단독 에피소드 타이틀은 TMDB 매칭 불가
+    lookup = external_lookup_target(content, db)
+    kind = tmdb_search_kind(content)
+
+    if kind == "tv":
+        url = _TMDB_SEARCH_TV
+        params: dict[str, Any] = {
+            "api_key": api_key,
+            "query": lookup.title,
+            "language": "ko-KR",
+        }
+        if lookup.production_year:
+            params["first_air_date_year"] = lookup.production_year
+    else:
+        url = _TMDB_SEARCH_MOVIE
+        params = {"api_key": api_key, "query": lookup.title, "language": "ko-KR"}
+        if lookup.production_year:
+            params["year"] = lookup.production_year
+
     try:
         resp = httpx.get(url, params=params, timeout=10.0)
         results = resp.json().get("results", [])

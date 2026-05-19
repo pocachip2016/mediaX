@@ -1,0 +1,24 @@
+{
+  "project": "mediaX",
+  "phase": "dev-meta-hierarchy",
+  "description": "시리즈/시즌/에피소드 vs 영화 meta 구조 정리 — content_kind SSOT 라우팅, read-time 상속, write 무결성, bulk movie/series 분리, FE 검색/3탭/추천화면 조건부. ADR: docs/dev/meta-hierarchy/adr-001-content-kind-routing.md. Phase 단위 분할 실행.",
+  "steps": [
+    { "step": 0,  "name": "mh-audit-adr",       "phase": "A", "status": "completed", "summary": "ADR-001 작성 — 라우팅 불일치 A~F + write 무결성 R1~R6 감사, 결정 D1~D10(content_kind SSOT·read-time 상속·parent_id SSOT·type-aware dedup·soft-delete cascade·bulk movie/series 분리·FE 조건부)", "completed_at": "2026-05-19T00:00:00+09:00" },
+    { "step": 1,  "name": "mh-content-kind",    "phase": "A", "status": "completed", "summary": "content_kind.py SSOT 헬퍼(is_tv_type, tmdb_search_kind, external_lookup_target) + 18 단위테스트 작성 — 호출부 미변경", "completed_at": "2026-05-19T00:00:00+09:00" },
+    { "step": 2,  "name": "mh-enrich-routing",  "phase": "A", "status": "completed", "summary": "enrich.py _fetch_tmdb → content_kind 헬퍼 사용(season/episode→/search/tv, 시리즈 조상 타이틀), _needed_sources tv-type 시 kmdb/kobis 제외 + 라우팅 테스트 3개 추가 (10/10 pass)", "completed_at": "2026-05-19T00:00:00+09:00" },
+    { "step": 3,  "name": "mh-worker-poster",   "phase": "A", "status": "completed", "summary": "workers/tasks/metadata.py 2곳 + poster_recommend.py is_series/is_tv 리터럴 → is_tv_type() 헬퍼 통일, _tmdb_search_and_save external_lookup_target + first_air_date_year 수정 (28/28 pass)", "completed_at": "2026-05-19T00:00:00+09:00" },
+    { "step": 4,  "name": "mh-inheritance",     "phase": "A", "status": "completed", "summary": "inheritance.py read-time resolver(season/episode→series 체인 상속: year/country/synopsis/genre/poster) + StagingItem.inherited_meta 필드 + get_content_hierarchy db 연결 + 10 테스트 pass", "completed_at": "2026-05-19T00:00:00+09:00" },
+    { "step": 5,  "name": "mh-gap-aware",       "phase": "A", "status": "completed", "summary": "gap.py 상속-aware 필터 추가 — season/episode가 parent에서 상속 가능한 poster/synopsis/primary_genre 갭 미보고. _INHERIT_TO_GAP 매핑 + resolve_inherited_metadata 연동. 14 테스트 pass", "completed_at": "2026-05-19T00:00:00+09:00" },
+    { "step": 6,  "name": "mh-dedup-delete",    "phase": "B", "status": "pending" },
+    { "step": 7,  "name": "mh-write-guards",    "phase": "B", "status": "pending" },
+    { "step": 8,  "name": "mh-bulk-movie",      "phase": "C", "status": "pending" },
+    { "step": 9,  "name": "mh-bulk-series",     "phase": "C", "status": "pending" },
+    { "step": 10, "name": "mh-bulk-e2e",        "phase": "C", "status": "pending" },
+    { "step": 11, "name": "mh-fe-design",       "phase": "D", "status": "pending" },
+    { "step": 12, "name": "mh-fe-search",       "phase": "E", "status": "pending" },
+    { "step": 13, "name": "mh-fe-bulk-ui",      "phase": "E", "status": "pending" },
+    { "step": 14, "name": "mh-fe-3tab",         "phase": "E", "status": "pending" },
+    { "step": 15, "name": "mh-fe-recommend",    "phase": "E", "status": "pending" },
+    { "step": 16, "name": "mh-wrap",            "phase": "F", "status": "pending" }
+  ]
+}

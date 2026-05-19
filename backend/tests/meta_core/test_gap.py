@@ -169,3 +169,74 @@ def test_batch_filter_by_content_type(db):
 def test_content_not_found_raises(db):
     with pytest.raises(ValueError, match="not found"):
         analyze_gap(99999, db)
+
+
+# ─── 5. 상속-aware (season/episode) ──────────────────────────────────────────
+
+def _make_series_with_meta(db, synopsis="A" * 60, genre="드라마", poster_url="http://img/p.jpg"):
+    from api.programming.metadata.models.image import ContentImage, ImageType
+    series = Content(title="시리즈X", content_type=ContentType.series,
+                     production_year=2023, country="KR", status=ContentStatus.staging)
+    db.add(series); db.flush()
+    meta = ContentMetadata(content_id=series.id, cp_synopsis=synopsis,
+                           ai_genre_primary=genre, quality_score=0.0)
+    db.add(meta)
+    img = ContentImage(content_id=series.id, image_type=ImageType.poster,
+                       url=poster_url, is_primary=True)
+    db.add(img); db.flush()
+    return series
+
+
+def test_episode_gap_excludes_inheritable_fields(db):
+    """에피소드가 시리즈 메타(시놉시스/장르/포스터)를 상속받을 수 있으면 해당 갭 미보고."""
+    series = _make_series_with_meta(db)
+    episode = Content(title="시리즈X E01", content_type=ContentType.episode,
+                      parent_id=series.id, status=ContentStatus.staging)
+    db.add(episode); db.flush()
+
+    report = analyze_gap(episode.id, db)
+    gap_names = {g.field_name for g in report.missing_fields}
+
+    # 시리즈에서 상속 가능한 poster/synopsis/primary_genre 는 갭 아님
+    assert "poster" not in gap_names
+    assert "synopsis" not in gap_names
+    assert "primary_genre" not in gap_names
+
+    # external_id/cast/director 는 여전히 갭 (에피소드 고유 조회 필요)
+    assert "external_id" in gap_names
+
+
+def test_season_gap_excludes_inheritable_fields(db):
+    """시즌도 동일하게 상속 가능 필드 갭 제외."""
+    series = _make_series_with_meta(db)
+    season = Content(title="시리즈X 시즌1", content_type=ContentType.season,
+                     parent_id=series.id, status=ContentStatus.staging)
+    db.add(season); db.flush()
+
+    report = analyze_gap(season.id, db)
+    gap_names = {g.field_name for g in report.missing_fields}
+    assert "poster" not in gap_names
+    assert "synopsis" not in gap_names
+    assert "primary_genre" not in gap_names
+
+
+def test_movie_gap_unaffected_by_inheritance(db):
+    """movie 는 상속 로직 무관 — 기존 갭 그대로 보고."""
+    movie = _make_content(db, title="독립영화")
+    report = analyze_gap(movie.id, db)
+    gap_names = {g.field_name for g in report.missing_fields}
+    # movie 는 poster/synopsis 등 모두 갭으로 보고
+    assert "poster" in gap_names
+    assert "synopsis" in gap_names
+
+
+def test_orphan_episode_still_reports_all_gaps(db):
+    """parent 없는 고아 episode 는 상속 불가 → 갭 그대로 보고."""
+    episode = Content(title="고아 에피소드", content_type=ContentType.episode,
+                      parent_id=None, status=ContentStatus.staging)
+    db.add(episode); db.flush()
+
+    report = analyze_gap(episode.id, db)
+    gap_names = {g.field_name for g in report.missing_fields}
+    assert "poster" in gap_names
+    assert "synopsis" in gap_names

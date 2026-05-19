@@ -3619,6 +3619,80 @@ PYEOF
     echo "=== PASS ==="
     ;;
 
+  mh-content-kind)
+    echo "=== mh-content-kind: content_kind SSOT 헬퍼 단위테스트 ==="
+    python3 -m pytest tests/api/programming/test_content_kind.py -v
+    echo "=== PASS ==="
+    ;;
+
+  mh-enrich-routing)
+    echo "=== mh-enrich-routing: enrich content_type-aware 라우팅 ==="
+    python3 -m pytest tests/meta_core/test_enrich.py -v -k "not live"
+    python3 -c "
+from api.programming.metadata.content_kind import is_tv_type, tmdb_search_kind
+from api.programming.metadata.models.content import ContentType, Content
+ep = Content(); ep.content_type = ContentType.episode
+assert tmdb_search_kind(ep) == 'tv', 'episode must route to tv'
+print('  ✓ episode → tv routing OK')
+"
+    echo "=== PASS ==="
+    ;;
+
+  mh-worker-poster)
+    echo "=== mh-worker-poster: worker/poster is_series 리터럴 제거 확인 ==="
+    cd "$BACKEND"
+    # 변수 할당 형태의 is_series/is_tv 리터럴만 검사 (.filter 쿼리 제외)
+    if grep -rn 'is_series\s*=.*ContentType\.series\|is_tv\s*=.*ContentType\.series' \
+         workers/tasks/metadata.py api/programming/metadata/poster_recommend.py 2>/dev/null; then
+      echo "ERROR: 제거되지 않은 is_series/is_tv ContentType.series 할당 발견"
+      exit 1
+    fi
+    python3 -m pytest tests/api/programming/test_content_kind.py tests/meta_core/test_enrich.py -v -k "not live"
+    echo "=== PASS ==="
+    ;;
+
+  mh-inheritance)
+    echo "=== mh-inheritance: read-time 상속 resolver 단위테스트 ==="
+    python3 -m pytest tests/api/programming/test_inheritance.py -v
+    echo "=== PASS ==="
+    ;;
+
+  mh-gap-aware)
+    echo "=== mh-gap-aware: gap analyzer 상속-aware ==="
+    python3 -m pytest tests/meta_core/test_gap.py -v
+    echo "=== PASS ==="
+    ;;
+
+  mh-dedup-delete)
+    echo "=== mh-dedup-delete: dedup 키 + soft-delete cascade + parent_id 재지정 ==="
+    python3 -m pytest tests/api/programming/test_dedup_delete.py -v
+    echo "=== PASS ==="
+    ;;
+
+  mh-write-guards)
+    echo "=== mh-write-guards: create/update/bulk/promote parent_id·type 정합 ==="
+    python3 -m pytest tests/api/programming/test_write_guards.py -v
+    echo "=== PASS ==="
+    ;;
+
+  mh-bulk-movie)
+    echo "=== mh-bulk-movie: movie bulk insert 경로 ==="
+    python3 -m pytest tests/api/programming/test_bulk_movie.py -v
+    echo "=== PASS ==="
+    ;;
+
+  mh-bulk-series)
+    echo "=== mh-bulk-series: series bulk insert 계층 구성 ==="
+    python3 -m pytest tests/api/programming/test_bulk_series.py -v
+    echo "=== PASS ==="
+    ;;
+
+  mh-bulk-e2e)
+    echo "=== mh-bulk-e2e: movie+series E2E 통합 테스트 ==="
+    python3 -m pytest tests/api/programming/test_bulk_e2e.py -v
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents"
