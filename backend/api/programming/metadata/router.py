@@ -383,6 +383,9 @@ async def batch_upload(
             "poster_url", "포스터URL",
             "audio_channels", "음성채널", "5.1CH",
             "video_resolution", "화질",
+            "series_title", "시리즈명",
+            "season_number", "시즌",
+            "episode_number", "에피소드",
         }
 
         def _extract_row(get_fn) -> dict:
@@ -413,6 +416,9 @@ async def batch_upload(
                 "poster_url": get_fn(["poster_url", "포스터URL"]) or None,
                 "audio_channels": _map_audio_channels(raw_audio),
                 "video_resolution": get_fn(["video_resolution", "화질"]) or None,
+                "series_title": get_fn(["series_title", "시리즈명"]) or None,
+                "season_number": _safe_int(get_fn(["season_number", "시즌"])),
+                "episode_number": _safe_int(get_fn(["episode_number", "에피소드"])),
             }
 
         if file.filename.lower().endswith(".csv"):

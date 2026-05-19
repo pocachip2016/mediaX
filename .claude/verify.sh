@@ -3677,19 +3677,19 @@ print('  ✓ episode → tv routing OK')
 
   mh-bulk-movie)
     echo "=== mh-bulk-movie: movie bulk insert 경로 ==="
-    python3 -m pytest tests/api/programming/test_bulk_movie.py -v
+    python3 -m pytest tests/api/programming/test_mh_bulk_movie.py -v
     echo "=== PASS ==="
     ;;
 
   mh-bulk-series)
     echo "=== mh-bulk-series: series bulk insert 계층 구성 ==="
-    python3 -m pytest tests/api/programming/test_bulk_series.py -v
+    python3 -m pytest tests/api/programming/test_mh_bulk_series.py -v
     echo "=== PASS ==="
     ;;
 
   mh-bulk-e2e)
     echo "=== mh-bulk-e2e: movie+series E2E 통합 테스트 ==="
-    python3 -m pytest tests/api/programming/test_bulk_e2e.py -v
+    python3 -m pytest tests/api/programming/test_mh_bulk_e2e.py -v
     echo "=== PASS ==="
     ;;
 
