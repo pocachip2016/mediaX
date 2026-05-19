@@ -51,6 +51,9 @@ class ContentOut(BaseModel):
     created_at: datetime
     quality_score: Optional[float] = None
     poster_url: Optional[str] = None
+    parent_id: Optional[int] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

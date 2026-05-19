@@ -3693,9 +3693,85 @@ print('  ✓ episode → tv routing OK')
     echo "=== PASS ==="
     ;;
 
+  mh-fe-bulk-ui)
+    echo "=== mh-fe-bulk-ui: bulk upload mode toggle + validation UI ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    UPLOAD_PAGE="$CMS/apps/web/app/(main)/programming/contents/upload/page.tsx"
+    TOGGLE="$CMS/apps/web/components/contents/upload/TemplateModeToggle.tsx"
+    MOVIE_TABLE="$CMS/apps/web/components/contents/upload/MovieFieldsTable.tsx"
+    SERIES_TABLE="$CMS/apps/web/components/contents/upload/SeriesFieldsTable.tsx"
+    VALIDATE="$CMS/apps/web/components/contents/upload/validateAgainstMode.ts"
+    MISMATCH="$CMS/apps/web/components/contents/upload/ModeMismatchWarning.tsx"
+    MOVIE_CSV="$CMS/apps/web/public/templates/movie.csv"
+    SERIES_CSV="$CMS/apps/web/public/templates/series.csv"
+
+    echo "--- 파일 존재 확인 ---"
+    for f in "$UPLOAD_PAGE" "$TOGGLE" "$MOVIE_TABLE" "$SERIES_TABLE" "$VALIDATE" "$MISMATCH" "$MOVIE_CSV" "$SERIES_CSV"; do
+      [ -f "$f" ] || { echo "  ✗ 없음: $f"; exit 1; }
+      echo "  ✓ $(basename $f)"
+    done
+
+    echo "--- 정적 템플릿 헤더 확인 ---"
+    head -1 "$MOVIE_CSV" | grep -q "title" && echo "  ✓ movie.csv 헤더 OK" || { echo "  ✗ movie.csv 헤더 이상"; exit 1; }
+    head -1 "$SERIES_CSV" | grep -q "series_title" && echo "  ✓ series.csv 헤더 OK" || { echo "  ✗ series.csv 헤더 이상"; exit 1; }
+
+    echo "--- 핵심 마커 grep ---"
+    grep -q "TemplateModeToggle" "$UPLOAD_PAGE" && echo "  ✓ TemplateModeToggle 사용 OK" || { echo "  ✗ TemplateModeToggle 없음"; exit 1; }
+    grep -q "validateAgainstMode" "$UPLOAD_PAGE" && echo "  ✓ validateAgainstMode import OK" || { echo "  ✗ validateAgainstMode import 없음"; exit 1; }
+    grep -q "ModeMismatchWarning" "$UPLOAD_PAGE" && echo "  ✓ ModeMismatchWarning 사용 OK" || { echo "  ✗ ModeMismatchWarning 없음"; exit 1; }
+    grep -q "templateMode" "$UPLOAD_PAGE" && echo "  ✓ templateMode state OK" || { echo "  ✗ templateMode state 없음"; exit 1; }
+    grep -q "그래도 업로드" "$MISMATCH" && echo "  ✓ 그래도 업로드 버튼 OK" || { echo "  ✗ 그래도 업로드 버튼 없음"; exit 1; }
+    grep -q "series_title" "$VALIDATE" && echo "  ✓ series_title 검증 OK" || { echo "  ✗ series_title 검증 없음"; exit 1; }
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "^.* error " | head -10 || true
+    echo "=== PASS ==="
+    ;;
+
+  mh-fe-3tab)
+    echo "=== mh-fe-3tab: detail leaf/container dispatch + breadcrumb ==="
+    SCHEMAS="$BACKEND/api/programming/metadata/schemas.py"
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    API_TS="$CMS/apps/web/lib/api.ts"
+    DETAIL_PAGE="$CMS/apps/web/app/(main)/programming/contents/[id]/page.tsx"
+    DETAIL_DIR="$CMS/apps/web/components/contents/detail"
+
+    echo "--- 14.A 백엔드 ContentOut 필드 ---"
+    python3 -c "
+from api.programming.metadata.schemas import ContentOut
+f = ContentOut.model_fields
+for k in ('parent_id','season_number','episode_number'):
+    assert k in f, f'{k} 누락'
+print('  ✓ ContentOut parent_id/season_number/episode_number OK')
+"
+
+    echo "--- 14.B FE 타입 ---"
+    grep -q "parent_id?: number | null" "$API_TS" && echo "  ✓ api.ts ContentOut.parent_id OK" || { echo "  ✗ api.ts parent_id 없음"; exit 1; }
+
+    echo "--- 14.C~E 컴포넌트 파일 존재 ---"
+    for f in contentType.tsx BreadcrumbNav.tsx ChildrenTable.tsx LeafMetaHeader.tsx DetailLeafLayout.tsx DetailContainerLayout.tsx; do
+      [ -f "$DETAIL_DIR/$f" ] || { echo "  ✗ 없음: detail/$f"; exit 1; }
+      echo "  ✓ detail/$f"
+    done
+
+    echo "--- 14.E page.tsx dispatcher ---"
+    grep -q "isLeafType" "$DETAIL_PAGE" && echo "  ✓ isLeafType dispatcher OK" || { echo "  ✗ dispatcher 없음"; exit 1; }
+    grep -q "DetailContainerLayout" "$DETAIL_PAGE" && echo "  ✓ DetailContainerLayout 분기 OK" || { echo "  ✗ DetailContainerLayout 없음"; exit 1; }
+    grep -q "DetailLeafLayout" "$DETAIL_PAGE" && echo "  ✓ DetailLeafLayout 사용 OK" || { echo "  ✗ DetailLeafLayout 없음"; exit 1; }
+    grep -q "getHierarchy" "$DETAIL_PAGE" && echo "  ✓ hierarchy fetch OK" || { echo "  ✗ hierarchy fetch 없음"; exit 1; }
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "^.* error " | head -10 || true
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab"
     exit 1
     ;;
 esac

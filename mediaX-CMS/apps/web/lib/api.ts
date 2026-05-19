@@ -41,6 +41,9 @@ export interface ContentOut {
   created_at: string
   quality_score: number | null
   poster_url?: string | null
+  parent_id?: number | null
+  season_number?: number | null
+  episode_number?: number | null
 }
 
 export interface MetadataOut {
@@ -141,6 +144,7 @@ export interface StagingItem {
   diff: Record<string, { cp: string | null; ai: string | null }>
   external_sources: ExternalSourceOut[]
   children: StagingItem[]
+  inherited_meta?: Record<string, unknown> | null
 }
 
 export interface PaginatedStagingItems {

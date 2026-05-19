@@ -1,11 +1,20 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, Upload, FileText, AlertCircle, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@workspace/ui/lib/utils"
 import { BASE } from "@/lib/api"
+import { TemplateModeToggle } from "@/components/contents/upload/TemplateModeToggle"
+import { MovieFieldsTable } from "@/components/contents/upload/MovieFieldsTable"
+import { SeriesFieldsTable } from "@/components/contents/upload/SeriesFieldsTable"
+import { ModeMismatchWarning } from "@/components/contents/upload/ModeMismatchWarning"
+import {
+  validateAgainstMode,
+  type TemplateMode,
+  type ValidationResult,
+} from "@/components/contents/upload/validateAgainstMode"
 
 interface PreviewRow {
   [key: string]: string
@@ -30,34 +39,32 @@ function parseCSVLine(line: string): string[] {
   return cells
 }
 
-const FIELD_DESCRIPTIONS = [
-  { field: "title", required: true, desc: "콘텐츠 제목" },
-  { field: "production_year", required: false, desc: "제작년도 (숫자)" },
-  { field: "content_type", required: true, desc: "movie / series / season / episode" },
-  { field: "cp_name", required: true, desc: "CP사명" },
-  { field: "synopsis", required: false, desc: "줄거리" },
-  { field: "cast", required: false, desc: "출연진 (쉼표 구분)" },
-  { field: "directors", required: false, desc: "감독 (쉼표 구분)" },
-  { field: "genres", required: false, desc: "장르 (쉼표 구분)" },
-  { field: "country", required: false, desc: "제작국가" },
-  { field: "runtime", required: false, desc: "런타임 (분 단위 숫자)" },
-  { field: "rating_age", required: false, desc: "시청등급" },
-  { field: "poster_url", required: false, desc: "포스터 이미지 URL" },
-]
-
 export default function UploadPage() {
   const router = useRouter()
+  const [templateMode, setTemplateMode] = useState<TemplateMode>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<PreviewRow[]>([])
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([])
+  const [totalRows, setTotalRows] = useState(0)
+  const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState<{ success: number; failed: number; job_id: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (previewHeaders.length > 0) {
+      setValidation(validateAgainstMode(previewHeaders, preview, templateMode))
+    } else {
+      setValidation(null)
+    }
+  }, [templateMode, previewHeaders, preview])
 
   const handleFileChange = useCallback(async (selectedFile: File) => {
     setError(null)
     setResult(null)
     setPreview([])
+    setPreviewHeaders([])
+    setTotalRows(0)
 
     const isCSV = selectedFile.name.toLowerCase().endsWith(".csv")
     const isExcel = selectedFile.name.toLowerCase().endsWith(".xlsx") || selectedFile.name.toLowerCase().endsWith(".xls")
@@ -93,6 +100,7 @@ export default function UploadPage() {
       })
       setPreviewHeaders(headers)
       setPreview(rows)
+      setTotalRows(lines.length - 1)
     }
   }, [])
 
@@ -111,10 +119,10 @@ export default function UploadPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error(err.detail || `업로드 실패 (${res.status})`)
+        throw new Error((err as { detail?: string }).detail ?? `업로드 실패 (${res.status})`)
       }
 
-      const data = await res.json()
+      const data = await res.json() as { success_count: number; failed_count: number; id: number }
       setResult({ success: data.success_count, failed: data.failed_count, job_id: data.id })
     } catch (err) {
       setError(err instanceof Error ? err.message : "업로드 실패")
@@ -122,6 +130,19 @@ export default function UploadPage() {
       setUploading(false)
     }
   }
+
+  function handleReset() {
+    setFile(null)
+    setPreview([])
+    setPreviewHeaders([])
+    setTotalRows(0)
+    setResult(null)
+    setValidation(null)
+    setError(null)
+  }
+
+  const canUpload = !!file && !!templateMode && !uploading
+  const hasMismatch = validation?.modeMismatch === true
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
@@ -135,7 +156,6 @@ export default function UploadPage() {
         </div>
       </div>
 
-      {/* 결과 메시지 */}
       {result && (
         <div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-200 flex items-start gap-3">
           <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
@@ -162,45 +182,88 @@ export default function UploadPage() {
       )}
 
       <div className="space-y-6">
-        {/* 파일 선택 */}
-        <div
-          className={cn(
-            "rounded-xl border-2 border-dashed p-10 text-center transition-colors",
-            file ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/40 hover:bg-accent/30",
+        {/* ① 템플릿 선택 */}
+        <TemplateModeToggle value={templateMode} onChange={setTemplateMode} />
+
+        {/* ② 컬럼 안내 + 템플릿 다운로드 */}
+        {templateMode && (
+          <div className="rounded-xl border border-border">
+            <div className="px-4 py-3 bg-muted/50 border-b border-border flex items-center justify-between">
+              <p className="text-sm font-medium">
+                ② 컬럼 안내 ({templateMode === "movie" ? "Movie" : "Series"})
+              </p>
+              <a
+                href={`/templates/${templateMode}.csv`}
+                download
+                className="text-xs flex items-center gap-1 text-primary hover:underline"
+              >
+                📥 {templateMode}.csv 템플릿 다운로드
+              </a>
+            </div>
+            <div className="px-4 py-4">
+              {templateMode === "movie" ? <MovieFieldsTable /> : <SeriesFieldsTable />}
+            </div>
+          </div>
+        )}
+
+        {/* ③ 파일 업로드 (드랍존) */}
+        <div>
+          {!templateMode && (
+            <p className="text-xs text-muted-foreground mb-2">먼저 템플릿 모드를 선택하세요</p>
           )}
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => {
-            e.preventDefault()
-            const dropped = e.dataTransfer.files[0]
-            if (dropped) handleFileChange(dropped)
-          }}
-        >
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            className="hidden"
-            id="fileInput"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFileChange(f) }}
-          />
-          <label htmlFor="fileInput" className="cursor-pointer">
-            <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-            {file ? (
-              <div>
-                <p className="font-medium text-foreground flex items-center justify-center gap-2">
-                  <FileText className="h-4 w-4" /> {file.name}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">{(file.size / 1024).toFixed(1)} KB</p>
-              </div>
-            ) : (
-              <div>
-                <p className="font-medium text-foreground">CSV 또는 Excel 파일을 선택하세요</p>
-                <p className="text-sm text-muted-foreground mt-1">또는 이 영역에 드래그하세요</p>
-              </div>
+          <div
+            className={cn(
+              "rounded-xl border-2 border-dashed p-10 text-center transition-colors",
+              !templateMode && "opacity-50 pointer-events-none",
+              file ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/40 hover:bg-accent/30",
             )}
-          </label>
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => {
+              e.preventDefault()
+              if (!templateMode) return
+              const dropped = e.dataTransfer.files[0]
+              if (dropped) void handleFileChange(dropped)
+            }}
+          >
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              id="fileInput"
+              onChange={e => { const f = e.target.files?.[0]; if (f) void handleFileChange(f) }}
+            />
+            <label htmlFor="fileInput" className="cursor-pointer">
+              <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
+              {file ? (
+                <div>
+                  <p className="font-medium text-foreground flex items-center justify-center gap-2">
+                    <FileText className="h-4 w-4" /> {file.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {(file.size / 1024).toFixed(1)} KB{totalRows > 0 ? ` · ${totalRows}행` : ""}
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p className="font-medium text-foreground">CSV 또는 Excel 파일을 선택하세요</p>
+                  <p className="text-sm text-muted-foreground mt-1">또는 이 영역에 드래그하세요</p>
+                </div>
+              )}
+            </label>
+          </div>
         </div>
 
-        {/* 미리보기 */}
+        {/* 모드 미스매치 경고 */}
+        {hasMismatch && validation && (
+          <ModeMismatchWarning
+            mode={templateMode}
+            reasons={validation.mismatchReasons}
+            onSwitchMode={() => setTemplateMode(templateMode === "movie" ? "series" : "movie")}
+            onProceed={handleUpload}
+          />
+        )}
+
+        {/* ④ 미리보기 */}
         {preview.length > 0 && (
           <div className="rounded-xl border border-border overflow-hidden">
             <div className="px-4 py-3 bg-muted/50 border-b border-border">
@@ -215,6 +278,9 @@ export default function UploadPage() {
                         {h}
                       </th>
                     ))}
+                    {validation && !hasMismatch && (
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">검증</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -222,9 +288,23 @@ export default function UploadPage() {
                     <tr key={i} className="border-t border-border">
                       {previewHeaders.map(h => (
                         <td key={h} className="px-3 py-2 border-r border-border last:border-0 max-w-[160px] truncate" title={row[h]}>
-                          {row[h] || <span className="text-muted-foreground/50">—</span>}
+                          {row[h] ?? "" ? row[h] : <span className="text-muted-foreground/50">—</span>}
                         </td>
                       ))}
+                      {validation && !hasMismatch && (
+                        <td className="px-3 py-2">
+                          {validation.rowOk[i] === false ? (
+                            <span
+                              className="text-destructive"
+                              title={validation.rowErrors[i]?.join(", ")}
+                            >
+                              ⚠ {validation.rowErrors[i]?.[0]}
+                            </span>
+                          ) : (
+                            <span className="text-green-600">✓ OK</span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -233,45 +313,18 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* 필드 설명 */}
-        <details className="rounded-xl border border-border">
-          <summary className="px-4 py-3 cursor-pointer text-sm font-medium hover:bg-accent/30 rounded-xl">
-            CSV 필드 설명 보기
-          </summary>
-          <div className="px-4 pb-4">
-            <table className="w-full text-xs mt-2">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="py-2 text-left font-medium text-muted-foreground">필드명</th>
-                  <th className="py-2 text-left font-medium text-muted-foreground">필수</th>
-                  <th className="py-2 text-left font-medium text-muted-foreground">설명</th>
-                </tr>
-              </thead>
-              <tbody>
-                {FIELD_DESCRIPTIONS.map(f => (
-                  <tr key={f.field} className="border-b border-border last:border-0">
-                    <td className="py-2 font-mono text-primary">{f.field}</td>
-                    <td className="py-2">{f.required ? <span className="text-destructive font-medium">필수</span> : <span className="text-muted-foreground">선택</span>}</td>
-                    <td className="py-2 text-muted-foreground">{f.desc}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-
         {/* 버튼 */}
         <div className="flex gap-3">
           <button
             onClick={handleUpload}
-            disabled={!file || uploading}
+            disabled={!canUpload || hasMismatch}
             className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
           >
             <Upload className="h-4 w-4" />
-            {uploading ? "업로드 중..." : "업로드"}
+            {uploading ? "업로드 중..." : totalRows > 0 ? `업로드 (${totalRows}건)` : "업로드"}
           </button>
           <button
-            onClick={() => { setFile(null); setPreview([]); setResult(null) }}
+            onClick={handleReset}
             disabled={uploading}
             className="px-6 py-2.5 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors"
           >

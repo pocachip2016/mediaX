@@ -111,13 +111,17 @@
       "step": 13,
       "name": "mh-fe-bulk-ui",
       "phase": "E",
-      "status": "pending"
+      "status": "completed",
+      "summary": "TemplateModeToggle(movie|series) + MovieFieldsTable(12 필드) + SeriesFieldsTable(15 필드 + 상속안내) + validateAgainstMode(series_title/season_number/episode_number 조건부) + ModeMismatchWarning(소프트경고+그래도업로드) + movie.csv/series.csv 정적템플릿",
+      "completed_at": "2026-05-19T11:39:07+09:00"
     },
     {
       "step": 14,
       "name": "mh-fe-3tab",
       "phase": "E",
-      "status": "pending"
+      "status": "completed",
+      "summary": "PostDetail/SeriesDetail/SeasonDetail dispatcher + BreadcrumbNav + ChildrenTable + LeafMetaHeader extraction — 6 components",
+      "completed_at": "2026-05-19T12:22:37+09:00"
     },
     {
       "step": 15,
