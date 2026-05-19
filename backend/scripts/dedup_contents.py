@@ -40,29 +40,31 @@ CHILD_MODELS = [
 
 
 def find_duplicate_groups(db: Session, min_size: int = 2):
-    """(title, year, cp_name) 그룹별 중복 콘텐츠 목록 반환."""
+    """(title, year, cp_name, content_type) 그룹별 중복 콘텐츠 목록 반환."""
     rows = (
         db.query(
             Content.title, Content.production_year, Content.cp_name,
+            Content.content_type,
             func.count(Content.id).label("cnt"),
         )
-        .group_by(Content.title, Content.production_year, Content.cp_name)
+        .group_by(Content.title, Content.production_year, Content.cp_name, Content.content_type)
         .having(func.count(Content.id) >= min_size)
         .all()
     )
     groups = []
-    for title, year, cp, cnt in rows:
+    for title, year, cp, ctype, cnt in rows:
         contents = (
             db.query(Content)
             .filter(
                 Content.title == title,
                 Content.production_year == year,
                 Content.cp_name == cp,
+                Content.content_type == ctype,
             )
             .order_by(Content.id)
             .all()
         )
-        groups.append({"title": title, "year": year, "cp": cp, "count": cnt, "contents": contents})
+        groups.append({"title": title, "year": year, "cp": cp, "content_type": ctype, "count": cnt, "contents": contents})
     return groups
 
 
@@ -107,6 +109,18 @@ def reassign_children(db: Session, model, src_id: int, dst_id: int, dry_run: boo
     return moved, skipped
 
 
+def reassign_content_children(db: Session, src_id: int, dst_id: int, dry_run: bool) -> int:
+    """중복 Content의 계층 자식(Content.parent_id == src_id)을 canonical로 재지정."""
+    children = db.query(Content).filter(Content.parent_id == src_id).all()
+    if dry_run:
+        return len(children)
+    for child in children:
+        child.parent_id = dst_id
+    if children:
+        db.flush()
+    return len(children)
+
+
 def dedup_group(db: Session, group: dict, dry_run: bool) -> dict:
     contents = group["contents"]
     canonical = pick_canonical(contents, db)
@@ -117,9 +131,11 @@ def dedup_group(db: Session, group: dict, dry_run: bool) -> dict:
         "removed_ids": [c.id for c in duplicates],
         "moved": defaultdict(int),
         "skipped": defaultdict(int),
+        "children_reassigned": 0,
     }
 
     for dup in duplicates:
+        stats["children_reassigned"] += reassign_content_children(db, dup.id, canonical.id, dry_run)
         for model in CHILD_MODELS:
             moved, skipped = reassign_children(db, model, dup.id, canonical.id, dry_run)
             stats["moved"][model.__tablename__] += moved
@@ -164,8 +180,10 @@ def main():
                 total_skipped[k] += v
 
             if g["count"] >= 5 or args.limit:  # 큰 그룹만 상세 출력
-                print(f"  [{g['count']}] {g['title']!r} ({g['year']}/{g['cp']})")
+                print(f"  [{g['count']}] {g['title']!r} ({g['year']}/{g['cp']}/{g['content_type']})")
                 print(f"      canonical={stats['canonical_id']} removed={stats['removed_ids']}")
+                if stats["children_reassigned"]:
+                    print(f"      children_reassigned={stats['children_reassigned']}")
 
         if not dry_run:
             db.commit()

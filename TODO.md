@@ -4,7 +4,8 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-meta-hierarchy Phase B — write integrity (mh-dedup-delete + mh-write-guards, Steps 6~7)
+- [x] dev-meta-hierarchy Phase B — write integrity (mh-dedup-delete + mh-write-guards, Steps 6~7) (2026-05-19)
+- [ ] dev-meta-hierarchy Phase C — bulk movie/series 파이프라인 분리 (Steps 8~10)
 
 ## Next (이번 마일스톤)
 - [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)

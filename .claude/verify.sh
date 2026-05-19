@@ -3665,13 +3665,13 @@ print('  ✓ episode → tv routing OK')
 
   mh-dedup-delete)
     echo "=== mh-dedup-delete: dedup 키 + soft-delete cascade + parent_id 재지정 ==="
-    python3 -m pytest tests/api/programming/test_dedup_delete.py -v
+    python3 -m pytest tests/api/programming/test_mh_dedup_delete.py -v
     echo "=== PASS ==="
     ;;
 
   mh-write-guards)
     echo "=== mh-write-guards: create/update/bulk/promote parent_id·type 정합 ==="
-    python3 -m pytest tests/api/programming/test_write_guards.py -v
+    python3 -m pytest tests/api/programming/test_mh_write_guards.py -v
     echo "=== PASS ==="
     ;;
 

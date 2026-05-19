@@ -37,6 +37,10 @@ from api.programming.metadata.schemas import (
 # ── Content CRUD ──────────────────────────────────────────
 
 def create_content(db: Session, data: ContentCreate) -> Content:
+    content_type = ContentType(data.content_type or "movie")
+    if content_type in {ContentType.season, ContentType.episode} and not data.parent_id:
+        raise ValueError(f"parent_id required for {content_type.value}")
+
     content = Content(**data.model_dump())
     db.add(content)
     db.flush()
@@ -57,6 +61,11 @@ def update_content(db: Session, content_id: int, data: ContentUpdate) -> Content
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise ValueError(f"Content {content_id} not found")
+
+    if hasattr(data, 'content_type') and data.content_type and data.content_type != content.content_type.value:
+        children_count = db.query(Content).filter(Content.parent_id == content_id).count()
+        if children_count > 0:
+            raise ValueError(f"Cannot change content_type: {children_count} children exist")
 
     raw_json = {k: v for k, v in data.model_dump().items() if v is not None}
     if raw_json:
@@ -501,13 +510,15 @@ def process_batch_rows(
                 "extra_metadata": row.get("extra_metadata"),
             }.items() if v}
 
-            # Dedup: 같은 (title, year, cp) 매칭하는 기존 콘텐츠 조회
+            # Dedup: 같은 (title, year, cp, content_type) 매칭하는 기존 콘텐츠 조회
+            row_content_type = ContentType(row.get("content_type") or "movie")
             existing = (
                 db.query(Content)
                 .filter(
                     Content.title == title,
                     Content.production_year == production_year,
                     Content.cp_name == cp_name,
+                    Content.content_type == row_content_type,
                 )
                 .first()
             )
@@ -542,7 +553,7 @@ def process_batch_rows(
 
             content = Content(
                 title=title,
-                content_type=ContentType(row.get("content_type") or "movie"),
+                content_type=row_content_type,
                 status=ContentStatus.waiting,
                 cp_name=cp_name,
                 production_year=production_year,
@@ -1879,21 +1890,39 @@ async def bulk_recall(
     )
 
 
+def _collect_descendant_ids(db: Session, root_ids: list[int]) -> list[int]:
+    """BFS로 root_ids의 모든 자손 Content id 수집 (root 포함)."""
+    seen: set[int] = set(root_ids)
+    queue: list[int] = list(root_ids)
+    while queue:
+        children = (
+            db.query(Content.id)
+            .filter(Content.parent_id.in_(queue))
+            .all()
+        )
+        next_ids = [row[0] for row in children if row[0] not in seen]
+        seen.update(next_ids)
+        queue = next_ids
+    return list(seen)
+
+
 async def bulk_delete(
     db: Session,
     ids: list[int],
     reason: Optional[str] = None,
     sync_mode: bool = False,
 ) -> "BulkActionResponse":
-    """Bulk soft delete (is_deleted=True)"""
+    """Bulk soft delete (is_deleted=True) — 자손 season/episode cascade 전파."""
     from api.programming.metadata.schemas import BulkActionResponse
 
     contents = db.query(Content).filter(Content.id.in_(ids)).all()
     valid_ids = [c.id for c in contents]
     invalid_ids = [id for id in ids if id not in {c.id for c in contents}]
 
-    for c in contents:
-        c.is_deleted = True
+    all_ids = _collect_descendant_ids(db, valid_ids)
+    db.query(Content).filter(Content.id.in_(all_ids)).update(
+        {"is_deleted": True}, synchronize_session=False
+    )
 
     db.commit()
 
