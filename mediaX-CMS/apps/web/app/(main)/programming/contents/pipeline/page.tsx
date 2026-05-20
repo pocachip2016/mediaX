@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef } from "react"
-import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload } from "lucide-react"
+import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Play, Zap, Square, CheckSquare } from "lucide-react"
 import {
   metadataApi,
   pipelineTestApi,
@@ -13,6 +13,7 @@ import {
   type ContentTimeline,
   type ContentType,
   type BatchJobOut,
+  type BulkActionResponse,
 } from "@/lib/api"
 
 const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
@@ -667,6 +668,343 @@ function BulkUploadEmbed({ onRefresh }: { onRefresh: () => void }) {
   )
 }
 
+function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
+  const [items, setItems] = useState<ContentOut[]>([])
+  const [loading, setLoading] = useState(false)
+  const [triggering, setTriggering] = useState(false)
+  const [result, setResult] = useState<BulkActionResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchWaiting = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "waiting", size: 50 })
+      setItems(r.items)
+    } catch { setItems([]) } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { fetchWaiting() }, [fetchWaiting])
+
+  const handleTrigger = async () => {
+    if (!items.length) return
+    setTriggering(true)
+    setResult(null)
+    setError(null)
+    try {
+      const r = await metadataApi.bulkProcess({ ids: items.map((c) => c.id) })
+      setResult(r)
+      onRefresh()
+      fetchWaiting()
+    } catch (e) { setError(e instanceof Error ? e.message : "처리 실패") }
+    finally { setTriggering(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">S3 — 일괄 AI 처리 트리거</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 대기 항목 → AI process 일괄 큐잉 · /bulk/process</p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-4 text-xs text-muted-foreground">
+          <RefreshCw className="h-4 w-4 mx-auto mb-1 animate-spin opacity-50" />로딩 중…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+          대기(waiting) 상태 TEST_PIPELINE 항목 없음
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-background overflow-hidden">
+          <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">대기 항목</span>
+            <span className="text-xs text-muted-foreground">{items.length}건</span>
+          </div>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {items.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 px-3 py-2">
+                <span className="text-xs text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
+                <span className="text-xs font-medium truncate flex-1">{c.title}</span>
+                <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
+      )}
+      {result && (
+        <div className="rounded-lg border border-blue-200 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/10 px-3 py-2.5">
+          <div className="text-sm font-medium text-blue-700 dark:text-blue-400">✓ AI 처리 큐잉 완료</div>
+          <div className="text-xs text-blue-600 dark:text-blue-500 mt-1">
+            수락 {result.ids_accepted}건 · 거부 {result.ids_rejected}건 · job: {result.job_id}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleTrigger}
+          disabled={triggering || !items.length}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+        >
+          {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+          AI 처리 트리거 ({items.length}건)
+        </button>
+        <button
+          onClick={fetchWaiting}
+          disabled={loading}
+          className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
+  const [items, setItems] = useState<ContentOut[]>([])
+  const [loading, setLoading] = useState(false)
+  const [triggering, setTriggering] = useState(false)
+  const [result, setResult] = useState<BulkActionResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchProcessing = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "processing", size: 50 })
+      setItems(r.items)
+    } catch { setItems([]) } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { fetchProcessing() }, [fetchProcessing])
+
+  const handleTrigger = async () => {
+    if (!items.length) return
+    setTriggering(true)
+    setResult(null)
+    setError(null)
+    try {
+      const r = await metadataApi.bulkEnrich({ ids: items.map((c) => c.id) })
+      setResult(r)
+      onRefresh()
+      fetchProcessing()
+    } catch (e) { setError(e instanceof Error ? e.message : "처리 실패") }
+    finally { setTriggering(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">S4 — 일괄 Enrich 트리거</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 처리중 항목 → 외부 소스 enrich 일괄 큐잉 · /bulk/enrich</p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-4 text-xs text-muted-foreground">
+          <RefreshCw className="h-4 w-4 mx-auto mb-1 animate-spin opacity-50" />로딩 중…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+          처리중(processing) 상태 TEST_PIPELINE 항목 없음
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-background overflow-hidden">
+          <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">처리중 항목</span>
+            <span className="text-xs text-muted-foreground">{items.length}건</span>
+          </div>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {items.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 px-3 py-2">
+                <span className="text-xs text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
+                <span className="text-xs font-medium truncate flex-1">{c.title}</span>
+                <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
+      )}
+      {result && (
+        <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50 dark:bg-violet-900/10 px-3 py-2.5">
+          <div className="text-sm font-medium text-violet-700 dark:text-violet-400">✓ Enrich 큐잉 완료</div>
+          <div className="text-xs text-violet-600 dark:text-violet-500 mt-1">
+            수락 {result.ids_accepted}건 · 거부 {result.ids_rejected}건 · job: {result.job_id}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleTrigger}
+          disabled={triggering || !items.length}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+        >
+          {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+          Enrich 트리거 ({items.length}건)
+        </button>
+        <button
+          onClick={fetchProcessing}
+          disabled={loading}
+          className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function TestReviewPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [items, setItems] = useState<ContentOut[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [acting, setActing] = useState(false)
+  const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchStaging = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "staging", size: 50 })
+      setItems(r.items)
+      setSelectedIds(new Set())
+    } catch { setItems([]) } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { fetchStaging() }, [fetchStaging])
+
+  const toggleAll = () => {
+    setSelectedIds(selectedIds.size === items.length ? new Set() : new Set(items.map((c) => c.id)))
+  }
+
+  const toggleOne = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const handleApprove = async () => {
+    if (!selectedIds.size) return
+    setActing(true)
+    setResultMsg(null)
+    setError(null)
+    try {
+      const r = await metadataApi.bulkApprove({ content_ids: [...selectedIds], reviewer: "test-console" })
+      setResultMsg(`✓ ${r.approved}건 승인됨`)
+      onRefresh()
+      fetchStaging()
+    } catch (e) { setError(e instanceof Error ? e.message : "승인 실패") }
+    finally { setActing(false) }
+  }
+
+  const handleReject = async () => {
+    if (!selectedIds.size) return
+    setActing(true)
+    setResultMsg(null)
+    setError(null)
+    try {
+      const r = await metadataApi.bulkReject({ content_ids: [...selectedIds], reviewer: "test-console" })
+      setResultMsg(`✓ ${r.rejected}건 반려됨`)
+      onRefresh()
+      fetchStaging()
+    } catch (e) { setError(e instanceof Error ? e.message : "반려 실패") }
+    finally { setActing(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">S5 — 검수 큐 (TEST_PIPELINE)</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">검토대기(staging) 항목 선택 후 일괄 승인/반려</p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-4 text-xs text-muted-foreground">
+          <RefreshCw className="h-4 w-4 mx-auto mb-1 animate-spin opacity-50" />로딩 중…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+          검토대기(staging) 상태 TEST_PIPELINE 항목 없음
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-background overflow-hidden">
+          <div className="px-3 py-2 bg-muted/40 flex items-center gap-2">
+            <button onClick={toggleAll} className="shrink-0">
+              {selectedIds.size === items.length
+                ? <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                : <Square className="h-3.5 w-3.5 text-muted-foreground" />}
+            </button>
+            <span className="text-xs font-semibold text-muted-foreground flex-1">검토대기 항목</span>
+            <span className="text-xs text-muted-foreground">{selectedIds.size}/{items.length}건 선택</span>
+          </div>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {items.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => toggleOne(c.id)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent transition-colors ${
+                  selectedIds.has(c.id) ? "bg-primary/5" : ""
+                }`}
+              >
+                {selectedIds.has(c.id)
+                  ? <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
+                  : <Square className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                <span className="text-xs text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
+                <span className="text-xs font-medium truncate flex-1">{c.title}</span>
+                <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
+      )}
+      {resultMsg && (
+        <div className="rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 px-3 py-2.5">
+          <div className="text-sm font-medium text-green-700 dark:text-green-400">{resultMsg}</div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleApprove}
+          disabled={acting || !selectedIds.size}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+        >
+          {acting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+          일괄 승인 ({selectedIds.size}건)
+        </button>
+        <button
+          onClick={handleReject}
+          disabled={acting || !selectedIds.size}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors"
+        >
+          반려 ({selectedIds.size}건)
+        </button>
+        <button
+          onClick={fetchStaging}
+          disabled={loading}
+          className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function StatusDot({ status }: { status: "ok" | "warning" | "error" }) {
   return (
     <span className={`inline-block w-2 h-2 rounded-full ${
@@ -1063,15 +1401,13 @@ export default function PipelineMonitoringPage() {
                       <AddContentInlinePanel onRefresh={refreshTestSummary} />
                     ) : activeStage === 3 ? (
                       <BulkUploadEmbed onRefresh={refreshTestSummary} />
-                    ) : (
-                      <div className="py-6 text-center text-sm text-amber-600 dark:text-amber-500">
-                        <FlaskConical className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                        <span className="font-medium">
-                          S{activeStage} — {STAGE_DEFS[activeStage - 1]?.name}
-                        </span>{" "}
-                        패널은 Step {activeStage + 4}에서 구현됩니다.
-                      </div>
-                    )}
+                    ) : activeStage === 4 ? (
+                      <BatchAiTrigger onRefresh={refreshTestSummary} />
+                    ) : activeStage === 5 ? (
+                      <BatchEnrichTrigger onRefresh={refreshTestSummary} />
+                    ) : activeStage === 6 ? (
+                      <TestReviewPanel onRefresh={refreshTestSummary} />
+                    ) : null}
                   </div>
                 ) : (
                   <div className="rounded-lg border border-dashed border-amber-200 dark:border-amber-800/30 p-6 text-center text-xs text-amber-600/60 dark:text-amber-500/60">

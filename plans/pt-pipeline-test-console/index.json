@@ -71,15 +71,17 @@
       "step": 8,
       "name": "pt-s3-s5-trigger",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "BatchAiTrigger(S3) + BatchEnrichTrigger(S4) + TestReviewPanel(S5) 구현 + activeStage 4/5/6 라우팅 연결 — tsc pass",
+      "completed_at": "2026-05-20T23:30:00+09:00"
     },
     {
       "step": 9,
       "name": "pt-wrap",
       "phase": "E",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "TODO.md Now 정리 + CLAUDE.md 구현 현황 표 갱신 + Done 항목 추가",
+      "completed_at": "2026-05-20T23:35:00+09:00"
     }
   ]
 }

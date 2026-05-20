@@ -37,6 +37,7 @@ docker compose up
 | dev-dam-poster-ingest | ✅ | — | Dam poster 자동 등록 파이프라인 — webhook 확장 + Beat catch-up |
 | dev-kmdb-cache | ✅ | — | kmdb_movie_cache 테이블 + _upsert_kmdb_movie + discover_kmdb 캐시 통합 + backfill_kmdb Beat 06:00 KST + enrich 캐시 우선 조회 |
 | dev-meta-hierarchy Phase A~E | ✅ | ✅ | 영화/시리즈/시즌/에피소드 content_kind SSOT + read-time 상속(year/country/synopsis/genre/poster) + FE 검색/3탭/추천 조건부 라우팅. ADR-001 + 38 테스트 pass |
+| pt-pipeline-test-console | ✅ | ✅ | 6단계 파이프라인 검증 콘솔 — TEST_PIPELINE 15건 시드 + 단계별 트리거(S0~S5) + ContentPipelineTimeline. ADR-002 |
 | 1.2 카탈로그 | 스텁 | 스텁 | |
 | 1.3 큐레이션 | 스텁 | 스텁 | |
 | 1.4 결재 워크플로우 | 스텁 | 스텁 | |
