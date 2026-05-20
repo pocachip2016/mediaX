@@ -107,7 +107,7 @@ export function BulkReviewQueue({ className }: Props) {
               <button
                 key={content.id}
                 onClick={() => {
-                  if (!autoSkip) router.push(`/programming/contents/${content.id}/recommend`)
+                  if (!autoSkip) router.push(`/programming/contents/${content.id}?mode=review&return=review`)
                 }}
                 disabled={autoSkip}
                 className={cn(

@@ -55,15 +55,17 @@
       "step": 6,
       "name": "dus-queue-integration",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "Review 큐 행 클릭 시 unified shell로 진입 — review/page.tsx + BulkReviewQueue 컴포넌트 URL 파라미터 추가",
+      "completed_at": "2026-05-20T21:45:00+09:00"
     },
     {
       "step": 7,
       "name": "dus-wrap",
       "phase": "E",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "계획 문서 완성 + verify.sh 단계 등록 — step1-7.md + verify.sh case 추가",
+      "completed_at": "2026-05-20T21:50:00+09:00"
     }
   ]
 }

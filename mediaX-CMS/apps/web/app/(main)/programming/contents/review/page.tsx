@@ -379,7 +379,7 @@ export default function AiReviewQueuePage() {
             {!loading && items.map(row => (
               <tr
                 key={row.content_id}
-                onClick={() => router.push(`/programming/contents/${row.content_id}`)}
+                onClick={() => router.push(`/programming/contents/${row.content_id}?mode=review&return=review`)}
                 className={cn(
                   "border-t border-border hover:bg-accent/40 cursor-pointer transition-colors",
                   selected.has(row.content_id) && "bg-primary/5"
