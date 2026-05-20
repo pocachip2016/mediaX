@@ -1,0 +1,59 @@
+{
+  "project": "mediaX",
+  "phase": "dev-detail-3col-layout",
+  "description": "콘텐츠 상세 화면 3컬럼 재구성 — view 모드는 Diff/AI 추천 제거(2컬럼), edit/review 모드는 Poster + 현재상태 + AI 추천 3컬럼 + 하단 AI 종합 바. edit 모드는 인라인 편집으로 통합. ADR-005 기반. dev-detail-api-integration plan은 이 plan에 흡수되어 cancelled 처리.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "adr-and-cancel-dai",
+      "phase": "A",
+      "status": "completed",
+      "summary": "ADR-005 (모드별 레이아웃 · 인라인 편집 · dai 흡수 · 행정렬 전략) + step 파일 + dai cancelled (Step 2-4 흡수)",
+      "completed_at": "2026-05-20T12:03:33+09:00"
+    },
+    {
+      "step": 1,
+      "name": "view-mode-simplify",
+      "phase": "B",
+      "status": "completed",
+      "summary": "view 모드 2컬럼 전환 — grid-cols[200px_1fr_420px]→[200px_1fr], ViewPane 제거 + 삭제, typecheck pass",
+      "completed_at": "2026-05-20T12:05:58+09:00"
+    },
+    {
+      "step": 2,
+      "name": "three-column-shell",
+      "phase": "C",
+      "status": "completed",
+      "summary": "ThreeColumnShell 신규(grid-cols-[200px_1fr_1fr]) + edit/review 3컬럼 전환 + AISummaryBottom footer 연결, typecheck pass",
+      "completed_at": "2026-05-20T12:08:58+09:00"
+    },
+    {
+      "step": 3,
+      "name": "ai-rec-column",
+      "phase": "D",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 4,
+      "name": "inline-edit",
+      "phase": "E",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 5,
+      "name": "row-alignment",
+      "phase": "F",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 6,
+      "name": "verify-wrap",
+      "phase": "G",
+      "status": "pending",
+      "summary": ""
+    }
+  ]
+}

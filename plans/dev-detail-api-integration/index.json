@@ -1,0 +1,48 @@
+{
+  "project": "mediaX",
+  "phase": "dev-detail-api-integration",
+  "status": "cancelled",
+  "cancelled_at": "2026-05-20T22:30:00+09:00",
+  "cancellation_reason": "Step 2 mock fallback이 page.tsx 119-159에 이미 인라인 구현됨. Step 3-4(E2E + wrap)는 후속 plan dev-detail-3col-layout의 Step 6에 흡수. ADR-005 참조.",
+  "absorbed_by": "dev-detail-3col-layout",
+  "description": "ADR-003 unified shell 완료 후 Review Queue → 콘텐츠 상세 진입 시 CORS preflight 실패로 인한 데이터 로드 실패 해결. 백엔드 CORS regex 전환 + 프론트 mock fallback 병행. ADR: docs/dev/dev-detail-api-integration/adr-004-api-integration.md",
+  "steps": [
+    {
+      "step": 0,
+      "name": "dai-adr",
+      "phase": "A",
+      "status": "completed",
+      "summary": "ADR-004 + 5-step plan: CORS preflight 실패 진단 + regex 전환 + mock fallback",
+      "completed_at": "2026-05-20T22:00:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "dai-cors-regex",
+      "phase": "B",
+      "status": "completed",
+      "summary": "Backend CORS allow_origins 리스트 → allow_origin_regex 패턴 전환 (localhost:\\d+). preflight 200 OK 확인",
+      "completed_at": "2026-05-20T22:05:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "dai-mock-content",
+      "phase": "C",
+      "status": "cancelled",
+      "summary": "page.tsx 119-159 getRecommendations.catch() 블록으로 이미 인라인 구현됨. 별도 lib/mockContent.ts 불필요."
+    },
+    {
+      "step": 3,
+      "name": "dai-e2e-verify",
+      "phase": "D",
+      "status": "cancelled",
+      "summary": "후속 plan dev-detail-3col-layout Step 6에 흡수."
+    },
+    {
+      "step": 4,
+      "name": "dai-wrap",
+      "phase": "E",
+      "status": "cancelled",
+      "summary": "후속 plan dev-detail-3col-layout Step 6에 흡수."
+    }
+  ]
+}

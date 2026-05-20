@@ -4,6 +4,10 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
+- [x] **dev-detail-3col-layout Step 0** — ADR-005 + dai cancelled (2026-05-20)
+- [x] **dev-detail-3col-layout Step 1** — view 2컬럼 + ViewPane 삭제 (2026-05-20)
+- [x] **dev-detail-3col-layout Step 2** — ThreeColumnShell + AISummaryBottom footer (2026-05-20)
+- [ ] **dev-detail-3col-layout Step 3-5** — AI rec column + inline edit + row alignment
 
 ## Next (이번 마일스톤)
 
