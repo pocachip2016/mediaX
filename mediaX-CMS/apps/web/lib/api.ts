@@ -592,6 +592,9 @@ export const metadataApi = {
     request<RecommendationsOut>(
       `/api/programming/metadata/contents/${contentId}/recommendations`
     ),
+
+  getTimeline: (id: number) =>
+    request<ContentTimeline>(`/api/programming/metadata/contents/${id}/timeline`),
 }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
@@ -1182,4 +1185,72 @@ export const posterRecommendApi = {
 export const damApi = {
   getAssetsByContent: (contentId: number) =>
     request<DamAssetsOut>(`/api/meta-core/contents/${contentId}/dam-assets`),
+}
+
+// ── Pipeline Test Console API (dev only) ─────────────────
+
+export interface PipelineTestSeedResult {
+  movie_complete: number
+  movie_incomplete: number
+  series_complete: number
+  series_incomplete: number
+  conflict: number
+  total_root: number
+}
+
+export interface PipelineTestCleanup {
+  deleted: number
+  dry_run: boolean
+}
+
+export interface PipelineTestStageSummary {
+  by_status: Record<string, number>
+  by_type: Record<string, number>
+  total: number
+  last_seeded_at: string | null
+}
+
+export interface TimelineStage {
+  stage: number
+  name: string
+  at: string | null
+  status: "done" | "active" | "pending"
+  detail: Record<string, unknown>
+}
+
+export interface ContentTimeline {
+  content_id: number
+  title: string
+  content_type: string
+  current_status: string
+  stages: TimelineStage[]
+}
+
+const _PT_TOKEN = process.env.NEXT_PUBLIC_PIPELINE_TEST_TOKEN ?? ""
+
+function requestTest<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(_PT_TOKEN ? { "X-Pipeline-Test-Token": _PT_TOKEN } : {}),
+  }
+  const { headers: _h, ...rest } = init ?? {}
+  return fetch(`${BASE}${path}`, { headers, ...rest }).then(async (res) => {
+    if (!res.ok) {
+      const detail = await res.text()
+      throw new Error(`Test API ${path} → ${res.status}: ${detail}`)
+    }
+    return res.json() as Promise<T>
+  })
+}
+
+export const pipelineTestApi = {
+  seed: () =>
+    requestTest<PipelineTestSeedResult>("/api/test/pipeline/seed", { method: "POST" }),
+  cleanup: (dry_run = false) =>
+    requestTest<PipelineTestCleanup>(
+      `/api/test/pipeline/cleanup?dry_run=${dry_run}`,
+      { method: "POST" }
+    ),
+  summary: () =>
+    requestTest<PipelineTestStageSummary>("/api/test/pipeline/summary"),
 }

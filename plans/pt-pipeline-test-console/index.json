@@ -1,0 +1,82 @@
+{
+  "project": "mediaX",
+  "phase": "pt-pipeline-test-console",
+  "description": "콘텐츠 등록 파이프라인 6단계(생성→AI처리→Enrich→검수→승인→게시) 검증 콘솔 — TEST_PIPELINE 시드 데이터 15건 + 단계별 트리거/진행률 + 콘텐츠별 타임라인 추적. /programming/contents/pipeline 페이지 확장. ADR: docs/dev/pt-pipeline-test-console/adr-002-pipeline-test-console.md",
+  "steps": [
+    {
+      "step": 0,
+      "name": "pt-adr",
+      "phase": "A",
+      "status": "completed",
+      "summary": "ADR-002 (6단계 SSOT+추적 모델+UI 청사진), 10단계 plan skeleton, 3중 guard rails",
+      "completed_at": "2026-05-20T14:45:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "pt-seed-script",
+      "phase": "B",
+      "status": "completed",
+      "summary": "seed_pipeline_test.py (15건 시드 + cleanup) + pytest 6 pass + verify.sh에 pt-* step 등록",
+      "completed_at": "2026-05-20T16:10:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "pt-test-api",
+      "phase": "B",
+      "status": "completed",
+      "summary": "/api/test/pipeline/{seed,cleanup,summary} 3 엔드포인트 + 2중 가드(env+토큰) + 8 pytest",
+      "completed_at": "2026-05-20T16:30:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "pt-timeline-api",
+      "phase": "B",
+      "status": "completed",
+      "summary": "GET /contents/{id}/timeline 6단계 정규화 엔드포인트 + 6 pytest",
+      "completed_at": "2026-05-20T16:50:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "pt-fe-skeleton",
+      "phase": "C",
+      "status": "completed",
+      "summary": "pipeline/page.tsx에 6단계 StageCard 스트립 + pipelineTestApi(3함수) + ContentTimeline 타입 추가, ENABLE_TEST 게이팅, tsc 통과",
+      "completed_at": "2026-05-20T20:30:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "pt-s0-panel",
+      "phase": "C",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 6,
+      "name": "pt-timeline-comp",
+      "phase": "C",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 7,
+      "name": "pt-s1-s2-embed",
+      "phase": "D",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 8,
+      "name": "pt-s3-s5-trigger",
+      "phase": "D",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 9,
+      "name": "pt-wrap",
+      "phase": "E",
+      "status": "pending",
+      "summary": ""
+    }
+  ]
+}

@@ -1,8 +1,21 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, CheckCircle, AlertCircle, Clock, Mail, Search, GitMerge, Database } from "lucide-react"
-import { metadataApi, type PipelineStatus } from "@/lib/api"
+import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical } from "lucide-react"
+import { metadataApi, pipelineTestApi, type PipelineStatus, type PipelineTestStageSummary } from "@/lib/api"
+
+const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
+
+// ── Pipeline Test Console 설정 ────────────────────────────
+
+const STAGE_DEFS = [
+  { stage: 1, name: "생성",    statusKey: "waiting",    colorClass: "bg-yellow-500" },
+  { stage: 2, name: "AI처리",  statusKey: "processing", colorClass: "bg-blue-500" },
+  { stage: 3, name: "Enrich", statusKey: "staging",    colorClass: "bg-violet-500" },
+  { stage: 4, name: "검수",    statusKey: "review",     colorClass: "bg-orange-500" },
+  { stage: 5, name: "승인",    statusKey: "approved",   colorClass: "bg-green-500" },
+  { stage: 6, name: "게시",    statusKey: "published",  colorClass: "bg-gray-500" },
+] as const
 
 // ── Mock 데이터 ──────────────────────────────────────────
 
@@ -109,6 +122,27 @@ function StatusDot({ status }: { status: "ok" | "warning" | "error" }) {
   )
 }
 
+function PipelineStageCard({
+  stage, name, count, colorClass, active, onClick,
+}: {
+  stage: number; name: string; count: number; colorClass: string; active: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 min-w-[80px] rounded-xl border-2 p-3 text-center transition-all ${
+        active ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-accent"
+      }`}
+    >
+      <div className={`text-xs font-bold text-white ${colorClass} rounded px-1.5 py-0.5 inline-block mb-1.5`}>
+        S{stage}
+      </div>
+      <div className="text-xs font-medium text-foreground">{name}</div>
+      <div className="text-xl font-bold mt-0.5">{count}</div>
+    </button>
+  )
+}
+
 function PipelineStat({ label, value, color }: { label: string; value: number; color: string }) {
   const colorMap: Record<string, string> = {
     yellow: "text-yellow-600 dark:text-yellow-400",
@@ -136,6 +170,10 @@ export default function PipelineMonitoringPage() {
   const [failedItems] = useState<FailedItem[]>(MOCK_FAILED)
   const [retrying, setRetrying] = useState<Set<number>>(new Set())
 
+  // Pipeline Test Console 상태
+  const [testSummary, setTestSummary] = useState<PipelineTestStageSummary | null>(null)
+  const [activeStage, setActiveStage] = useState<number | null>(null)
+
   const fetchPipeline = useCallback(async () => {
     setLoading(true)
     try {
@@ -155,6 +193,12 @@ export default function PipelineMonitoringPage() {
     const id = setInterval(fetchPipeline, 30000)
     return () => clearInterval(id)
   }, [fetchPipeline, autoRefresh])
+
+  // Test Console 초기 summary 로드
+  useEffect(() => {
+    if (!ENABLE_TEST) return
+    pipelineTestApi.summary().then(setTestSummary).catch(() => {})
+  }, [])
 
   const handleRetry = async (item: FailedItem) => {
     setRetrying((prev) => new Set(prev).add(item.id))
@@ -365,6 +409,52 @@ export default function PipelineMonitoringPage() {
                 다음 재시도 배치(6시간 주기)에서 자동 처리됩니다.
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pipeline Test Console (dev only — NEXT_PUBLIC_ENABLE_PIPELINE_TEST=true) */}
+      {ENABLE_TEST && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10">
+          <div className="px-5 py-4 border-b border-amber-200 dark:border-amber-800/40 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FlaskConical className="h-4 w-4 text-amber-600" />
+              <h2 className="font-semibold text-amber-800 dark:text-amber-300">Pipeline Test Console</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800/40 text-amber-700 dark:text-amber-400 font-medium">
+                DEV ONLY
+              </span>
+            </div>
+            <div className="text-xs text-amber-600 dark:text-amber-500">
+              {testSummary ? `TEST_PIPELINE 총 ${testSummary.total}건` : "데이터 없음 (시드 필요)"}
+            </div>
+          </div>
+
+          <div className="px-5 py-4 space-y-4">
+            {/* 6단계 스트립 */}
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {STAGE_DEFS.map((s) => (
+                <PipelineStageCard
+                  key={s.stage}
+                  stage={s.stage}
+                  name={s.name}
+                  count={testSummary?.by_status[s.statusKey] ?? 0}
+                  colorClass={s.colorClass}
+                  active={activeStage === s.stage}
+                  onClick={() => setActiveStage(activeStage === s.stage ? null : s.stage)}
+                />
+              ))}
+            </div>
+
+            {/* 선택된 단계 패널 (이후 step에서 구현) */}
+            {activeStage !== null && (
+              <div className="rounded-lg border border-dashed border-amber-300 dark:border-amber-700 p-8 text-center text-sm text-amber-600 dark:text-amber-500">
+                <FlaskConical className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                <span className="font-medium">
+                  S{activeStage} — {STAGE_DEFS[activeStage - 1]?.name}
+                </span>{" "}
+                패널은 다음 단계에서 구현됩니다.
+              </div>
+            )}
           </div>
         </div>
       )}

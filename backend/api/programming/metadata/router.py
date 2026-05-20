@@ -1022,3 +1022,141 @@ async def api_enrich_credits(
     db: Session = Depends(get_db),
 ):
     return await service.enrich_external_credits(content_id, db)
+
+
+@router.get("/contents/{content_id}/timeline", summary="콘텐츠 파이프라인 타임라인")
+def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
+    """6단계 파이프라인 진행 현황을 타임라인으로 반환.
+
+    데이터 소스:
+      - Stage 1 생성  → Content.created_at
+      - Stage 2 AI처리 → ContentAIResult.processed_at (최초)
+      - Stage 3 Enrich → ExternalMetaSource.matched_at (최초)
+      - Stage 4 검수   → status=staging 도달 시각 (ContentAuditLog 또는 추론)
+      - Stage 5 승인   → ContentMetadata.reviewed_at
+      - Stage 6 게시   → 미구현 (published 상태 미존재)
+    """
+    from api.programming.metadata.models import (
+        Content, ContentMetadata, ContentStatus,
+        ContentAIResult, ExternalMetaSource, ContentAuditLog,
+    )
+
+    c = db.query(Content).filter(Content.id == content_id, Content.is_deleted.is_(False)).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    meta = db.query(ContentMetadata).filter(ContentMetadata.content_id == content_id).first()
+    ai_result = (
+        db.query(ContentAIResult)
+        .filter(ContentAIResult.content_id == content_id)
+        .order_by(ContentAIResult.processed_at)
+        .first()
+    )
+    ext_source = (
+        db.query(ExternalMetaSource)
+        .filter(ExternalMetaSource.content_id == content_id)
+        .order_by(ExternalMetaSource.matched_at)
+        .first()
+    )
+    audit_staging = (
+        db.query(ContentAuditLog)
+        .filter(ContentAuditLog.content_id == content_id,
+                ContentAuditLog.new_value.contains("staging"))
+        .order_by(ContentAuditLog.at)
+        .first()
+    )
+
+    STATUS_ORDER = [
+        ContentStatus.waiting, ContentStatus.processing, ContentStatus.staging,
+        ContentStatus.review, ContentStatus.approved, ContentStatus.rejected,
+    ]
+    current = c.status
+
+    def _iso(dt):
+        return dt.isoformat() if dt else None
+
+    def _stage_status(stage_idx: int) -> str:
+        """done / active / pending — stage_idx는 0-based.
+        Stage 0(생성)은 content 존재 자체가 완료 의미 → 항상 done."""
+        if stage_idx == 0:
+            return "done"
+        STAGE_STATUSES = {
+            1: [ContentStatus.staging, ContentStatus.review,
+                ContentStatus.approved, ContentStatus.rejected],
+            2: [ContentStatus.review, ContentStatus.approved, ContentStatus.rejected],
+            3: [ContentStatus.approved, ContentStatus.rejected],
+            4: [ContentStatus.approved, ContentStatus.rejected],
+            5: [],
+        }
+        done_statuses = STAGE_STATUSES.get(stage_idx, [])
+        if current in done_statuses:
+            return "done"
+        if stage_idx == _current_stage_idx():
+            return "active"
+        return "pending"
+
+    def _current_stage_idx() -> int:
+        mapping = {
+            ContentStatus.waiting: 0,
+            ContentStatus.processing: 1,
+            ContentStatus.staging: 3,
+            ContentStatus.review: 3,
+            ContentStatus.approved: 4,
+            ContentStatus.rejected: 4,
+        }
+        return mapping.get(current, 0)
+
+    stages = [
+        {
+            "stage": 1, "name": "생성", "at": _iso(c.created_at),
+            "status": _stage_status(0),
+            "detail": {"cp_name": c.cp_name, "content_type": c.content_type.value},
+        },
+        {
+            "stage": 2, "name": "AI처리", "at": _iso(ai_result.processed_at if ai_result else None),
+            "status": _stage_status(1),
+            "detail": {
+                "engine": ai_result.engine if ai_result else None,
+                "quality_score": meta.quality_score if meta else None,
+                "fields_filled": sum(1 for v in [
+                    meta.ai_synopsis, meta.ai_genre_primary, meta.ai_mood_tags,
+                ] if v) if meta else 0,
+            },
+        },
+        {
+            "stage": 3, "name": "Enrich", "at": _iso(ext_source.matched_at if ext_source else None),
+            "status": _stage_status(2),
+            "detail": {
+                "sources": [s.source_type.value for s in db.query(ExternalMetaSource)
+                            .filter(ExternalMetaSource.content_id == content_id).all()],
+                "match_confidence": ext_source.match_confidence if ext_source else None,
+            },
+        },
+        {
+            "stage": 4, "name": "검수", "at": _iso(audit_staging.at if audit_staging else None),
+            "status": _stage_status(3),
+            "detail": {"current_status": current.value},
+        },
+        {
+            "stage": 5, "name": "승인",
+            "at": _iso(meta.reviewed_at if meta and hasattr(meta, "reviewed_at") else None),
+            "status": _stage_status(4),
+            "detail": {
+                "reviewed_by": meta.reviewed_by if meta and hasattr(meta, "reviewed_by") else None,
+                "final_source": meta.final_source.value if meta and meta.final_source else None,
+            },
+        },
+        {
+            "stage": 6, "name": "게시", "at": None,
+            "status": "pending",
+            "detail": {"note": "Distribution 연동 미구현 (Phase 2)"},
+        },
+    ]
+
+    return {
+        "content_id": content_id,
+        "title": c.title,
+        "content_type": c.content_type.value,
+        "current_status": current.value,
+        "stages": stages,
+    }

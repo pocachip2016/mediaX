@@ -3807,9 +3807,41 @@ print('  ✓ ContentOut parent_id/season_number/episode_number OK')
     echo "=== PASS ==="
     ;;
 
+  # ── pt-pipeline-test-console ─────────────────────────────────────────────
+  pt-adr)
+    echo "=== pt-adr: doc-only, skip ==="
+    echo "OK"
+    ;;
+
+  pt-seed-script)
+    echo "=== pt-seed-script: seed_pipeline_test.py pytest 6건 ==="
+    .venv/bin/pytest tests/test_seed_pipeline_test.py -v
+    ;;
+
+  pt-test-api)
+    echo "=== pt-test-api: /test/pipeline/* 엔드포인트 pytest ==="
+    .venv/bin/pytest tests/test_pipeline_test_api.py -v
+    ;;
+
+  pt-timeline-api)
+    echo "=== pt-timeline-api: /contents/{id}/timeline pytest ==="
+    .venv/bin/pytest tests/test_timeline_api.py -v
+    ;;
+
+  pt-fe-skeleton|pt-s0-panel|pt-timeline-comp|pt-s1-s2-embed|pt-s3-s5-trigger)
+    echo "=== $STEP: FE step — TypeScript 컴파일 확인 ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    npx tsc --noEmit 2>&1 | head -20
+    ;;
+
+  pt-wrap)
+    echo "=== pt-wrap: 전체 backend pytest ==="
+    .venv/bin/pytest tests/ -v --tb=short
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap"
     exit 1
     ;;
 esac

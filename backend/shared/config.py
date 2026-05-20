@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 8
 
+    # Pipeline Test Console (dev only)
+    ENABLE_PIPELINE_TEST: bool = False
+    PIPELINE_TEST_ADMIN_KEY: str = ""   # 비어 있으면 토큰 검증 스킵 (ENABLE_PIPELINE_TEST=True 시만 유효)
+
     class Config:
         env_file = ".env"
 
