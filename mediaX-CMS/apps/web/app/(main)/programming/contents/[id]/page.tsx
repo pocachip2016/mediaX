@@ -347,7 +347,7 @@ export default function ContentDetailPage() {
           }
         />
       ) : (
-        /* review: poster + ContentShell + AIRecColumn */
+        /* review: poster + AlignedFieldRows (readOnly) + AIRecColumn */
         <ThreeColumnShell
           poster={
             <PosterPanel
@@ -364,22 +364,15 @@ export default function ContentDetailPage() {
               }}
             />
           }
-          current={
-            <ContentShell
+          alignedFields={
+            <AlignedFieldRows
               content={content}
               contentId={contentId}
-              posterCandidates={posterCandidates ?? []}
-              primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
-              childrenItems={childrenItems}
-              childrenLoading={childrenLoading}
-              onSelectPrimary={async (id) => {
-                const updated = await posterRecommendApi.selectPrimary(contentId, id)
-                setPosterCandidates(updated)
-              }}
-              onRecommendPoster={async () => {
-                const res = await posterRecommendApi.recommend(contentId)
-                setPosterCandidates(res.candidates)
-              }}
+              onSaved={() => {}}
+              recommendations={recommendations}
+              appliedFields={appliedFields}
+              onApply={handleApplyRec}
+              readOnly
             />
           }
           right={

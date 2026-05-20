@@ -10,9 +10,10 @@ interface Props {
   className?: string
   displayAsBox?: boolean
   alwaysEditing?: boolean
+  readOnly?: boolean
 }
 
-export function InlineField({ value, onSave, type = "text", placeholder, className = "", displayAsBox, alwaysEditing }: Props) {
+export function InlineField({ value, onSave, type = "text", placeholder, className = "", displayAsBox, alwaysEditing, readOnly }: Props) {
   const [editing, setEditing] = useState(alwaysEditing ?? false)
   const [draft, setDraft] = useState(value ?? "")
   const [saving, setSaving] = useState(false)
@@ -26,11 +27,11 @@ export function InlineField({ value, onSave, type = "text", placeholder, classNa
     if (displayAsBox) {
       return (
         <div
-          role="button"
-          tabIndex={0}
-          onClick={() => { setDraft(value ?? ""); setEditing(true) }}
-          onKeyDown={(e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
-          className={`max-h-24 overflow-y-auto text-xs border border-slate-100 rounded px-2 py-1.5 bg-slate-50 whitespace-pre-wrap cursor-text hover:border-blue-300 transition-colors ${className}`}
+          role={readOnly ? undefined : "button"}
+          tabIndex={readOnly ? undefined : 0}
+          onClick={readOnly ? undefined : () => { setDraft(value ?? ""); setEditing(true) }}
+          onKeyDown={readOnly ? undefined : (e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
+          className={`max-h-24 overflow-y-auto text-xs border border-slate-100 rounded px-2 py-1.5 bg-slate-50 whitespace-pre-wrap ${readOnly ? "" : "cursor-text hover:border-blue-300 transition-colors"} ${className}`}
         >
           {value ?? <span className="text-slate-300 italic">{placeholder ?? "—"}</span>}
         </div>
@@ -39,11 +40,11 @@ export function InlineField({ value, onSave, type = "text", placeholder, classNa
 
     return (
       <span
-        role="button"
-        tabIndex={0}
-        onClick={() => { setDraft(value ?? ""); setEditing(true) }}
-        onKeyDown={(e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
-        className={`cursor-text hover:bg-blue-50 hover:text-blue-700 rounded px-1 -mx-1 transition-colors ${className}`}
+        role={readOnly ? undefined : "button"}
+        tabIndex={readOnly ? undefined : 0}
+        onClick={readOnly ? undefined : () => { setDraft(value ?? ""); setEditing(true) }}
+        onKeyDown={readOnly ? undefined : (e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
+        className={`${readOnly ? "" : "cursor-text hover:bg-blue-50 hover:text-blue-700 transition-colors rounded px-1 -mx-1"} ${className}`}
       >
         {value ?? <span className="text-slate-300 text-xs italic">{placeholder ?? "—"}</span>}
       </span>

@@ -56,17 +56,16 @@ export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
     }
 
     return (
-      <div className="px-3 py-2 grid grid-cols-2 gap-2">
+      <div className="px-3 py-2 divide-y divide-amber-50">
         {srcs.map((src) => (
-          <div key={`${src.source_type}-${src.source_id}`} className="border border-amber-100 rounded p-2 space-y-1.5 bg-amber-50/30">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded uppercase font-medium">{src.source_type}</span>
-              <span className="text-[10px] text-slate-400">{src.confidence.toFixed(2)}</span>
-            </div>
-            <p className="text-xs text-slate-700 line-clamp-2 break-words">{src.value}</p>
+          <div key={`${src.source_type}-${src.source_id}`} className="py-1.5 flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-xs text-slate-700 flex-1 min-w-0 truncate">{src.value}</span>
+            <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded uppercase shrink-0">
+              {src.source_type}({src.confidence.toFixed(2)})
+            </span>
             <button
               onClick={() => void onApply(src)}
-              className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
+              className="text-[10px] text-blue-600 hover:text-blue-700 font-medium shrink-0"
             >
               개별 적용
             </button>
