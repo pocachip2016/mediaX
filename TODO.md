@@ -4,7 +4,10 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-detail-unified-shell Steps 3-7 — EditPane/ReviewPane/모드 라우팅/통합
+- [x] **dev-detail-3col-layout Step 0** — ADR-005 + dai cancelled (2026-05-20)
+- [x] **dev-detail-3col-layout Step 1** — view 2컬럼 + ViewPane 삭제 (2026-05-20)
+- [x] **dev-detail-3col-layout Step 2** — ThreeColumnShell + AISummaryBottom footer (2026-05-20)
+- [x] **dev-detail-3col-layout Step 3-5** — AI rec column + inline edit + row alignment
 
 ## Next (이번 마일스톤)
 
@@ -16,6 +19,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-detail-unified-shell Steps 6-7 — 큐 통합 + wrap (2026-05-20)
+- [x] dev-detail-unified-shell Step 5 — URL ?mode= SSOT + 3패널 dispatch + /edit,/recommend redirect (2026-05-20)
 - [x] dev-detail-unified-shell Steps 0-2 — ADR + ContentShell + ViewPane (2컬럼 레이아웃) (2026-05-20)
 - [x] pt-pipeline-test-console Steps 0~9 — 6단계 파이프라인 검증 콘솔 완료 (시드+API+타임라인+FE S0~S5 전 패널) (2026-05-20)
 - [x] pt-pipeline-test-console Steps 5~7 — SampleSeedPanel + ContentPipelineTimeline + S1단건/S2벌크 embed (2026-05-20)

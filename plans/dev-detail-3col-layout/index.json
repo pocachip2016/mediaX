@@ -1,0 +1,63 @@
+{
+  "project": "mediaX",
+  "phase": "dev-detail-3col-layout",
+  "description": "콘텐츠 상세 화면 3컬럼 재구성 — view 모드는 Diff/AI 추천 제거(2컬럼), edit/review 모드는 Poster + 현재상태 + AI 추천 3컬럼 + 하단 AI 종합 바. edit 모드는 인라인 편집으로 통합. ADR-005 기반. dev-detail-api-integration plan은 이 plan에 흡수되어 cancelled 처리.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "adr-and-cancel-dai",
+      "phase": "A",
+      "status": "completed",
+      "summary": "ADR-005 (모드별 레이아웃 · 인라인 편집 · dai 흡수 · 행정렬 전략) + step 파일 + dai cancelled (Step 2-4 흡수)",
+      "completed_at": "2026-05-20T12:03:33+09:00"
+    },
+    {
+      "step": 1,
+      "name": "view-mode-simplify",
+      "phase": "B",
+      "status": "completed",
+      "summary": "view 모드 2컬럼 전환 — grid-cols[200px_1fr_420px]→[200px_1fr], ViewPane 제거 + 삭제, typecheck pass",
+      "completed_at": "2026-05-20T12:05:58+09:00"
+    },
+    {
+      "step": 2,
+      "name": "three-column-shell",
+      "phase": "C",
+      "status": "completed",
+      "summary": "ThreeColumnShell 신규(grid-cols-[200px_1fr_1fr]) + edit/review 3컬럼 전환 + AISummaryBottom footer 연결, typecheck pass",
+      "completed_at": "2026-05-20T12:08:58+09:00"
+    },
+    {
+      "step": 3,
+      "name": "ai-rec-column",
+      "phase": "D",
+      "status": "completed",
+      "summary": "AIRecColumn 신규(8 필드 행·RecomCell·onApply) + page.tsx right 슬롯 EditPane/ReviewPane → AIRecColumn 교체, typecheck pass",
+      "completed_at": "2026-05-20T12:30:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "inline-edit",
+      "phase": "E",
+      "status": "completed",
+      "summary": "InlineField(click→input·Enter저장·Esc취소) + CurrentStateColumn(edit 모드 중앙·필드별 PUT patch) 신규, EditPane 삭제, typecheck pass",
+      "completed_at": "2026-05-20T13:00:00+09:00"
+    },
+    {
+      "step": 5,
+      "name": "row-alignment",
+      "phase": "F",
+      "status": "completed",
+      "summary": "AlignedFieldRows 신규(FieldRow grid-cols-[3rem_1fr_1fr] + ColHeaders) — CurrentStateColumn+AIRecColumn 병합, edit 모드 2컬럼 전환. ThreeColumnShell alignedFields prop 추가. CurrentStateColumn 삭제. typecheck pass",
+      "completed_at": "2026-05-20T14:30:00+09:00"
+    },
+    {
+      "step": 6,
+      "name": "verify-wrap",
+      "phase": "G",
+      "status": "completed",
+      "summary": "typecheck pass ✓ + TODO.md 갱신. 행정렬 AlignedFieldRows 구현 완료. 7 step 전체 완료.",
+      "completed_at": "2026-05-20T14:35:00+09:00"
+    }
+  ]
+}

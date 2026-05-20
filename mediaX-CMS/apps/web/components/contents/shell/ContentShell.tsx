@@ -1,9 +1,7 @@
 "use client"
 
-import Image from "next/image"
-import { Film } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { resolvePosterUrl, type ContentDetail, type PosterCandidateOut, type StagingItem } from "@/lib/api"
+import { type ContentDetail, type PosterCandidateOut, type StagingItem } from "@/lib/api"
 import { SourceBadge } from "@/components/source-badge"
 import { SecondaryAccordion } from "@/components/contents/recommend/SecondaryAccordion"
 import { ChildrenTable } from "@/components/contents/detail/ChildrenTable"
@@ -29,12 +27,9 @@ interface ContentShellProps {
 }
 
 export function ContentShell({
-  content, posterCandidates, primaryId,
-  childrenItems, childrenLoading, onSelectPrimary,
+  content, posterCandidates,
+  childrenItems, childrenLoading,
 }: ContentShellProps) {
-  const primary = posterCandidates.find((c) => c.id === primaryId) ?? posterCandidates[0]
-  const posterSrc = resolvePosterUrl(primary?.url ?? content.poster_url)
-
   const directors = content.credits.filter(
     (c) => c.role.toLowerCase().includes("director") || c.role === "감독",
   )
@@ -64,61 +59,7 @@ export function ContentShell({
 
   return (
     <div className="space-y-3">
-      {/* [1] 포스터 */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="w-full aspect-[2/3] rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center shadow-sm">
-          {posterSrc ? (
-            <Image
-              src={posterSrc}
-              alt={content.title}
-              width={240}
-              height={360}
-              unoptimized
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <Film className="h-16 w-16 text-slate-300" />
-          )}
-        </div>
-
-        {/* [2] 후보 썸네일 행 */}
-        {posterCandidates.length > 1 && (
-          <div className="flex gap-1.5 mt-3 overflow-x-auto pb-1">
-            {posterCandidates.map((c) => {
-              const src = resolvePosterUrl(c.url)
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => void onSelectPrimary(c.id)}
-                  className={cn(
-                    "flex-shrink-0 w-[60px] h-[90px] rounded overflow-hidden border-2 transition-colors",
-                    c.id === primaryId
-                      ? "border-blue-500"
-                      : "border-slate-200 hover:border-blue-300",
-                  )}
-                >
-                  {src ? (
-                    <Image
-                      src={src}
-                      alt=""
-                      width={60}
-                      height={90}
-                      unoptimized
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-slate-100 flex items-center justify-center">
-                      <Film className="h-4 w-4 text-slate-300" />
-                    </div>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* [3] 식별 정보 */}
+      {/* [1] 식별 정보 */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-2">
         <h2 className="font-bold text-slate-900 text-sm leading-tight">{content.title}</h2>
         {content.original_title && (
@@ -167,19 +108,6 @@ export function ContentShell({
         </div>
       </div>
 
-      {/* [5] 시놉시스 */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">시놉시스</h3>
-          {synopsisSource && <SourceBadge source={synopsisSource} />}
-        </div>
-        {synopsis ? (
-          <p className="text-xs text-slate-700 leading-relaxed line-clamp-5">{synopsis}</p>
-        ) : (
-          <MissingBadge />
-        )}
-      </div>
-
       {/* [6] 메타 필드 (장르·감독·주연) */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-2">
         <div className="flex gap-2 items-start">
@@ -219,6 +147,19 @@ export function ContentShell({
               {content.metadata_record.ai_rating_suggestion}
             </span>
           </div>
+        )}
+      </div>
+
+      {/* [5] 시놉시스 — 장르 카드 아래 */}
+      <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">시놉시스</h3>
+          {synopsisSource && <SourceBadge source={synopsisSource} />}
+        </div>
+        {synopsis ? (
+          <p className="text-xs text-slate-700 leading-relaxed line-clamp-5">{synopsis}</p>
+        ) : (
+          <MissingBadge />
         )}
       </div>
 

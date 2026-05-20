@@ -31,36 +31,41 @@
       "step": 3,
       "name": "dus-edit-pane",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "EditPane [A][B][C][D] 신규 구현 (포스터 URL + 시놉시스 + 메타 필드 + 저장 버튼, PosterRow 재사용, PUT API 연결)",
+      "completed_at": "2026-05-20T20:45:00+09:00"
     },
     {
       "step": 4,
       "name": "dus-review-pane",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "ReviewPane [A][B][C][D] 신규 구현 (포스터 점검 + 시놉시스 conflict 카드 + MetadataDiffPanel 재사용 + 승인/반려 Footer)",
+      "completed_at": "2026-05-20T21:00:00+09:00"
     },
     {
       "step": 5,
       "name": "dus-mode-routing",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "URL ?mode=view|edit|review SSOT 전환 + ViewPane/EditPane/ReviewPane 3분기 dispatch + /edit,/recommend redirect",
+      "completed_at": "2026-05-20T21:15:00+09:00"
     },
     {
       "step": 6,
       "name": "dus-queue-integration",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "Review 큐 행 클릭 시 unified shell로 진입 — review/page.tsx + BulkReviewQueue 컴포넌트 URL 파라미터 추가",
+      "completed_at": "2026-05-20T21:45:00+09:00"
     },
     {
       "step": 7,
       "name": "dus-wrap",
       "phase": "E",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "계획 문서 완성 + verify.sh 단계 등록 — step1-7.md + verify.sh case 추가",
+      "completed_at": "2026-05-20T21:50:00+09:00"
     }
   ]
 }
