@@ -3,19 +3,19 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import {
-  RotateCcw, AlertCircle, Film, ChevronDown, Sparkles,
+  AlertCircle, Film, RotateCcw,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import Image from "next/image"
 import { metadataApi, imageMetaApi, posterRecommendApi, damApi, type ContentDetail, type ImageMetaOut, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, type DamAssetsOut, type StagingItem, resolvePosterUrl } from "@/lib/api"
 import { SourceBadge } from "@/components/source-badge"
-import { MetadataDiffPanel } from "@/components/contents/MetadataDiffPanel"
-import { MetadataEnrichPanel } from "@/components/contents/MetadataEnrichPanel"
 import { VisualAssetCandidatePanel } from "@/components/contents/VisualAssetCandidatePanel"
-import { DetailLeafLayout } from "@/components/contents/detail/DetailLeafLayout"
 import { DetailContainerLayout } from "@/components/contents/detail/DetailContainerLayout"
 import { isLeafType } from "@/components/contents/detail/contentType"
 import type { BreadcrumbParent } from "@/components/contents/detail/BreadcrumbNav"
+import { ContentShell } from "@/components/contents/shell/ContentShell"
+import { DetailHeader } from "@/components/contents/shell/DetailHeader"
+import { ViewPane } from "@/components/contents/shell/ViewPane"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
@@ -56,7 +56,7 @@ export default function ContentDetailPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const contentId = Number(params.id)
-  
+
   const [content, setContent] = useState<ContentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabName>("text")
@@ -67,10 +67,9 @@ export default function ContentDetailPage() {
   const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
 
-  const [castExpanded, setCastExpanded] = useState(false)
+  const [mode, setMode] = useState<"view" | "edit" | "review">("view")
   const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
-  const [recDismissed, setRecDismissed] = useState(false)
-  const [showEnrich, setShowEnrich] = useState(false)
+  const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
 
   const [parentChain, setParentChain] = useState<BreadcrumbParent[]>([])
   const [childrenItems, setChildrenItems] = useState<StagingItem[]>([])
@@ -132,12 +131,6 @@ export default function ContentDetailPage() {
     return () => { cancelled = true }
   }, [content])
 
-  // Auto-enable EnrichPanel when enrich=true query param present
-  useEffect(() => {
-    if (searchParams.get("enrich") === "true") {
-      setShowEnrich(true)
-    }
-  }, [searchParams])
 
   // Load changelog when ai tab becomes active
   useEffect(() => {
@@ -146,11 +139,15 @@ export default function ContentDetailPage() {
     }
   }, [activeTab])
 
-  // Load image meta + poster candidates when image tab becomes active
+  // Load poster candidates on mount for ContentShell
+  useEffect(() => {
+    posterRecommendApi.getCandidates(contentId).then(setPosterCandidates).catch(() => setPosterCandidates(null))
+  }, [contentId])
+
+  // Load image meta when image tab becomes active
   useEffect(() => {
     if (activeTab === "image") {
       imageMetaApi.get(contentId).then(setImageMeta).catch(() => setImageMeta(null))
-      posterRecommendApi.getCandidates(contentId).then(setPosterCandidates).catch(() => setPosterCandidates(null))
     }
   }, [activeTab, contentId])
 
@@ -231,6 +228,7 @@ export default function ContentDetailPage() {
       ])
       setContent(updated)
       setRecommendations(updatedRecs)
+      setAppliedFields((prev) => new Set([...prev, rec.field]))
     } catch (err) {
       console.error("apply rec failed", err)
     }
@@ -363,111 +361,66 @@ export default function ContentDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="mb-6">
-      <DetailLeafLayout
+    <div className="min-h-screen bg-slate-50">
+      <DetailHeader
         content={content}
         contentId={contentId}
+        mode={mode}
         parentChain={parentChain}
         statusInfo={statusInfo}
-        qualityScore={qualityScore}
+        onModeChange={setMode}
         onReprocess={handlePartialReprocess}
         onLock={handleLockFields}
         onPreviewClip={handleRequestPreviewClip}
       />
 
-      {/* 추천 패널 */}
-      {recommendations && !recDismissed && (recommendations.auto_fill.length > 0 || recommendations.conflicts.length > 0) && (
-        <div className="mt-4 space-y-2">
-          {/* 뷰 토글 */}
-          <div className="flex justify-end">
-            <button
-              onClick={() => setShowEnrich((v) => !v)}
-              className={cn(
-                "flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors",
-                showEnrich
-                  ? "border-blue-300 bg-blue-50 text-blue-700"
-                  : "border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:text-blue-600"
-              )}
-            >
-              <Sparkles className="h-3 w-3" />
-              {showEnrich ? "테이블 보기" : "AI Enrich"}
-            </button>
-          </div>
-
-          {showEnrich ? (
-            <MetadataEnrichPanel
-              recommendations={recommendations}
-              currentValues={recCurrentValues}
-              onApply={handleApplyRec}
-              onApplyAll={handleApplyMultiple}
-              onRegenerate={handleRegenerate}
-              onDismiss={() => setRecDismissed(true)}
-            />
-          ) : (
-            <MetadataDiffPanel
-              recommendations={recommendations}
-              currentValues={recCurrentValues}
-              onDismiss={() => setRecDismissed(true)}
-              onApply={handleApplyRec}
-              onApplyAll={handleApplyAllAuto}
-              onEditManually={(field) => console.log("edit manually:", field)}
-            />
-          )}
+      <div className="flex gap-4 p-6 max-w-[1400px] mx-auto">
+        {/* 좌측 ContentShell ~380px */}
+        <div className="w-[380px] flex-shrink-0">
+          <ContentShell
+            content={content}
+            contentId={contentId}
+            posterCandidates={posterCandidates ?? []}
+            primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
+            childrenItems={childrenItems}
+            childrenLoading={childrenLoading}
+            onSelectPrimary={async (id) => {
+              const updated = await posterRecommendApi.selectPrimary(contentId, id)
+              setPosterCandidates(updated)
+            }}
+            onRecommendPoster={async () => {
+              const res = await posterRecommendApi.recommend(contentId)
+              setPosterCandidates(res.candidates)
+            }}
+          />
         </div>
-      )}
-      </div>
 
-      {/* 출연진 섹션 */}
-      {content.credits.length > 0 && (() => {
-        const sorted = [...content.credits].sort((a, b) => {
-          if (a.cast_order == null && b.cast_order == null) return 0
-          if (a.cast_order == null) return 1
-          if (b.cast_order == null) return -1
-          return a.cast_order - b.cast_order
-        })
-        const PREVIEW = 8
-        const visible = castExpanded ? sorted : sorted.slice(0, PREVIEW)
-        return (
-          <div className="mb-6 bg-white rounded-lg border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-slate-900">출연진 ({content.credits.length})</h2>
-              {sorted.length > PREVIEW && (
-                <button
-                  onClick={() => setCastExpanded((v) => !v)}
-                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  {castExpanded ? "접기" : "전체 보기"}
-                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", castExpanded && "rotate-180")} />
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
-              {visible.map((credit) => (
-                <div key={credit.id} className="flex flex-col items-center gap-1.5 text-center">
-                  <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-semibold text-sm flex-shrink-0">
-                    {credit.person.name_ko.charAt(0)}
-                  </div>
-                  <div className="w-full">
-                    <p className="text-xs font-medium text-slate-800 truncate leading-tight">{credit.person.name_ko}</p>
-                    <p className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
-                      {credit.character_name ?? credit.role}
-                    </p>
-                    {credit.source && (
-                      <div className="mt-1 flex justify-center">
-                        <SourceBadge source={credit.source} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      })()}
+        {/* 우측 — mode 별 패널 */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* [A][B][C] ViewPane */}
+          <ViewPane
+            content={content}
+            contentId={contentId}
+            recommendations={recommendations}
+            posterCandidates={posterCandidates ?? []}
+            primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
+            appliedFields={appliedFields}
+            onSelectPrimary={async (id) => {
+              const updated = await posterRecommendApi.selectPrimary(contentId, id)
+              setPosterCandidates(updated)
+            }}
+            onRecommendPoster={async () => {
+              const res = await posterRecommendApi.recommend(contentId)
+              setPosterCandidates(res.candidates)
+            }}
+            onApply={handleApplyRec}
+            onApplyAllAuto={handleApplyAllAuto}
+            onRegenerate={handleRegenerate}
+            onEditSynopsis={() => router.push(`/programming/contents/${contentId}/edit`)}
+          />
 
-      {/* Tabs */}
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+          {/* Tabs (video/sources/assets/ai — Step 3에서 EditPane 구성 후 정리 예정) */}
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="border-b border-slate-200 flex gap-4 px-6">
           {(["text", "image", "video", "sources", "assets", "ai"] as TabName[]).map((tab) => (
             <button
@@ -857,6 +810,8 @@ export default function ContentDetailPage() {
               </div>
             </div>
           )}
+        </div>
+        </div>
         </div>
       </div>
     </div>

@@ -1,0 +1,66 @@
+{
+  "project": "mediaX",
+  "phase": "dev-detail-unified-shell",
+  "description": "콘텐츠 상세 페이지 통합 — view/edit/recommend 3페이지를 1개 Shell + 모드별 우측 패널로 재구성. 좌측은 현재 상태(포스터+후보썸네일+식별+시놉시스+6필드+Accordion), 우측은 ?mode=view|edit|review 에 따라 추천/편집/검수 패널 교체. URL: /contents/[id]?mode=view (default), edit/recommend 페이지는 redirect. ADR: docs/dev/dev-detail-unified-shell/adr-003-unified-shell.md",
+  "steps": [
+    {
+      "step": 0,
+      "name": "dus-adr",
+      "phase": "A",
+      "status": "completed",
+      "summary": "ADR-003 + 8-step plan: unified shell (좌측 고정 컬럼 + 우측 모드별 패널)",
+      "completed_at": "2026-05-20T16:40:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "dus-shell-extract",
+      "phase": "B",
+      "status": "completed",
+      "summary": "ContentShell/DetailHeader 신규 컴포넌트 + page.tsx 2컬럼 레이아웃 전환",
+      "completed_at": "2026-05-20T18:18:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "dus-view-pane",
+      "phase": "C",
+      "status": "completed",
+      "summary": "ViewPane [A][B][C] 신규 구현 (PosterRow/SynopsisRow/ShortMetaGrid+AISummaryBottom 재사용)",
+      "completed_at": "2026-05-20T18:35:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "dus-edit-pane",
+      "phase": "C",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 4,
+      "name": "dus-review-pane",
+      "phase": "C",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 5,
+      "name": "dus-mode-routing",
+      "phase": "D",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 6,
+      "name": "dus-queue-integration",
+      "phase": "D",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 7,
+      "name": "dus-wrap",
+      "phase": "E",
+      "status": "pending",
+      "summary": ""
+    }
+  ]
+}
