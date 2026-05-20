@@ -26,9 +26,52 @@ export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
   }
 
   if (kind === "conflict") {
+    const srcs = [
+      ...rec.recommendations,
+      ...(rec.ai_synthesis ? [rec.ai_synthesis] : [])
+    ]
+
+    if (long) {
+      return (
+        <div className="px-3 py-2 space-y-2">
+          {srcs.map((src) => (
+            <div key={`${src.source_type}-${src.source_id}`} className="border border-amber-100 rounded p-2 space-y-1.5 bg-amber-50/30">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded uppercase font-medium">{src.source_type}</span>
+                <span className="text-[10px] text-slate-400">{src.confidence.toFixed(2)}</span>
+              </div>
+              <div className="max-h-16 overflow-y-auto text-xs text-slate-700 whitespace-pre-wrap border border-amber-50 rounded px-1.5 py-1 bg-white">
+                {src.value}
+              </div>
+              <button
+                onClick={() => void onApply(src)}
+                className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
+              >
+                개별 적용
+              </button>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
     return (
-      <div className="px-4 py-3 text-xs text-amber-600 flex items-center gap-1">
-        ⚠ 충돌 — Diff에서 선택
+      <div className="px-3 py-2 grid grid-cols-2 gap-2">
+        {srcs.map((src) => (
+          <div key={`${src.source_type}-${src.source_id}`} className="border border-amber-100 rounded p-2 space-y-1.5 bg-amber-50/30">
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded uppercase font-medium">{src.source_type}</span>
+              <span className="text-[10px] text-slate-400">{src.confidence.toFixed(2)}</span>
+            </div>
+            <p className="text-xs text-slate-700 line-clamp-2 break-words">{src.value}</p>
+            <button
+              onClick={() => void onApply(src)}
+              className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
+            >
+              개별 적용
+            </button>
+          </div>
+        ))}
       </div>
     )
   }

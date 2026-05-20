@@ -13,7 +13,7 @@ function findRec(recs: RecommendationsOut | null, field: string): FieldRecommend
 
 function ColHeaders() {
   return (
-    <div className="grid grid-cols-[6rem_1fr_1fr] border-b bg-slate-50">
+    <div className="grid grid-cols-[5rem_1fr_2fr] border-b bg-slate-50">
       <div />
       <div className="py-2 pl-1 text-xs font-semibold text-slate-500">현재 상태</div>
       <div className="py-2 px-4 text-xs font-semibold text-slate-500 border-l border-slate-100">AI 추천</div>
@@ -23,7 +23,7 @@ function ColHeaders() {
 
 function FieldRow({ label, current, rec }: { label: string; current: React.ReactNode; rec: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[6rem_1fr_1fr] items-stretch border-b border-slate-100 last:border-0">
+    <div className="grid grid-cols-[5rem_1fr_2fr] items-stretch border-b border-slate-100 last:border-0">
       <div className="flex items-start px-4 py-3">
         <span className="text-slate-400 text-xs">{label}</span>
       </div>
