@@ -31,15 +31,17 @@
       "step": 3,
       "name": "dus-edit-pane",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "EditPane [A][B][C][D] 신규 구현 (포스터 URL + 시놉시스 + 메타 필드 + 저장 버튼, PosterRow 재사용, PUT API 연결)",
+      "completed_at": "2026-05-20T20:45:00+09:00"
     },
     {
       "step": 4,
       "name": "dus-review-pane",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "ReviewPane [A][B][C][D] 신규 구현 (포스터 점검 + 시놉시스 conflict 카드 + MetadataDiffPanel 재사용 + 승인/반려 Footer)",
+      "completed_at": "2026-05-20T21:00:00+09:00"
     },
     {
       "step": 5,
