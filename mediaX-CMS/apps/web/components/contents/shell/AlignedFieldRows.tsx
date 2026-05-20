@@ -13,7 +13,7 @@ function findRec(recs: RecommendationsOut | null, field: string): FieldRecommend
 
 function ColHeaders() {
   return (
-    <div className="grid grid-cols-[3rem_1fr_1fr] border-b bg-slate-50">
+    <div className="grid grid-cols-[6rem_1fr_1fr] border-b bg-slate-50">
       <div />
       <div className="py-2 pl-1 text-xs font-semibold text-slate-500">현재 상태</div>
       <div className="py-2 px-4 text-xs font-semibold text-slate-500 border-l border-slate-100">AI 추천</div>
@@ -23,7 +23,7 @@ function ColHeaders() {
 
 function FieldRow({ label, current, rec }: { label: string; current: React.ReactNode; rec: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[3rem_1fr_1fr] items-stretch border-b border-slate-100 last:border-0">
+    <div className="grid grid-cols-[6rem_1fr_1fr] items-stretch border-b border-slate-100 last:border-0">
       <div className="flex items-start px-4 py-3">
         <span className="text-slate-400 text-xs">{label}</span>
       </div>
@@ -92,7 +92,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
       {/* 제목 + quality bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-1">
         <div className="text-sm font-bold text-slate-900">
-          <InlineField value={content.title} onSave={(v) => patch({ title: v })} placeholder="제목" />
+          <InlineField value={content.title} onSave={(v) => patch({ title: v })} placeholder="제목" alwaysEditing />
         </div>
         {content.original_title && (
           <p className="text-xs text-slate-400">{content.original_title}</p>
@@ -124,6 +124,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               onSave={(v) => patch({ production_year: Number(v) })}
               type="number"
               placeholder="2024"
+              alwaysEditing
             />
           }
           rec={recFor("production_year")}
@@ -135,6 +136,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               value={content.country ?? null}
               onSave={(v) => patch({ country: v })}
               placeholder="한국"
+              alwaysEditing
             />
           }
           rec={recFor("country")}
@@ -147,6 +149,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               onSave={(v) => patch({ runtime: Number(v) })}
               type="number"
               placeholder="120분"
+              alwaysEditing
             />
           }
           rec={recFor("runtime")}
@@ -158,6 +161,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               value={content.cp_name ?? null}
               onSave={(v) => patch({ cp_name: v })}
               placeholder="CP사명"
+              alwaysEditing
             />
           }
           rec={recFor("cp_name")}
@@ -174,6 +178,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               value={genres || null}
               onSave={(v) => patch({ genres: v })}
               placeholder="드라마, 스릴러"
+              alwaysEditing
             />
           }
           rec={recFor("genres")}
@@ -185,6 +190,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               value={directors || null}
               onSave={(v) => patch({ directors: v })}
               placeholder="감독명"
+              alwaysEditing
             />
           }
           rec={recFor("director")}
@@ -196,6 +202,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               value={cast || null}
               onSave={(v) => patch({ cast: v })}
               placeholder="배우1, 배우2"
+              alwaysEditing
             />
           }
           rec={recFor("cast")}
@@ -214,6 +221,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               type="textarea"
               placeholder="줄거리를 입력하세요"
               displayAsBox
+              alwaysEditing
             />
           }
           rec={recFor("synopsis", true)}

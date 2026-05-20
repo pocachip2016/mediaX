@@ -9,16 +9,17 @@ interface Props {
   placeholder?: string
   className?: string
   displayAsBox?: boolean
+  alwaysEditing?: boolean
 }
 
-export function InlineField({ value, onSave, type = "text", placeholder, className = "", displayAsBox }: Props) {
-  const [editing, setEditing] = useState(false)
+export function InlineField({ value, onSave, type = "text", placeholder, className = "", displayAsBox, alwaysEditing }: Props) {
+  const [editing, setEditing] = useState(alwaysEditing ?? false)
   const [draft, setDraft] = useState(value ?? "")
   const [saving, setSaving] = useState(false)
 
   const commit = async () => {
     setSaving(true)
-    try { await onSave(draft) } finally { setSaving(false); setEditing(false) }
+    try { await onSave(draft) } finally { setSaving(false); if (!alwaysEditing) setEditing(false) }
   }
 
   if (!editing) {
