@@ -47,8 +47,9 @@
       "step": 5,
       "name": "dus-mode-routing",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "URL ?mode=view|edit|review SSOT 전환 + ViewPane/EditPane/ReviewPane 3분기 dispatch + /edit,/recommend redirect",
+      "completed_at": "2026-05-20T21:15:00+09:00"
     },
     {
       "step": 6,

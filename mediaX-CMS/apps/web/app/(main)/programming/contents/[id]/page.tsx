@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertCircle, Film, RotateCcw,
 } from "lucide-react"
@@ -16,6 +16,8 @@ import type { BreadcrumbParent } from "@/components/contents/detail/BreadcrumbNa
 import { ContentShell } from "@/components/contents/shell/ContentShell"
 import { DetailHeader } from "@/components/contents/shell/DetailHeader"
 import { ViewPane } from "@/components/contents/shell/ViewPane"
+import { EditPane } from "@/components/contents/shell/EditPane"
+import { ReviewPane } from "@/components/contents/shell/ReviewPane"
 
 type TabName = "text" | "image" | "video" | "sources" | "assets" | "ai"
 
@@ -54,8 +56,21 @@ function TabCountBadge({ tab }: { tab: "sources" | "ai" }) {
 export default function ContentDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const contentId = Number(params.id)
+
+  const modeParam = searchParams.get("mode")
+  const mode: "view" | "edit" | "review" =
+    modeParam === "edit" || modeParam === "review" ? modeParam : "view"
+
+  const handleModeChange = (next: "view" | "edit" | "review") => {
+    const sp = new URLSearchParams(searchParams.toString())
+    if (next === "view") sp.delete("mode")
+    else sp.set("mode", next)
+    const qs = sp.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
 
   const [content, setContent] = useState<ContentDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -67,7 +82,6 @@ export default function ContentDetailPage() {
   const [imageMeta, setImageMeta] = useState<ImageMetaOut | null>(null)
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
 
-  const [mode, setMode] = useState<"view" | "edit" | "review">("view")
   const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
   const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
 
@@ -368,7 +382,7 @@ export default function ContentDetailPage() {
         mode={mode}
         parentChain={parentChain}
         statusInfo={statusInfo}
-        onModeChange={setMode}
+        onModeChange={handleModeChange}
         onReprocess={handlePartialReprocess}
         onLock={handleLockFields}
         onPreviewClip={handleRequestPreviewClip}
@@ -397,29 +411,67 @@ export default function ContentDetailPage() {
 
         {/* 우측 — mode 별 패널 */}
         <div className="flex-1 min-w-0 space-y-4">
-          {/* [A][B][C] ViewPane */}
-          <ViewPane
-            content={content}
-            contentId={contentId}
-            recommendations={recommendations}
-            posterCandidates={posterCandidates ?? []}
-            primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
-            appliedFields={appliedFields}
-            onSelectPrimary={async (id) => {
-              const updated = await posterRecommendApi.selectPrimary(contentId, id)
-              setPosterCandidates(updated)
-            }}
-            onRecommendPoster={async () => {
-              const res = await posterRecommendApi.recommend(contentId)
-              setPosterCandidates(res.candidates)
-            }}
-            onApply={handleApplyRec}
-            onApplyAllAuto={handleApplyAllAuto}
-            onRegenerate={handleRegenerate}
-            onEditSynopsis={() => router.push(`/programming/contents/${contentId}/edit`)}
-          />
+          {mode === "view" && (
+            <ViewPane
+              content={content}
+              contentId={contentId}
+              recommendations={recommendations}
+              posterCandidates={posterCandidates ?? []}
+              primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
+              appliedFields={appliedFields}
+              onSelectPrimary={async (id) => {
+                const updated = await posterRecommendApi.selectPrimary(contentId, id)
+                setPosterCandidates(updated)
+              }}
+              onRecommendPoster={async () => {
+                const res = await posterRecommendApi.recommend(contentId)
+                setPosterCandidates(res.candidates)
+              }}
+              onApply={handleApplyRec}
+              onApplyAllAuto={handleApplyAllAuto}
+              onRegenerate={handleRegenerate}
+              onEditSynopsis={() => handleModeChange("edit")}
+            />
+          )}
 
-          {/* Tabs (video/sources/assets/ai — Step 3에서 EditPane 구성 후 정리 예정) */}
+          {mode === "edit" && (
+            <EditPane
+              content={content}
+              contentId={contentId}
+              posterCandidates={posterCandidates ?? []}
+              primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
+              onSelectPrimary={async (id) => {
+                const updated = await posterRecommendApi.selectPrimary(contentId, id)
+                setPosterCandidates(updated)
+              }}
+              onSaved={(updated) => {
+                setContent(updated)
+                handleModeChange("view")
+              }}
+              onCancel={() => handleModeChange("view")}
+            />
+          )}
+
+          {mode === "review" && (
+            <ReviewPane
+              content={content}
+              contentId={contentId}
+              recommendations={recommendations}
+              posterCandidates={posterCandidates ?? []}
+              primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
+              appliedFields={appliedFields}
+              onSelectPrimary={async (id) => {
+                const updated = await posterRecommendApi.selectPrimary(contentId, id)
+                setPosterCandidates(updated)
+              }}
+              onApply={handleApplyRec}
+              onApplyAll={handleApplyAllAuto}
+              onDecision={() => router.push("/programming/contents/review")}
+            />
+          )}
+
+          {/* Tabs — view mode 전용. edit/review 에서는 EditPane/ReviewPane 만 표시 */}
+          {mode === "view" && (
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="border-b border-slate-200 flex gap-4 px-6">
           {(["text", "image", "video", "sources", "assets", "ai"] as TabName[]).map((tab) => (
@@ -812,6 +864,7 @@ export default function ContentDetailPage() {
           )}
         </div>
         </div>
+          )}
         </div>
       </div>
     </div>
