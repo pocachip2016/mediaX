@@ -31,15 +31,17 @@
       "step": 3,
       "name": "ai-rec-column",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "AIRecColumn 신규(8 필드 행·RecomCell·onApply) + page.tsx right 슬롯 EditPane/ReviewPane → AIRecColumn 교체, typecheck pass",
+      "completed_at": "2026-05-20T12:30:00+09:00"
     },
     {
       "step": 4,
       "name": "inline-edit",
       "phase": "E",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "InlineField(click→input·Enter저장·Esc취소) + CurrentStateColumn(edit 모드 중앙·필드별 PUT patch) 신규, EditPane 삭제, typecheck pass",
+      "completed_at": "2026-05-20T13:00:00+09:00"
     },
     {
       "step": 5,
