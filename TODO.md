@@ -4,6 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
+- [ ] dev-detail-unified-shell Steps 3-7 — EditPane/ReviewPane/모드 라우팅/통합
 
 ## Next (이번 마일스톤)
 
@@ -15,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] dev-detail-unified-shell Steps 0-2 — ADR + ContentShell + ViewPane (2컬럼 레이아웃) (2026-05-20)
 - [x] pt-pipeline-test-console Steps 0~9 — 6단계 파이프라인 검증 콘솔 완료 (시드+API+타임라인+FE S0~S5 전 패널) (2026-05-20)
 - [x] pt-pipeline-test-console Steps 5~7 — SampleSeedPanel + ContentPipelineTimeline + S1단건/S2벌크 embed (2026-05-20)
 - [x] dev-meta-hierarchy Phase A~E — content_kind SSOT + read-time 상속 + bulk movie/series + FE 검색/3탭/추천 조건부 분기 (Steps 0~16, 38 tests, verify.sh 통합) (2026-05-19)
