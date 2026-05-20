@@ -74,7 +74,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
 
   const qualityScore = content.quality_score ?? 0
 
-  const recFor = (field: string) => {
+  const recFor = (field: string, long?: boolean) => {
     const rec = findRec(recommendations, field)
     return (
       <RecomCell
@@ -82,6 +82,7 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
         kind={classifyField(rec)}
         isApplied={appliedFields.has(field)}
         onApply={(src) => onApply(rec!, src)}
+        long={long}
       />
     )
   }
@@ -212,9 +213,10 @@ export function AlignedFieldRows({ content, contentId, onSaved, recommendations,
               onSave={(v) => patch({ synopsis: v })}
               type="textarea"
               placeholder="줄거리를 입력하세요"
+              displayAsBox
             />
           }
-          rec={recFor("synopsis")}
+          rec={recFor("synopsis", true)}
         />
       </div>
     </div>

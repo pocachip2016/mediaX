@@ -7,9 +7,10 @@ interface Props {
   kind: FieldKind
   isApplied: boolean
   onApply: (source: SourceFieldRec) => Promise<void>
+  long?: boolean
 }
 
-export function RecomCell({ rec, kind, isApplied, onApply }: Props) {
+export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
   if (kind === "missing" || !rec) {
     return <div className="px-4 py-3 text-xs text-slate-300">—</div>
   }
@@ -47,11 +48,37 @@ export function RecomCell({ rec, kind, isApplied, onApply }: Props) {
     )
   }
 
-  // auto
+  // auto — 한 줄 (short) 또는 스크롤 박스 (long) 레이아웃
+  if (long) {
+    return (
+      <div className="px-4 py-2 space-y-1.5">
+        {top && (
+          <div className="max-h-20 overflow-y-auto text-xs text-slate-700 border border-slate-100 rounded px-2 py-1.5 bg-slate-50 whitespace-pre-wrap">
+            {top.value}
+          </div>
+        )}
+        <div className="flex items-baseline gap-1.5 flex-wrap">
+          <span className="text-[10px] bg-slate-100 text-slate-500 px-1 rounded uppercase">{top?.source_type}</span>
+          <span className="text-[10px] text-slate-400">{top?.confidence.toFixed(2)}</span>
+          {top && (
+            <button
+              onClick={() => void onApply(top)}
+              className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
+            >
+              개별 적용
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // short (default) — 한 줄
   return (
-    <div className="px-4 py-3 space-y-1">
-      {top && <p className="text-xs text-slate-700 break-words">{top.value}</p>}
-      <p className="text-[10px] text-slate-400">{summary}</p>
+    <div className="px-4 py-2.5 flex items-baseline gap-1.5 flex-wrap">
+      {top && <span className="text-xs text-slate-700">{top.value}</span>}
+      <span className="text-[10px] bg-slate-100 text-slate-500 px-1 rounded uppercase">{top?.source_type}</span>
+      <span className="text-[10px] text-slate-400">{top?.confidence.toFixed(2)}</span>
       {top && (
         <button
           onClick={() => void onApply(top)}

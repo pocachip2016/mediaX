@@ -8,9 +8,10 @@ interface Props {
   type?: "text" | "number" | "textarea"
   placeholder?: string
   className?: string
+  displayAsBox?: boolean
 }
 
-export function InlineField({ value, onSave, type = "text", placeholder, className = "" }: Props) {
+export function InlineField({ value, onSave, type = "text", placeholder, className = "", displayAsBox }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value ?? "")
   const [saving, setSaving] = useState(false)
@@ -21,6 +22,20 @@ export function InlineField({ value, onSave, type = "text", placeholder, classNa
   }
 
   if (!editing) {
+    if (displayAsBox) {
+      return (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => { setDraft(value ?? ""); setEditing(true) }}
+          onKeyDown={(e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
+          className={`max-h-24 overflow-y-auto text-xs border border-slate-100 rounded px-2 py-1.5 bg-slate-50 whitespace-pre-wrap cursor-text hover:border-blue-300 transition-colors ${className}`}
+        >
+          {value ?? <span className="text-slate-300 italic">{placeholder ?? "—"}</span>}
+        </div>
+      )
+    }
+
     return (
       <span
         role="button"
