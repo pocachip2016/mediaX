@@ -47,15 +47,17 @@
       "step": 5,
       "name": "row-alignment",
       "phase": "F",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "AlignedFieldRows 신규(FieldRow grid-cols-[3rem_1fr_1fr] + ColHeaders) — CurrentStateColumn+AIRecColumn 병합, edit 모드 2컬럼 전환. ThreeColumnShell alignedFields prop 추가. CurrentStateColumn 삭제. typecheck pass",
+      "completed_at": "2026-05-20T14:30:00+09:00"
     },
     {
       "step": 6,
       "name": "verify-wrap",
       "phase": "G",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "typecheck pass ✓ + TODO.md 갱신. 행정렬 AlignedFieldRows 구현 완료. 7 step 전체 완료.",
+      "completed_at": "2026-05-20T14:35:00+09:00"
     }
   ]
 }

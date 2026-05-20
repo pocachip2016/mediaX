@@ -11,7 +11,7 @@ import { PosterPanel } from "@/components/contents/shell/PosterPanel"
 import { DetailHeader } from "@/components/contents/shell/DetailHeader"
 import { ThreeColumnShell } from "@/components/contents/shell/ThreeColumnShell"
 import { AIRecColumn } from "@/components/contents/shell/AIRecColumn"
-import { CurrentStateColumn } from "@/components/contents/shell/CurrentStateColumn"
+import { AlignedFieldRows } from "@/components/contents/shell/AlignedFieldRows"
 import { AISummaryBottom } from "@/components/contents/recommend/AISummaryBottom"
 
 const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
@@ -273,10 +273,9 @@ export default function ContentDetailPage() {
         onPreviewClip={handleRequestPreviewClip}
       />
 
-      {/* view: 2컬럼 (Poster + 현재상태) / edit·review: 3컬럼 (Step 2에서 전환) */}
+      {/* view: 2컬럼 / edit: 행정렬 AlignedFieldRows / review: 3컬럼 */}
       {mode === "view" ? (
         <div className="grid grid-cols-[200px_1fr] gap-4 p-6 max-w-[1200px] mx-auto">
-          {/* 포스터 컬럼 */}
           <PosterPanel
             content={content}
             posterCandidates={posterCandidates ?? []}
@@ -290,7 +289,6 @@ export default function ContentDetailPage() {
               setPosterCandidates(res.candidates)
             }}
           />
-          {/* 중앙 — 현재 상태 */}
           <ContentShell
             content={content}
             contentId={contentId}
@@ -308,31 +306,65 @@ export default function ContentDetailPage() {
             }}
           />
         </div>
-      ) : (
-      <ThreeColumnShell
-        poster={
-          <PosterPanel
-            content={content}
-            posterCandidates={posterCandidates ?? []}
-            primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
-            onSelectPrimary={async (id) => {
-              const updated = await posterRecommendApi.selectPrimary(contentId, id)
-              setPosterCandidates(updated)
-            }}
-            onRecommendPoster={async () => {
-              const res = await posterRecommendApi.recommend(contentId)
-              setPosterCandidates(res.candidates)
-            }}
-          />
-        }
-        current={
-          mode === "edit" ? (
-            <CurrentStateColumn
+      ) : mode === "edit" ? (
+        /* edit: poster + 행정렬 AlignedFieldRows */
+        <ThreeColumnShell
+          poster={
+            <PosterPanel
+              content={content}
+              posterCandidates={posterCandidates ?? []}
+              primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
+              onSelectPrimary={async (id) => {
+                const updated = await posterRecommendApi.selectPrimary(contentId, id)
+                setPosterCandidates(updated)
+              }}
+              onRecommendPoster={async () => {
+                const res = await posterRecommendApi.recommend(contentId)
+                setPosterCandidates(res.candidates)
+              }}
+            />
+          }
+          alignedFields={
+            <AlignedFieldRows
               content={content}
               contentId={contentId}
               onSaved={(updated) => setContent(updated)}
+              recommendations={recommendations}
+              appliedFields={appliedFields}
+              onApply={handleApplyRec}
             />
-          ) : (
+          }
+          footer={
+            recommendations && (
+              <AISummaryBottom
+                recommendations={recommendations}
+                appliedFields={appliedFields}
+                onApplyAllAuto={handleApplyAllAuto}
+                onRegenerate={handleRegenerate}
+                onDismiss={() => {}}
+              />
+            )
+          }
+        />
+      ) : (
+        /* review: poster + ContentShell + AIRecColumn */
+        <ThreeColumnShell
+          poster={
+            <PosterPanel
+              content={content}
+              posterCandidates={posterCandidates ?? []}
+              primaryId={posterCandidates?.find((c) => c.is_primary)?.id ?? null}
+              onSelectPrimary={async (id) => {
+                const updated = await posterRecommendApi.selectPrimary(contentId, id)
+                setPosterCandidates(updated)
+              }}
+              onRecommendPoster={async () => {
+                const res = await posterRecommendApi.recommend(contentId)
+                setPosterCandidates(res.candidates)
+              }}
+            />
+          }
+          current={
             <ContentShell
               content={content}
               contentId={contentId}
@@ -349,27 +381,26 @@ export default function ContentDetailPage() {
                 setPosterCandidates(res.candidates)
               }}
             />
-          )
-        }
-        right={
-          <AIRecColumn
-            recommendations={recommendations}
-            appliedFields={appliedFields}
-            onApply={handleApplyRec}
-          />
-        }
-        footer={
-          recommendations && (
-            <AISummaryBottom
+          }
+          right={
+            <AIRecColumn
               recommendations={recommendations}
               appliedFields={appliedFields}
-              onApplyAllAuto={handleApplyAllAuto}
-              onRegenerate={handleRegenerate}
-              onDismiss={() => {}}
+              onApply={handleApplyRec}
             />
-          )
-        }
-      />
+          }
+          footer={
+            recommendations && (
+              <AISummaryBottom
+                recommendations={recommendations}
+                appliedFields={appliedFields}
+                onApplyAllAuto={handleApplyAllAuto}
+                onRegenerate={handleRegenerate}
+                onDismiss={() => {}}
+              />
+            )
+          }
+        />
       )}
     </div>
   )
