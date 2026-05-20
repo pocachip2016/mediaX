@@ -5,7 +5,7 @@
 
 ## Now (진행 중, 1~3개)
 - [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음 (타이틀 클렌징 또는 연도 매칭 강화)
-- [ ] pt-pipeline-test-console Steps 5~9 — S0 패널/시드 컨트롤 → 타임라인 → 검수/승인 UI
+- [ ] pt-pipeline-test-console Steps 8~9 — S3 BatchAiTrigger + S4 BatchEnrichTrigger + S5 BulkReviewQueue + wrap
 
 ## Next (이번 마일스톤)
 - [ ] 외부 소스 enrich 매칭률 개선 — 성인 콘텐츠 TMDB 매칭 2.1% 너무 낮음
@@ -18,6 +18,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] pt-pipeline-test-console Steps 5~7 — SampleSeedPanel + ContentPipelineTimeline + S1단건/S2벌크 embed (2026-05-20)
 - [x] dev-meta-hierarchy Phase A~E — content_kind SSOT + read-time 상속 + bulk movie/series + FE 검색/3탭/추천 조건부 분기 (Steps 0~16, 38 tests, verify.sh 통합) (2026-05-19)
 - [x] dev-meta-hierarchy Phase C — bulk movie/series 파이프라인 분리 (Steps 8~10) (2026-05-19)
 - [x] 외부 소스 동기화 진단 — Beat 타임존 UTC→KST 수정, CP 메일 폴링 빈도 조정, Backfill 정상화 (2026-05-19)

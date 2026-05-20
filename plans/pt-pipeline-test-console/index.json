@@ -47,22 +47,25 @@
       "step": 5,
       "name": "pt-s0-panel",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "SampleSeedPanel(시드생성/건식테스트/클린업) + refreshTestSummary + 헤더 새로고침 버튼 — tsc pass",
+      "completed_at": "2026-05-20T22:10:00+09:00"
     },
     {
       "step": 6,
       "name": "pt-timeline-comp",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "TestContentList(cp_name필터+선택) + ContentPipelineTimeline(6단계도트+상세행) + 좌3/우2 그리드 레이아웃 — tsc pass",
+      "completed_at": "2026-05-20T22:30:00+09:00"
     },
     {
       "step": 7,
       "name": "pt-s1-s2-embed",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "AddContentInlinePanel(단건등록+autoEnrich) + BulkUploadEmbed(CSV드래그드롭) + activeStage 2/3 라우팅 — tsc pass",
+      "completed_at": "2026-05-20T22:50:00+09:00"
     },
     {
       "step": 8,
