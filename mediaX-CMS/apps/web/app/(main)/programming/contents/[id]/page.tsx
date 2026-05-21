@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation"
 import { metadataApi, posterRecommendApi, type ContentDetail, type PosterCandidateOut, type RecommendationsOut, type FieldRecommendation, type SourceFieldRec, type StagingItem } from "@/lib/api"
 import { DetailContainerLayout } from "@/components/contents/detail/DetailContainerLayout"
@@ -13,6 +13,7 @@ import { ThreeColumnShell } from "@/components/contents/shell/ThreeColumnShell"
 import { AIRecColumn } from "@/components/contents/shell/AIRecColumn"
 import { AlignedFieldRows } from "@/components/contents/shell/AlignedFieldRows"
 import { AISummaryBottom } from "@/components/contents/recommend/AISummaryBottom"
+import { isRecSimilarToCurrent } from "@/lib/recommendDerive"
 
 const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
   waiting: { label: "대기", emoji: "⏳", color: "bg-slate-100 text-slate-600" },
@@ -168,6 +169,27 @@ export default function ContentDetailPage() {
     return <div className="p-6 text-center text-slate-600">콘텐츠를 찾을 수 없습니다.</div>
   }
 
+  // 현재값 매핑 — recommendations 카운트 + 모두적용 시 유사 건 제외 판정용
+  const currentValuesByField: Record<string, string | null> = {
+    production_year: content.production_year != null ? String(content.production_year) : null,
+    country: content.country ?? null,
+    runtime: content.runtime_minutes != null ? String(content.runtime_minutes) : null,
+    cp_name: content.cp_name ?? null,
+    genres: (content.genres ?? []).map((g) => g.genre.name_ko).join(", ") || null,
+    director: (content.credits ?? [])
+      .filter((c) => c.role.toLowerCase().includes("director") || c.role === "감독")
+      .map((c) => c.person.name_ko).join(", ") || null,
+    cast: (content.credits ?? [])
+      .filter((c) => ["actor", "cast", "주연", "출연"].includes(c.role.toLowerCase()))
+      .sort((a, b) => (a.cast_order ?? 99) - (b.cast_order ?? 99))
+      .map((c) => c.person.name_ko).join(", ") || null,
+    synopsis:
+      content.metadata_record?.final_synopsis ||
+      content.metadata_record?.ai_synopsis ||
+      content.metadata_record?.cp_synopsis ||
+      null,
+  }
+
   // Handler for recommendation apply
   const handleApplyRec = async (rec: FieldRecommendation, sourceRec: SourceFieldRec) => {
     try {
@@ -183,17 +205,78 @@ export default function ContentDetailPage() {
       setContent(updated)
       setRecommendations(updatedRecs)
       setAppliedFields((prev) => new Set([...prev, rec.field]))
+      alert(`적용되었습니다: ${rec.field}`)
     } catch (err) {
       console.error("apply rec failed", err)
+      alert(err instanceof Error ? `적용 실패: ${err.message}` : "적용 실패")
     }
   }
 
   const handleApplyAllAuto = async () => {
     if (!recommendations) return
+    let success = 0
+    let failed = 0
+    const appliedFieldsNew = new Set(appliedFields)
     for (const rec of recommendations.auto_fill) {
-      const top = rec.recommendations[0]
-      if (top) await handleApplyRec(rec, top)
+      if (isRecSimilarToCurrent(rec, currentValuesByField[rec.field])) continue
+      const top = rec.ai_synthesis ?? rec.recommendations[0]
+      if (!top) continue
+      try {
+        if (top.source_type === "ai") {
+          await metadataApi.promoteAIResult(contentId, top.source_id)
+        } else {
+          await metadataApi.applyExternalFields(contentId, top.source_id, [rec.field])
+        }
+        appliedFieldsNew.add(rec.field)
+        success++
+      } catch (err) {
+        console.error(`apply ${rec.field} failed`, err)
+        failed++
+      }
     }
+    const [updated, updatedRecs] = await Promise.all([
+      metadataApi.getContent(contentId),
+      metadataApi.getRecommendations(contentId),
+    ])
+    setContent(updated)
+    setRecommendations(updatedRecs)
+    setAppliedFields(appliedFieldsNew)
+    alert(`자동 채택 완료: 성공 ${success}건${failed > 0 ? `, 실패 ${failed}건` : ""}`)
+  }
+
+  // auto + conflict 의 top 추천을 모두 적용 (유사 건 자동 스킵)
+  const handleApplyAll = async () => {
+    if (!recommendations) return
+    const all = [...recommendations.auto_fill, ...recommendations.conflicts]
+    let success = 0
+    let failed = 0
+    let skipped = 0
+    const appliedFieldsNew = new Set(appliedFields)
+    for (const rec of all) {
+      if (isRecSimilarToCurrent(rec, currentValuesByField[rec.field])) { skipped++; continue }
+      const top = rec.ai_synthesis ?? rec.recommendations[0]
+      if (!top) continue
+      try {
+        if (top.source_type === "ai") {
+          await metadataApi.promoteAIResult(contentId, top.source_id)
+        } else {
+          await metadataApi.applyExternalFields(contentId, top.source_id, [rec.field])
+        }
+        appliedFieldsNew.add(rec.field)
+        success++
+      } catch (err) {
+        console.error(`apply ${rec.field} failed`, err)
+        failed++
+      }
+    }
+    const [updated, updatedRecs] = await Promise.all([
+      metadataApi.getContent(contentId),
+      metadataApi.getRecommendations(contentId),
+    ])
+    setContent(updated)
+    setRecommendations(updatedRecs)
+    setAppliedFields(appliedFieldsNew)
+    alert(`모두 적용 완료: 성공 ${success}건${failed > 0 ? `, 실패 ${failed}건` : ""}${skipped > 0 ? `, 유사 스킵 ${skipped}건` : ""}`)
   }
 
   const handleRegenerate = async () => {
@@ -266,7 +349,6 @@ export default function ContentDetailPage() {
         contentId={contentId}
         mode={mode}
         parentChain={parentChain}
-        statusInfo={statusInfo}
         onModeChange={handleModeChange}
         onReprocess={handlePartialReprocess}
         onLock={handleLockFields}
@@ -339,7 +421,10 @@ export default function ContentDetailPage() {
               <AISummaryBottom
                 recommendations={recommendations}
                 appliedFields={appliedFields}
+                currentValuesByField={currentValuesByField}
+                qualityScore={content.quality_score ?? 0}
                 onApplyAllAuto={handleApplyAllAuto}
+                onApplyAll={handleApplyAll}
                 onRegenerate={handleRegenerate}
                 onDismiss={() => {}}
               />
@@ -387,7 +472,10 @@ export default function ContentDetailPage() {
               <AISummaryBottom
                 recommendations={recommendations}
                 appliedFields={appliedFields}
+                currentValuesByField={currentValuesByField}
+                qualityScore={content.quality_score ?? 0}
                 onApplyAllAuto={handleApplyAllAuto}
+                onApplyAll={handleApplyAll}
                 onRegenerate={handleRegenerate}
                 onDismiss={() => {}}
               />

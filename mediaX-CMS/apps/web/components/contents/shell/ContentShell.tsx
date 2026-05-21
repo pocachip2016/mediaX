@@ -55,17 +55,12 @@ export function ContentShell({
   const isContainer = !isLeafType(content.content_type)
   const parentType: "series" | "season" =
     content.content_type === "series" ? "series" : "season"
-  const qualityScore = content.quality_score ?? 0
 
   return (
     <div className="space-y-3">
-      {/* [1] 식별 정보 */}
+      {/* [1] 식별 정보 (제목은 DetailHeader 담당) */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-2">
-        <h2 className="font-bold text-slate-900 text-sm leading-tight">{content.title}</h2>
-        {content.original_title && (
-          <p className="text-xs text-slate-500">{content.original_title}</p>
-        )}
-        <div className="text-xs text-slate-600 space-y-1 pt-0.5">
+        <div className="text-xs text-slate-600 space-y-1">
           <div className="flex gap-2">
             <span className="text-slate-400 w-10 flex-shrink-0">유형</span>
             <span>{TYPE_LABEL[content.content_type]}</span>
@@ -94,17 +89,6 @@ export function ContentShell({
               <span className="truncate">{content.cp_name}</span>
             </div>
           )}
-        </div>
-
-        {/* [4] 상태 배지 + 품질 점수 */}
-        <div className="pt-1 flex items-center gap-2">
-          <span className="text-xs text-slate-400">#{content.id}</span>
-          <div className="flex-1 flex items-center gap-1.5">
-            <div className="flex-1 bg-slate-200 rounded-full h-1 overflow-hidden">
-              <div className="bg-amber-500 h-full" style={{ width: `${qualityScore}%` }} />
-            </div>
-            <span className="text-xs font-semibold text-amber-700">{qualityScore}</span>
-          </div>
         </div>
       </div>
 

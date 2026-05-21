@@ -1,6 +1,6 @@
 import type { FieldRecommendation, SourceFieldRec } from "@/lib/api"
 import type { FieldKind } from "@/lib/recommendDerive"
-import { reasonSummary } from "@/lib/recommendDerive"
+import { reasonSummary, isSimilar } from "@/lib/recommendDerive"
 
 interface Props {
   rec: FieldRecommendation | null
@@ -8,9 +8,24 @@ interface Props {
   isApplied: boolean
   onApply: (source: SourceFieldRec) => Promise<void>
   long?: boolean
+  currentValue?: string | null
 }
 
-export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
+function ApplyButton({ src, currentValue, onApply }: { src: SourceFieldRec; currentValue?: string | null; onApply: (src: SourceFieldRec) => Promise<void> }) {
+  if (isSimilar(src.value, currentValue)) {
+    return <span className="text-[10px] text-slate-400 italic shrink-0">현재 값과 동일</span>
+  }
+  return (
+    <button
+      onClick={() => void onApply(src)}
+      className="text-[10px] text-blue-600 hover:text-blue-700 font-medium shrink-0"
+    >
+      개별 적용
+    </button>
+  )
+}
+
+export function RecomCell({ rec, kind, isApplied, onApply, long, currentValue }: Props) {
   if (kind === "missing" || !rec) {
     return <div className="px-4 py-3 text-xs text-slate-300">—</div>
   }
@@ -43,12 +58,7 @@ export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
               <div className="max-h-16 overflow-y-auto text-xs text-slate-700 whitespace-pre-wrap border border-amber-50 rounded px-1.5 py-1 bg-white">
                 {src.value}
               </div>
-              <button
-                onClick={() => void onApply(src)}
-                className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
-              >
-                개별 적용
-              </button>
+              <ApplyButton src={src} currentValue={currentValue} onApply={onApply} />
             </div>
           ))}
         </div>
@@ -63,12 +73,7 @@ export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
             <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded uppercase shrink-0">
               {src.source_type}({src.confidence.toFixed(2)})
             </span>
-            <button
-              onClick={() => void onApply(src)}
-              className="text-[10px] text-blue-600 hover:text-blue-700 font-medium shrink-0"
-            >
-              개별 적용
-            </button>
+            <ApplyButton src={src} currentValue={currentValue} onApply={onApply} />
           </div>
         ))}
       </div>
@@ -102,14 +107,7 @@ export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
         <div className="flex items-baseline gap-1.5 flex-wrap">
           <span className="text-[10px] bg-slate-100 text-slate-500 px-1 rounded uppercase">{top?.source_type}</span>
           <span className="text-[10px] text-slate-400">{top?.confidence.toFixed(2)}</span>
-          {top && (
-            <button
-              onClick={() => void onApply(top)}
-              className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
-            >
-              개별 적용
-            </button>
-          )}
+          {top && <ApplyButton src={top} currentValue={currentValue} onApply={onApply} />}
         </div>
       </div>
     )
@@ -121,14 +119,7 @@ export function RecomCell({ rec, kind, isApplied, onApply, long }: Props) {
       {top && <span className="text-xs text-slate-700">{top.value}</span>}
       <span className="text-[10px] bg-slate-100 text-slate-500 px-1 rounded uppercase">{top?.source_type}</span>
       <span className="text-[10px] text-slate-400">{top?.confidence.toFixed(2)}</span>
-      {top && (
-        <button
-          onClick={() => void onApply(top)}
-          className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
-        >
-          개별 적용
-        </button>
-      )}
+      {top && <ApplyButton src={top} currentValue={currentValue} onApply={onApply} />}
     </div>
   )
 }

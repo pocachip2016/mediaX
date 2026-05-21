@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 interface Props {
   value: string | null
@@ -14,13 +14,31 @@ interface Props {
 }
 
 export function InlineField({ value, onSave, type = "text", placeholder, className = "", displayAsBox, alwaysEditing, readOnly }: Props) {
+  const valueStr = value ?? ""
   const [editing, setEditing] = useState(alwaysEditing ?? false)
-  const [draft, setDraft] = useState(value ?? "")
+  const [draft, setDraft] = useState(valueStr)
   const [saving, setSaving] = useState(false)
+  const lastSyncedRef = useRef(valueStr)
+
+  // 외부 value 변경 감지 → draft 동기화 (사용자 typing 중이거나 saving 중이면 보호)
+  useEffect(() => {
+    if (saving) return
+    if (draft !== lastSyncedRef.current) return  // 사용자가 typing 중 → 외부 변경 무시
+    if (lastSyncedRef.current !== valueStr) {
+      setDraft(valueStr)
+      lastSyncedRef.current = valueStr
+    }
+  }, [valueStr, saving, draft])
 
   const commit = async () => {
     setSaving(true)
-    try { await onSave(draft) } finally { setSaving(false); if (!alwaysEditing) setEditing(false) }
+    try {
+      await onSave(draft)
+      lastSyncedRef.current = draft
+    } finally {
+      setSaving(false)
+      if (!alwaysEditing) setEditing(false)
+    }
   }
 
   if (!editing) {

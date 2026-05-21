@@ -130,14 +130,14 @@ def get_content(content_id: int, db: Session = Depends(get_db)):
     return out
 
 
-@router.put("/contents/{content_id}", response_model=ContentOut)
+@router.put("/contents/{content_id}", response_model=ContentDetail)
 def update_content(content_id: int, data: ContentUpdate, db: Session = Depends(get_db)):
     """수동 수정 — 입력 필드를 manual source로 저장 후 resolve_metadata 재실행"""
     try:
         content = service.update_content(db, content_id, data)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    return ContentOut.model_validate(content)
+    return ContentDetail.model_validate(content)
 
 
 @router.post("/contents/{content_id}/process")

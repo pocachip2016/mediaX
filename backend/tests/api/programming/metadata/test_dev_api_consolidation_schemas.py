@@ -113,10 +113,11 @@ class TestContentDetailSchemas:
         assert data["is_final"] is True
 
     def test_apply_external_fields_request(self):
-        """ApplyExternalFieldsRequest 직렬화"""
-        req = ApplyExternalFieldsRequest(source_id=5, fields=["synopsis"])
+        """ApplyExternalFieldsRequest 직렬화 — source_id는 URL path SSOT"""
+        req = ApplyExternalFieldsRequest(fields=["synopsis"])
         data = req.model_dump()
-        assert data["source_id"] == 5
+        assert data["fields"] == ["synopsis"]
+        assert "source_id" not in data
 
     def test_changelog_item(self):
         """ChangeLogItem 직렬화"""

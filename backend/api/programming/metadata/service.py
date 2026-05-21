@@ -53,10 +53,14 @@ def create_content(db: Session, data: ContentCreate) -> Content:
 
 def update_content(db: Session, content_id: int, data: ContentUpdate) -> Content:
     """
-    수동 수정 — 입력 필드를 manual source로 ExternalMetaSource에 저장 후 resolve_metadata 재실행.
+    수동 수정 — 입력 필드를 manual source(콘텐츠당 1개)에 머지 저장 후 resolve_metadata 재실행.
     manual 우선순위(100)가 최고이므로 기존 tmdb/kobis 값보다 우선.
+    cp_name은 Content 직접 필드라 manual source 미경유.
+    directors/cast/genres 수정 시 기존 manual 관계 레코드는 먼저 삭제 (중복 방지).
     """
     from api.programming.metadata.models.external import ExternalSourceType
+    from api.programming.metadata.models.person import ContentCredit, CreditRole
+    from api.programming.metadata.models.taxonomy import ContentGenre
 
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
@@ -67,15 +71,49 @@ def update_content(db: Session, content_id: int, data: ContentUpdate) -> Content
         if children_count > 0:
             raise ValueError(f"Cannot change content_type: {children_count} children exist")
 
-    raw_json = {k: v for k, v in data.model_dump().items() if v is not None}
-    if raw_json:
-        ext_src = ExternalMetaSource(
-            content_id=content_id,
-            source_type=ExternalSourceType.manual,
-            raw_json=raw_json,
-            matched_at=datetime.utcnow(),
-        )
-        db.add(ext_src)
+    payload = {k: v for k, v in data.model_dump().items() if v is not None}
+
+    # cp_name은 Content 직접 필드 — manual source 우회
+    if "cp_name" in payload:
+        content.cp_name = payload.pop("cp_name")
+        db.add(content)
+
+    if payload:
+        # directors/cast/genres 수정 시 기존 manual 관계 레코드 삭제
+        if "directors" in payload or "cast" in payload:
+            existing_credits = db.query(ContentCredit).filter(
+                ContentCredit.content_id == content_id,
+                ContentCredit.source == "manual"
+            ).all()
+            for cc in existing_credits:
+                if ("directors" in payload and cc.role == CreditRole.director) or \
+                   ("cast" in payload and cc.role == CreditRole.actor):
+                    db.delete(cc)
+
+        if "genres" in payload:
+            existing_genres = db.query(ContentGenre).filter(
+                ContentGenre.content_id == content_id,
+                ContentGenre.source == "manual"
+            ).all()
+            for cg in existing_genres:
+                db.delete(cg)
+
+        # manual source 1개만 유지 — 기존이 있으면 raw_json 머지, 없으면 신규
+        ext_src = db.query(ExternalMetaSource).filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == ExternalSourceType.manual
+        ).first()
+        if ext_src:
+            ext_src.raw_json = {**(ext_src.raw_json or {}), **payload}
+            ext_src.matched_at = datetime.utcnow()
+        else:
+            ext_src = ExternalMetaSource(
+                content_id=content_id,
+                source_type=ExternalSourceType.manual,
+                raw_json=payload,
+                matched_at=datetime.utcnow(),
+            )
+            db.add(ext_src)
         db.flush()
         resolve_metadata(db, content_id)
 
@@ -2352,31 +2390,101 @@ async def apply_external_fields(
     source_id: int,
     fields: list[str],
 ) -> dict:
-    """외부 소스 필드 선택 적용"""
-    # 1. Content & ExternalMetaSource 조회
+    """외부 소스의 선택 필드를 manual source에 머지 후 resolve_metadata 호출.
+    사용자가 명시적으로 선택한 값이므로 manual priority(100)로 적용.
+    _extract_field_from_raw로 raw_json의 다양한 키(directors/director, overview/synopsis 등) 정규화."""
+    from api.programming.metadata.models.external import ExternalSourceType
+    from api.programming.metadata.models.person import ContentCredit, CreditRole
+    from api.programming.metadata.models.taxonomy import ContentGenre
+
     content = db.query(Content).filter(Content.id == content_id).first()
     external = db.query(ExternalMetaSource).filter(ExternalMetaSource.id == source_id).first()
-    
+
     if not content or not external:
-        return None
-    
-    # 2. 필드 적용
-    if external.body and isinstance(external.body, dict):
-        ext_fields = external.body.get("fields", {})
-        for field in fields:
-            if field in ext_fields:
-                # Content에 필드 적용 (간단한 예: synopsis)
-                if field == "synopsis" and hasattr(content, "synopsis"):
-                    setattr(content, field, ext_fields[field])
-    
-    db.add(content)
+        raise ValueError("Content or ExternalMetaSource not found")
+
+    raw = external.raw_json or {}
+
+    # FE field 이름 → ContentUpdate 키 매핑 (단수→복수 등)
+    _field_alias = {"director": "directors"}
+
+    extracted: dict = {}
+    applied: list[str] = []
+    not_found: list[str] = []
+
+    for field in fields:
+        val = _extract_field_from_raw(raw, field)
+        if val is None:
+            not_found.append(field)
+            continue
+
+        # 타입 변환
+        if field in ("runtime", "production_year"):
+            try:
+                val = int(val)
+            except (ValueError, TypeError):
+                not_found.append(field)
+                continue
+
+        # cp_name은 Content 직접 필드
+        if field == "cp_name":
+            content.cp_name = val
+            db.add(content)
+            applied.append(field)
+            continue
+
+        key = _field_alias.get(field, field)
+        extracted[key] = val
+        applied.append(field)
+
+    if extracted:
+        # directors/cast/genres 적용 시 기존 manual 관계 삭제
+        if "directors" in extracted or "cast" in extracted:
+            existing_credits = db.query(ContentCredit).filter(
+                ContentCredit.content_id == content_id,
+                ContentCredit.source == "manual"
+            ).all()
+            for cc in existing_credits:
+                if ("directors" in extracted and cc.role == CreditRole.director) or \
+                   ("cast" in extracted and cc.role == CreditRole.actor):
+                    db.delete(cc)
+
+        if "genres" in extracted:
+            existing_genres = db.query(ContentGenre).filter(
+                ContentGenre.content_id == content_id,
+                ContentGenre.source == "manual"
+            ).all()
+            for cg in existing_genres:
+                db.delete(cg)
+
+        # manual source 1개 유지 — 머지 or 신규
+        manual_src = db.query(ExternalMetaSource).filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == ExternalSourceType.manual
+        ).first()
+        if manual_src:
+            manual_src.raw_json = {**(manual_src.raw_json or {}), **extracted}
+            manual_src.matched_at = datetime.utcnow()
+        else:
+            manual_src = ExternalMetaSource(
+                content_id=content_id,
+                source_type=ExternalSourceType.manual,
+                raw_json=extracted,
+                matched_at=datetime.utcnow(),
+            )
+            db.add(manual_src)
+        db.flush()
+        resolve_metadata(db, content_id)
+
     db.commit()
     db.refresh(content)
-    
+
     return {
         "content_id": content.id,
-        "applied_fields": fields,
-        "status": content.status,
+        "applied_fields": applied,
+        "not_found_fields": not_found,
+        "source_id": source_id,
+        "source_type": external.source_type.value if hasattr(external.source_type, "value") else str(external.source_type),
     }
 
 
@@ -2792,11 +2900,17 @@ def resolve_metadata(db: Session, content_id: int) -> dict:
     if not content:
         return {"error": f"Content {content_id} not found"}
 
-    sources = db.query(ExternalMetaSource).filter(ExternalMetaSource.content_id == content_id).all()
+    # matched_at ASC 정렬 — 같은 priority일 때 최신 값이 winner로 덮어씌워지도록
+    sources = (
+        db.query(ExternalMetaSource)
+        .filter(ExternalMetaSource.content_id == content_id)
+        .order_by(ExternalMetaSource.matched_at.asc().nullsfirst(), ExternalMetaSource.id.asc())
+        .all()
+    )
     if not sources:
         return {"status": "no_sources", "content_id": content_id}
 
-    # 필드별 winner 결정
+    # 필드별 winner 결정 — 같은 priority면 최신(나중 iterate) 값이 이김 (<=)
     winner: dict[str, dict] = {}
     for src in sources:
         src_name = src.source_type.value if hasattr(src.source_type, "value") else str(src.source_type)
@@ -2806,7 +2920,7 @@ def resolve_metadata(db: Session, content_id: int) -> dict:
         except Exception:
             continue
         for field, value in fields.items():
-            if field not in winner or winner[field]["priority"] < priority:
+            if field not in winner or winner[field]["priority"] <= priority:
                 winner[field] = {"value": value, "source": src_name, "priority": priority}
 
     if not winner:
@@ -2814,21 +2928,19 @@ def resolve_metadata(db: Session, content_id: int) -> dict:
 
     locked = set(content.locked_fields or [])
 
-    # Content 기본 필드 업데이트 (locked 필드는 건너뜀)
+    # Content 기본 필드 업데이트 — winner 우선순위 기반 덮어쓰기 (locked 필드는 건너뜀)
     for field, col_attr in [
         ("title", "title"),
         ("original_title", "original_title"),
         ("country", "country"),
     ]:
         if field in winner and field not in locked:
-            current = getattr(content, col_attr, None)
-            if not current:
-                setattr(content, col_attr, winner[field]["value"])
+            setattr(content, col_attr, winner[field]["value"])
 
-    if "production_year" in winner and "production_year" not in locked and not content.production_year:
+    if "production_year" in winner and "production_year" not in locked:
         content.production_year = winner["production_year"]["value"]
 
-    if "runtime" in winner and "runtime" not in locked and not content.runtime_minutes:
+    if "runtime" in winner and "runtime" not in locked:
         content.runtime_minutes = winner["runtime"]["value"]
 
     db.add(content)
@@ -2836,7 +2948,7 @@ def resolve_metadata(db: Session, content_id: int) -> dict:
     # ContentMetadata 업데이트
     meta = content.metadata_record
     if meta:
-        if "synopsis" in winner and "synopsis" not in locked and not meta.final_synopsis:
+        if "synopsis" in winner and "synopsis" not in locked:
             src_name = winner["synopsis"]["source"]
             if src_name in ("manual", "cp", "bulk_upload"):
                 meta.cp_synopsis = winner["synopsis"]["value"]
@@ -3038,12 +3150,14 @@ def get_content_recommendations(db: Session, content_id: int):
     if not content.genres:
         missing.append("genres")
 
-    # 외부 소스에서 필드값 수집
-    ext_sources = (
-        db.query(ExternalMetaSource)
-        .filter(ExternalMetaSource.content_id == content_id)
-        .all()
-    )
+    # 외부 소스에서 필드값 수집 (manual/bulk_upload는 이미 resolved되었으므로 제외)
+    from api.programming.metadata.models.external import ExternalSourceType
+    ext_sources = [
+        s for s in db.query(ExternalMetaSource)
+            .filter(ExternalMetaSource.content_id == content_id)
+            .all()
+        if s.source_type not in (ExternalSourceType.manual, ExternalSourceType.bulk_upload)
+    ]
 
     # field → list[SourceFieldRec] (missing 여부와 무관하게 전체 표준 필드 조회)
     field_recs: dict[str, list[SourceFieldRec]] = {f: [] for f in _STANDARD_RECOMMENDATION_FIELDS}

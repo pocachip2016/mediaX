@@ -15,6 +15,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] fix(content-edit): 편집/검수 화면 버그 수정 — apply-fields 422, manual source 단일화, resolve_metadata, InlineField 동기화, AI 추천 UI(모두적용·유사건·게이지·모드배지) (2026-05-21)
 - [x] **dev-detail-3col-layout Steps 0-5** — ADR-005 + view 2컬럼 + ThreeColumnShell + AI rec + inline edit + row alignment + conflict 한 줄 + 1:1 비율 + readOnly review (2026-05-20)
 - [x] dev-detail-unified-shell Steps 6-7 — 큐 통합 + wrap (2026-05-20)
 - [x] dev-detail-unified-shell Step 5 — URL ?mode= SSOT + 3패널 dispatch + /edit,/recommend redirect (2026-05-20)

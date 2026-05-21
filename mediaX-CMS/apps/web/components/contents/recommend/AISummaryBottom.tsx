@@ -9,7 +9,10 @@ import { avgConfidence, summarizeByKind, reasonSummary } from "@/lib/recommendDe
 interface Props {
   recommendations: RecommendationsOut
   appliedFields: Set<string>
+  currentValuesByField?: Record<string, string | null | undefined>
+  qualityScore?: number | null  // 메타 완성도 (0~100)
   onApplyAllAuto: () => Promise<void>
+  onApplyAll?: () => Promise<void>  // auto + conflict top 전체 적용
   onRegenerate: () => Promise<void>
   onDismiss: () => void
 }
@@ -17,18 +20,23 @@ interface Props {
 export function AISummaryBottom({
   recommendations,
   appliedFields,
+  currentValuesByField,
+  qualityScore,
   onApplyAllAuto,
+  onApplyAll,
   onRegenerate,
   onDismiss,
 }: Props) {
   const [applyingAllAuto, setApplyingAllAuto] = useState(false)
+  const [applyingAll, setApplyingAll] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
 
   const avg = avgConfidence([...recommendations.auto_fill, ...recommendations.conflicts])
-  const { confirmed, auto, conflict, missing } = summarizeByKind(recommendations, appliedFields)
+  const { confirmed, auto, conflict, missing } = summarizeByKind(recommendations, appliedFields, currentValuesByField)
 
-  // auto 추천 중 아직 채택되지 않은 것들만
-  const unconfirmedAuto = auto.filter((f) => !appliedFields.has(f))
+  // auto 추천 중 아직 채택되지 않은 것들만 (summarizeByKind가 유사 건은 이미 confirmed 처리)
+  const unconfirmedAuto = auto
+  const applicableTotal = auto.length + conflict.length
 
   async function handleApplyAllAuto() {
     setApplyingAllAuto(true)
@@ -36,6 +44,16 @@ export function AISummaryBottom({
       await onApplyAllAuto()
     } finally {
       setApplyingAllAuto(false)
+    }
+  }
+
+  async function handleApplyAll() {
+    if (!onApplyAll) return
+    setApplyingAll(true)
+    try {
+      await onApplyAll()
+    } finally {
+      setApplyingAll(false)
     }
   }
 
@@ -48,21 +66,39 @@ export function AISummaryBottom({
     }
   }
 
+  const qs = qualityScore ?? 0
+
   return (
     <div className="flex flex-col gap-4 p-5 bg-white rounded-lg border">
-      {/* 평균 신뢰도 게이지 */}
-      <div>
-        <p className="text-sm font-semibold text-slate-700 mb-2">평균 신뢰도</p>
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-amber-500 rounded-full transition-all"
-              style={{ width: `${avg * 100}%` }}
-            />
+      {/* 메타완성도 + 추천신뢰도 게이지 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs font-semibold text-slate-700 mb-1.5">메타완성도</p>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-amber-500 rounded-full transition-all"
+                style={{ width: `${qs}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold text-amber-700 tabular-nums w-10 text-right">
+              {qs.toFixed(0)}
+            </span>
           </div>
-          <span className="text-sm font-semibold text-slate-700 tabular-nums w-12">
-            {(avg * 100).toFixed(0)}%
-          </span>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-slate-700 mb-1.5">추천신뢰도</p>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all"
+                style={{ width: `${avg * 100}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold text-emerald-700 tabular-nums w-10 text-right">
+              {(avg * 100).toFixed(0)}%
+            </span>
+          </div>
         </div>
       </div>
 
@@ -111,6 +147,17 @@ export function AISummaryBottom({
 
       {/* Bulk Actions */}
       <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+        {onApplyAll && applicableTotal > 0 && (
+          <button
+            onClick={handleApplyAll}
+            disabled={applyingAll}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <Sparkles className="h-3 w-3" />
+            {applyingAll ? "적용 중..." : `✓ 적용 가능 ${applicableTotal}건 모두 적용`}
+          </button>
+        )}
+
         {unconfirmedAuto.length > 0 && (
           <button
             onClick={handleApplyAllAuto}
@@ -118,7 +165,7 @@ export function AISummaryBottom({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-100 text-green-700 text-xs font-medium hover:bg-green-200 disabled:opacity-50"
           >
             <Sparkles className="h-3 w-3" />
-            {applyingAllAuto ? "적용 중..." : `✨ 자동 ${unconfirmedAuto.length}건 모두 채택`}
+            {applyingAllAuto ? "적용 중..." : `✨ 자동 ${unconfirmedAuto.length}건만 채택`}
           </button>
         )}
 
