@@ -4,14 +4,12 @@ import { RotateCcw, Lock, Film } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import type { ContentDetail } from "@/lib/api"
 import { BreadcrumbNav, type BreadcrumbParent } from "@/components/contents/detail/BreadcrumbNav"
-import type { StatusInfo } from "@/components/contents/detail/LeafMetaHeader"
 
 interface DetailHeaderProps {
   content: ContentDetail
   contentId: number
   mode: "view" | "edit" | "review"
   parentChain: BreadcrumbParent[]
-  statusInfo: StatusInfo
   onModeChange: (mode: "view" | "edit" | "review") => void
   onReprocess: () => void
   onLock: () => void
@@ -25,7 +23,7 @@ const MODE_LABEL: Record<"view" | "edit" | "review", string> = {
 }
 
 export function DetailHeader({
-  content, mode, parentChain, statusInfo,
+  content, mode, parentChain,
   onModeChange, onReprocess, onLock, onPreviewClip,
 }: DetailHeaderProps) {
   return (
@@ -42,15 +40,16 @@ export function DetailHeader({
           <h1 className="font-bold text-slate-900 text-base leading-tight truncate">
             {content.title}
           </h1>
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0",
-              statusInfo.color,
-            )}
-          >
-            {statusInfo.emoji} {statusInfo.label}
-          </span>
-          <span className="text-slate-400 text-xs flex-shrink-0">#{content.id}</span>
+          {mode === "edit" && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 flex-shrink-0">
+              편집 중
+            </span>
+          )}
+          {mode === "review" && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 flex-shrink-0">
+              검수 중
+            </span>
+          )}
         </div>
 
         {/* 모드 토글 */}

@@ -27,6 +27,7 @@ class ContentCreate(BaseModel):
 class ContentUpdate(BaseModel):
     """PUT /contents/{id} — 수동 수정. 입력된 필드만 manual source로 external_meta_sources에 저장."""
     title: Optional[str] = None
+    cp_name: Optional[str] = None     # Content 직접 필드 (manual source 미경유)
     synopsis: Optional[str] = None
     cast: Optional[str] = None        # "배우1, 배우2, ..." 쉼표 구분
     directors: Optional[str] = None  # "감독1, 감독2, ..."
@@ -751,8 +752,7 @@ class PromoteAIResultOut(BaseModel):
 
 
 class ApplyExternalFieldsRequest(BaseModel):
-    """외부 필드 적용 요청"""
-    source_id: int
+    """외부 필드 적용 요청 (source_id는 URL path SSOT)"""
     fields: list[str]
 
 

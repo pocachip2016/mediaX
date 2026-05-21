@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 interface Props {
   value: string | null
@@ -8,26 +8,61 @@ interface Props {
   type?: "text" | "number" | "textarea"
   placeholder?: string
   className?: string
+  displayAsBox?: boolean
+  alwaysEditing?: boolean
+  readOnly?: boolean
 }
 
-export function InlineField({ value, onSave, type = "text", placeholder, className = "" }: Props) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value ?? "")
+export function InlineField({ value, onSave, type = "text", placeholder, className = "", displayAsBox, alwaysEditing, readOnly }: Props) {
+  const valueStr = value ?? ""
+  const [editing, setEditing] = useState(alwaysEditing ?? false)
+  const [draft, setDraft] = useState(valueStr)
   const [saving, setSaving] = useState(false)
+  const lastSyncedRef = useRef(valueStr)
+
+  // 외부 value 변경 감지 → draft 동기화 (사용자 typing 중이거나 saving 중이면 보호)
+  useEffect(() => {
+    if (saving) return
+    if (draft !== lastSyncedRef.current) return  // 사용자가 typing 중 → 외부 변경 무시
+    if (lastSyncedRef.current !== valueStr) {
+      setDraft(valueStr)
+      lastSyncedRef.current = valueStr
+    }
+  }, [valueStr, saving, draft])
 
   const commit = async () => {
     setSaving(true)
-    try { await onSave(draft) } finally { setSaving(false); setEditing(false) }
+    try {
+      await onSave(draft)
+      lastSyncedRef.current = draft
+    } finally {
+      setSaving(false)
+      if (!alwaysEditing) setEditing(false)
+    }
   }
 
   if (!editing) {
+    if (displayAsBox) {
+      return (
+        <div
+          role={readOnly ? undefined : "button"}
+          tabIndex={readOnly ? undefined : 0}
+          onClick={readOnly ? undefined : () => { setDraft(value ?? ""); setEditing(true) }}
+          onKeyDown={readOnly ? undefined : (e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
+          className={`max-h-24 overflow-y-auto text-xs border border-slate-100 rounded px-2 py-1.5 bg-slate-50 whitespace-pre-wrap ${readOnly ? "" : "cursor-text hover:border-blue-300 transition-colors"} ${className}`}
+        >
+          {value ?? <span className="text-slate-300 italic">{placeholder ?? "—"}</span>}
+        </div>
+      )
+    }
+
     return (
       <span
-        role="button"
-        tabIndex={0}
-        onClick={() => { setDraft(value ?? ""); setEditing(true) }}
-        onKeyDown={(e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
-        className={`cursor-text hover:bg-blue-50 hover:text-blue-700 rounded px-1 -mx-1 transition-colors ${className}`}
+        role={readOnly ? undefined : "button"}
+        tabIndex={readOnly ? undefined : 0}
+        onClick={readOnly ? undefined : () => { setDraft(value ?? ""); setEditing(true) }}
+        onKeyDown={readOnly ? undefined : (e) => e.key === "Enter" && (setDraft(value ?? ""), setEditing(true))}
+        className={`${readOnly ? "" : "cursor-text hover:bg-blue-50 hover:text-blue-700 transition-colors rounded px-1 -mx-1"} ${className}`}
       >
         {value ?? <span className="text-slate-300 text-xs italic">{placeholder ?? "—"}</span>}
       </span>

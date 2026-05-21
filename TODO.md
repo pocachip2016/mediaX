@@ -4,10 +4,6 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [x] **dev-detail-3col-layout Step 0** — ADR-005 + dai cancelled (2026-05-20)
-- [x] **dev-detail-3col-layout Step 1** — view 2컬럼 + ViewPane 삭제 (2026-05-20)
-- [x] **dev-detail-3col-layout Step 2** — ThreeColumnShell + AISummaryBottom footer (2026-05-20)
-- [x] **dev-detail-3col-layout Step 3-5** — AI rec column + inline edit + row alignment
 
 ## Next (이번 마일스톤)
 
@@ -19,6 +15,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] fix(content-edit): 편집/검수 화면 버그 수정 — apply-fields 422, manual source 단일화, resolve_metadata, InlineField 동기화, AI 추천 UI(모두적용·유사건·게이지·모드배지) (2026-05-21)
+- [x] **dev-detail-3col-layout Steps 0-5** — ADR-005 + view 2컬럼 + ThreeColumnShell + AI rec + inline edit + row alignment + conflict 한 줄 + 1:1 비율 + readOnly review (2026-05-20)
 - [x] dev-detail-unified-shell Steps 6-7 — 큐 통합 + wrap (2026-05-20)
 - [x] dev-detail-unified-shell Step 5 — URL ?mode= SSOT + 3패널 dispatch + /edit,/recommend redirect (2026-05-20)
 - [x] dev-detail-unified-shell Steps 0-2 — ADR + ContentShell + ViewPane (2컬럼 레이아웃) (2026-05-20)

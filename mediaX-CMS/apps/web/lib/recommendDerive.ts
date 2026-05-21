@@ -2,6 +2,32 @@ import type { FieldRecommendation, RecommendationsOut } from "@/lib/api"
 
 export type FieldKind = "confirmed" | "auto" | "conflict" | "missing"
 
+// 값 normalize — 구분자(/ , | ·) 통일 + trim + lowercase
+export function tokenize(s: string): Set<string> {
+  return new Set(
+    s.split(/[\/,|·]/)
+      .map((x) => x.trim().toLowerCase())
+      .filter(Boolean)
+  )
+}
+
+export function isSimilar(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || b == null) return false
+  const sa = tokenize(String(a))
+  const sb = tokenize(String(b))
+  if (sa.size === 0 || sb.size === 0) return false
+  if (sa.size !== sb.size) return false
+  for (const x of sa) if (!sb.has(x)) return false
+  return true
+}
+
+// rec의 top value가 현재값과 유사한지 (개별 적용 불필요 판단용)
+export function isRecSimilarToCurrent(rec: FieldRecommendation, currentValue: string | null | undefined): boolean {
+  const top = rec.ai_synthesis ?? rec.recommendations[0]
+  if (!top) return false
+  return isSimilar(top.value, currentValue)
+}
+
 export function classifyField(rec: FieldRecommendation | null): FieldKind {
   if (rec === null) return "missing"
   if (rec.status === "conflict") return "conflict"
@@ -38,20 +64,24 @@ export function avgConfidence(recs: FieldRecommendation[]): number {
 
 export function summarizeByKind(
   recommendations: RecommendationsOut,
-  appliedFields: Set<string>
+  appliedFields: Set<string>,
+  currentValuesByField?: Record<string, string | null | undefined>
 ): { confirmed: string[]; auto: string[]; conflict: string[]; missing: string[] } {
   const confirmed: string[] = []
   const auto: string[] = []
   const conflict: string[] = []
 
+  const similar = (rec: FieldRecommendation) =>
+    currentValuesByField ? isRecSimilarToCurrent(rec, currentValuesByField[rec.field]) : false
+
   for (const rec of recommendations.auto_fill) {
-    if (appliedFields.has(rec.field)) { confirmed.push(rec.field); continue }
+    if (appliedFields.has(rec.field) || similar(rec)) { confirmed.push(rec.field); continue }
     const kind = classifyField(rec)
     if (kind === "confirmed") confirmed.push(rec.field)
     else auto.push(rec.field)
   }
   for (const rec of recommendations.conflicts) {
-    if (appliedFields.has(rec.field)) { confirmed.push(rec.field); continue }
+    if (appliedFields.has(rec.field) || similar(rec)) { confirmed.push(rec.field); continue }
     conflict.push(rec.field)
   }
 
