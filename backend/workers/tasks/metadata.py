@@ -1089,6 +1089,7 @@ def backfill_kobis(year: int):
         db.refresh(log)
 
         inserted = updated = unchanged = errors = 0
+        cache_ins = cache_upd = 0          # kobis_movie_cache 측 카운터
         quota_hit = False
         page = 1
         date_start = str(year)
@@ -1153,9 +1154,11 @@ def backfill_kobis(year: int):
                             directors=directors_list,
                             raw_json=movie,
                         ))
+                        cache_ins += 1
                     else:
                         cache_row.title = movie_nm
                         cache_row.raw_json = movie
+                        cache_upd += 1
                     # ─────────────────────────────────────────────────────────────
 
                     existing = (
@@ -1237,6 +1240,8 @@ def backfill_kobis(year: int):
         log.items_updated = updated
         log.items_unchanged = unchanged
         log.errors = errors
+        log.cache_inserted = cache_ins
+        log.cache_updated = cache_upd
         # quota_hit 으로 끝났으면 다음 tick 에서 재개되도록 running 유지하지 않고 failed 로 마킹
         # (completed 만 done_years 에 포함되도록)
         log.status = TmdbSyncStatus.completed if (errors == 0 and not quota_hit) else TmdbSyncStatus.failed
@@ -1244,7 +1249,7 @@ def backfill_kobis(year: int):
         db.commit()
         logger.info(
             f"[kobis_backfill] year={year} inserted={inserted} updated={updated} "
-            f"unchanged={unchanged} errors={errors} quota_hit={quota_hit}"
+            f"unchanged={unchanged} errors={errors} cache_ins={cache_ins} quota_hit={quota_hit}"
         )
 
         return {
@@ -1332,7 +1337,7 @@ def link_kmdb_cache_to_contents():
     db = SessionLocal()
     try:
         log = TmdbSyncLog(
-            source=TmdbSyncSource.kmdb_backfill,
+            source=TmdbSyncSource.kmdb_link,
             external_source=ExternalSourceType.kmdb,
             status=TmdbSyncStatus.running,
         )

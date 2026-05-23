@@ -1,0 +1,56 @@
+{
+  "project": "mediaX",
+  "phase": "fix-external-sync-stability",
+  "description": "KMDB/KOBIS backfill 안정화 + sync_log 메트릭 명확화 + link source enum 교체. 근본 원인: redbeat LockNotOwnedError로 Beat 컨테이너 26회 재시작, 5/19~5/20 KOBIS backfill 누락. 부수 원인: sync_log items_inserted는 ExternalMetaSource 카운터로 캐시 실적과 다름, link_kmdb_cache_to_contents가 kmdb_link 대신 kmdb_backfill enum으로 로깅.",
+  "diagnosis": {
+    "beat_restarts": 26,
+    "missed_dates": ["2026-05-19", "2026-05-20"],
+    "cache_growth_per_day": {
+      "kmdb_5_18_22": [673, 337, 313, 367, 352],
+      "kobis_5_18_22": [1423, 0, 0, 1100, 446]
+    },
+    "error": "redis.exceptions.LockNotOwnedError: Cannot extend a lock that's no longer owned"
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "fess-plan",
+      "phase": "A",
+      "status": "completed",
+      "summary": "Plan skeleton (index.json + step{0..4}.md) 작성. 진단: Beat 26회 재시작, KOBIS 5/19~5/20 누락, sync_log 메트릭 혼동.",
+      "completed_at": "2026-05-23T23:50:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "fess-link-source-enum",
+      "phase": "B",
+      "status": "completed",
+      "summary": "TmdbSyncSource.kmdb_link enum 추가 + link_kmdb_cache_to_contents source 교체 + 테스트 4개 pass",
+      "completed_at": "2026-05-24T00:10:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "fess-beat-stability",
+      "phase": "B",
+      "status": "completed",
+      "summary": "redbeat_lock_timeout 600→1800s + beat_max_loop_interval 60→30s 변경. Beat 재빌드 후 Restart Count=0 확인.",
+      "completed_at": "2026-05-24T00:05:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "fess-cache-metrics-schema",
+      "phase": "C",
+      "status": "completed",
+      "summary": "alembic 0021 + cache_inserted/cache_updated 컬럼 추가 완료",
+      "completed_at": "2026-05-24T00:20:00+09:00"
+    },
+    {
+      "step": 4,
+      "name": "fess-cache-metrics-wiring",
+      "phase": "C",
+      "status": "completed",
+      "summary": "backfill_kobis/kmdb cache 카운터 추적 + pytest 3개 pass",
+      "completed_at": "2026-05-24T00:35:00+09:00"
+    }
+  ]
+}
