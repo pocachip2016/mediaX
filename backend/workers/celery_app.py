@@ -25,8 +25,8 @@ celery_app.conf.update(
     timezone="Asia/Seoul",
     beat_scheduler="redbeat.RedBeatScheduler",
     redbeat_redis_url=settings.REDIS_URL,
-    redbeat_lock_timeout=10 * 60,  # 10분 — loop interval(60s)의 10배
-    beat_max_loop_interval=60,     # 60s마다 lock 갱신 (기본 300s에서 단축)
+    redbeat_lock_timeout=30 * 60,  # 30분 — WSL2 sleep 후 재기동 여유 (기존 10분)
+    beat_max_loop_interval=30,     # 30s마다 lock 갱신 (기존 60s에서 단축)
     beat_schedule={
         "poll-cp-emails": {
             "task": "workers.tasks.metadata.poll_cp_emails",

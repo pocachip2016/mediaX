@@ -40,6 +40,7 @@ class TmdbSyncSource(str, enum.Enum):
     kmdb_backfill = "kmdb_backfill"
     tmdb_link = "tmdb_link"
     kobis_link = "kobis_link"
+    kmdb_link = "kmdb_link"
     llm_merge = "llm_merge"
 
 
@@ -143,6 +144,9 @@ class TmdbSyncLog(Base):
     items_unchanged = Column(Integer, default=0)
     errors = Column(Integer, default=0)
     error_sample = Column(JSON)                     # 최초 5개 에러 메시지
+
+    cache_inserted = Column(Integer, default=0)     # kobis/kmdb_movie_cache 신규 행 수
+    cache_updated = Column(Integer, default=0)      # kobis/kmdb_movie_cache 갱신 행 수
 
 
 ExternalSyncLog = TmdbSyncLog

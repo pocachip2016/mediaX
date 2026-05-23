@@ -205,6 +205,8 @@ def backfill_kmdb(self, year: int):
     log_row.items_updated = updated
     log_row.items_unchanged = unchanged
     log_row.errors = errors
+    log_row.cache_inserted = inserted   # kmdb_backfill: items_* 는 캐시 카운터
+    log_row.cache_updated = updated
     db.commit()
     db.close()
 
