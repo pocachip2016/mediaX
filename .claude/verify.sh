@@ -3897,6 +3897,61 @@ print('OK')
     .venv/bin/pytest tests/workers/test_cache_metrics.py -v --tb=short 2>&1
     ;;
 
+  esc-db-cleanup)
+    echo "=== esc-db-cleanup: stale sync_log 레코드 정리 확인 ==="
+    cd "$SCRIPT_DIR/.."
+    RUNNING=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "SELECT COUNT(*) FROM external_sync_log WHERE status='running';" 2>&1 | tr -d ' ')
+    NULL_FIN=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "SELECT COUNT(*) FROM external_sync_log WHERE finished_at IS NULL;" 2>&1 | tr -d ' ')
+    echo "running_count=$RUNNING  null_finished=$NULL_FIN"
+    [ "$RUNNING" -eq 0 ] || { echo "FAIL: running 레코드 잔류 ($RUNNING건)"; exit 1; }
+    [ "$NULL_FIN" -eq 0 ] || { echo "FAIL: finished_at NULL 잔류 ($NULL_FIN건)"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  esc-celery-config)
+    echo "=== esc-celery-config: Celery broker 재연결 옵션 확인 ==="
+    cd "$SCRIPT_DIR/.."
+    docker exec mediax-worker-1 python -c "
+from workers.celery_app import celery_app
+assert celery_app.conf.broker_connection_retry_on_startup is True, 'broker_connection_retry_on_startup 없음'
+assert celery_app.conf.broker_transport_options.get('visibility_timeout') == 7200, 'visibility_timeout != 7200'
+assert celery_app.conf.broker_transport_options.get('retry_on_timeout') is True, 'retry_on_timeout 없음'
+print('OK — broker_connection_retry_on_startup=True, visibility_timeout=7200')
+" 2>&1
+    docker logs mediax-worker-1 --since 5m 2>&1 | grep -qE "ready\." || { echo "FAIL: worker not ready"; exit 1; }
+    docker logs mediax-beat-1 --since 5m 2>&1 | grep -qE "Acquired lock" || { echo "FAIL: beat lock not acquired"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  esc-startup-hook)
+    echo "=== esc-startup-hook: worker_ready stale cleanup hook 동작 확인 ==="
+    cd "$SCRIPT_DIR/.."
+    # 1. 2시간 전 stale 레코드 삽입
+    INSERT_ID=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "INSERT INTO external_sync_log (run_id, source, status, started_at) \
+       VALUES ('test-esc-hook', 'changes_movie', 'running', NOW() - INTERVAL '2 hours') RETURNING id;" \
+      2>&1 | tr -d ' ')
+    echo "삽입 id=$INSERT_ID"
+    # 2. worker 재시작
+    docker compose restart worker
+    sleep 15
+    # 3. cleanup 로그 확인
+    docker logs mediax-worker-1 --since 30s 2>&1 | grep "startup_cleanup" | tail -3
+    # 4. DB 상태 확인
+    STATUS=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "SELECT status FROM external_sync_log WHERE run_id='test-esc-hook';" 2>&1 | tr -d ' ')
+    echo "status=$STATUS"
+    [ "$STATUS" = "failed" ] || { echo "FAIL: status=$STATUS (expected failed)"; \
+      docker exec mediax-postgres-1 psql -U media_ax -d media_ax -c \
+        "DELETE FROM external_sync_log WHERE run_id='test-esc-hook';" > /dev/null; exit 1; }
+    # 5. 정리
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -c \
+      "DELETE FROM external_sync_log WHERE run_id='test-esc-hook';" > /dev/null
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6"

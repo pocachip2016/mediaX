@@ -1,0 +1,39 @@
+{
+  "project": "mediaX",
+  "phase": "fix-external-sync-cleanup",
+  "description": "외부소스 backfill 운영 위생 — stale running 레코드 정리 + Worker Redis 재연결 강화 + 시작 시 자동 cleanup hook. 진단 결과: 캐시 데이터 자체는 정상 갱신 중이나 2026-05-16 changes_movie 2건이 9일째 running 잔류, 오늘 16:41 worker Redis master/replica flip으로 unrecoverable error 발생, 22:21 beat lock 만료로 재시작. 근본 안정화는 별도 follow-up.",
+  "steps": [
+    {
+      "step": 0,
+      "name": "esc-plan",
+      "phase": "A",
+      "status": "completed",
+      "summary": "진단 결과 정리 + 3-step skeleton (cleanup / config / hook)",
+      "completed_at": "2026-05-25T22:30:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "esc-db-cleanup",
+      "phase": "A",
+      "status": "completed",
+      "summary": "DB 6건 stale 레코드 정리 — id 74,77 running→failed + finished_at 기록, id 102,103 finished_at NULL→NOW(). Verify: running=0, null_finished=0 ✓",
+      "completed_at": "2026-05-25T22:35:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "esc-celery-config",
+      "phase": "B",
+      "status": "completed",
+      "summary": "celery_app.py에 broker_connection_retry_on_startup=True + visibility_timeout=7200 + retry_on_timeout=True 추가, worker/beat 재시작 후 conf assertion ✓",
+      "completed_at": "2026-05-25T22:38:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "esc-startup-hook",
+      "phase": "C",
+      "status": "completed",
+      "summary": "worker_ready signal handler 추가 — 1h+ stale running sync_log 자동 failed 마킹. 테스트: stale 2h 레코드 삽입→restart→failed 확인 ✓",
+      "completed_at": "2026-05-25T22:40:00+09:00"
+    }
+  ]
+}
