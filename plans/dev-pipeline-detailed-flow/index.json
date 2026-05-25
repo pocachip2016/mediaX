@@ -1,0 +1,79 @@
+{
+  "project": "mediaX",
+  "phase": "dev-pipeline-detailed-flow",
+  "description": "콘텐츠 운영 파이프라인 9-stage + 6-gate 모델로 재구성. 입수 채널(email/manual/bulk/dam) 가시화, AI 처리 내부 소스(Ollama/TMDB/KOBIS/Dam/WebSearch) 분기, 단계별 수동 진행 버튼, stage_event SSOT 로그. 3 View — Pipeline Board / Content Timeline V2 / Live Event Log. ADR: docs/dev/dev-pipeline-detailed-flow/adr-006-pipeline-stage-model.md",
+  "steps": [
+    {
+      "step": 0,
+      "name": "dpf-adr",
+      "phase": "A",
+      "status": "completed",
+      "summary": "ADR-006(9-stage+6-gate) + wireframes(3 view ASCII) + data-model(enum/migration/API) + 10-step plan skeleton",
+      "completed_at": "2026-05-21T00:00:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "dpf-schema",
+      "phase": "B",
+      "status": "completed",
+      "summary": "enum 4개(PipelineStage/IntakeChannel/StageEventType/FailureCode) + Content 컬럼 4개 + StageEvent 테이블 + alembic 0022 + 10 pytest. backfill 12건 ✓",
+      "completed_at": "2026-05-25T23:55:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "dpf-service",
+      "phase": "B",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 3,
+      "name": "dpf-timeline-api",
+      "phase": "B",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 4,
+      "name": "dpf-board-api",
+      "phase": "B",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 5,
+      "name": "dpf-board-fe",
+      "phase": "C",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 6,
+      "name": "dpf-gate-panel",
+      "phase": "C",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 7,
+      "name": "dpf-timeline-fe",
+      "phase": "D",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 8,
+      "name": "dpf-event-log",
+      "phase": "D",
+      "status": "pending",
+      "summary": ""
+    },
+    {
+      "step": 9,
+      "name": "dpf-cutover",
+      "phase": "E",
+      "status": "pending",
+      "summary": ""
+    }
+  ]
+}

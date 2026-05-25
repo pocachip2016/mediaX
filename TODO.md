@@ -4,8 +4,12 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
+- [x] dev-pipeline-detailed-flow Step 1 — dpf-schema (enum 4 + Content 컬럼 4 + stage_event 테이블 + alembic 0022 + 10 pytest)
 
 ## Next (이번 마일스톤)
+- [ ] dev-pipeline-detailed-flow Steps 2~4 — record_stage_event() 헬퍼 + 진입점 5곳 훅 / timeline v2 API / pipeline board API
+- [ ] dev-pipeline-detailed-flow Steps 5~8 — PipelineBoard / GatePanel / ContentTimelineV2 / Live Event Log (FE)
+- [ ] dev-pipeline-detailed-flow Step 9 — cutover + 호환 검증 + wrap
 
 ## Later (백로그)
 - [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)
