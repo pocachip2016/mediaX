@@ -121,6 +121,17 @@ celery_app.conf.update(
             "schedule": crontab(hour=8, minute=30),
         },
     },
+    broker_connection_retry_on_startup=True,
+    broker_transport_options={
+        "visibility_timeout": 7200,   # 2h — backfill_movies 90s+ 재할당 방지
+        "socket_keepalive": True,
+        "retry_on_timeout": True,
+        "max_connections": 50,
+    },
+    result_backend_transport_options={
+        "visibility_timeout": 7200,
+        "retry_on_timeout": True,
+    },
     task_routes={
         "workers.tasks.design.generate_asset":   {"queue": "design.normal"},
         "workers.tasks.design.generate_urgent":  {"queue": "design.high"},
@@ -134,3 +145,43 @@ celery_app.conf.update(
         "workers.tasks.discovery_tasks.*":       {"queue": "metadata"},
     },
 )
+
+
+from celery.signals import worker_ready  # noqa: E402
+
+
+@worker_ready.connect
+def cleanup_stale_sync_logs(sender=None, **kwargs):
+    """Worker 시작 시 1h+ running 상태 sync_log를 failed로 마킹 (crash 잔류 레코드 자동 정리)."""
+    import logging
+    from datetime import datetime, timedelta, timezone
+
+    from shared.database import SessionLocal
+    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncStatus
+
+    logger = logging.getLogger(__name__)
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        stale = (
+            db.query(TmdbSyncLog)
+            .filter(
+                TmdbSyncLog.status == TmdbSyncStatus.running,
+                TmdbSyncLog.started_at < cutoff,
+            )
+            .all()
+        )
+        for row in stale:
+            row.status = TmdbSyncStatus.failed
+            row.finished_at = datetime.now(timezone.utc)
+            row.error_sample = ["auto-cleanup on worker_ready: stale > 1h"]
+        if stale:
+            db.commit()
+            logger.warning(f"[startup_cleanup] {len(stale)} stale sync_log → failed")
+        else:
+            logger.info("[startup_cleanup] no stale sync_log")
+    except Exception as exc:
+        logger.error(f"[startup_cleanup] failed: {exc}")
+        db.rollback()
+    finally:
+        db.close()
