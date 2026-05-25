@@ -3925,6 +3925,39 @@ print('OK — broker_connection_retry_on_startup=True, visibility_timeout=7200')
     echo "=== PASS ==="
     ;;
 
+  dpf-schema)
+    echo "=== dpf-schema: ADR-006 enum 4 + Content 컬럼 4 + stage_event 테이블 + pytest ==="
+    cd "$SCRIPT_DIR/../backend"
+    # 1. enum / model import
+    .venv/bin/python -c "
+from api.programming.metadata.models.content import PipelineStage, IntakeChannel, StageEventType, FailureCode
+from api.programming.metadata.models.stage_event import StageEvent
+from api.programming.metadata.models import PipelineStage, StageEvent
+assert len(PipelineStage) == 9
+assert len(IntakeChannel) == 4
+assert len(StageEventType) == 7
+assert len(FailureCode) == 7
+print('  ✓ enum 4개 import OK')
+" 2>&1
+    # 2. alembic revision 0022 적용 확인
+    VER=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "SELECT version_num FROM alembic_version;" 2>&1 | tr -d ' ')
+    echo "  alembic_version=$VER"
+    [ "$VER" = "0022" ] || { echo "FAIL: alembic version $VER != 0022"; exit 1; }
+    # 3. stage_event 테이블 + 인덱스 확인
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -c \
+      "SELECT indexname FROM pg_indexes WHERE tablename='stage_event' ORDER BY indexname;" 2>&1 | grep -E "ix_stage_event_content_stage|ix_stage_event_event_started"
+    [ $? -eq 0 ] || { echo "FAIL: stage_event 인덱스 없음"; exit 1; }
+    # 4. backfill 확인
+    BF=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "SELECT COUNT(*) FROM contents WHERE current_stage IS NOT NULL;" 2>&1 | tr -d ' ')
+    echo "  backfilled=$BF"
+    [ "$BF" -gt 0 ] || { echo "FAIL: backfill 0건"; exit 1; }
+    # 5. pytest
+    .venv/bin/pytest tests/test_stage_event_schema.py -q 2>&1
+    echo "=== PASS ==="
+    ;;
+
   esc-startup-hook)
     echo "=== esc-startup-hook: worker_ready stale cleanup hook 동작 확인 ==="
     cd "$SCRIPT_DIR/.."

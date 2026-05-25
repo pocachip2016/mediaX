@@ -44,6 +44,45 @@ class MetaSource(str, enum.Enum):
     manual = "manual"
 
 
+class PipelineStage(str, enum.Enum):
+    S1_INTAKE          = "s1_intake"
+    S2_NORMALIZE       = "s2_normalize"
+    S3_LLM_EXTRACT     = "s3_llm_extract"
+    S4_SOURCE_MATCH    = "s4_source_match"
+    S5_GAP_DETECT      = "s5_gap_detect"
+    S6_WEBSEARCH_FILL  = "s6_websearch_fill"
+    S7_STAGING         = "s7_staging"
+    S8_REVIEW          = "s8_review"
+    S9_PUBLISH         = "s9_publish"
+
+
+class IntakeChannel(str, enum.Enum):
+    EMAIL_POLL   = "email_poll"
+    MANUAL       = "manual"
+    BULK_CSV     = "bulk_csv"
+    DAM_WEBHOOK  = "dam_webhook"
+
+
+class StageEventType(str, enum.Enum):
+    ENTERED      = "entered"
+    COMPLETED    = "completed"
+    SKIPPED      = "skipped"
+    FAILED       = "failed"
+    RETRIED      = "retried"
+    GATE_OPENED  = "gate_opened"
+    ADVANCED     = "advanced"
+
+
+class FailureCode(str, enum.Enum):
+    NONE                = "none"
+    LLM_PARSE_ERROR     = "llm_parse_error"
+    TMDB_QUOTA_EXCEEDED = "tmdb_quota_exceeded"
+    KOBIS_TIMEOUT       = "kobis_timeout"
+    WEBSEARCH_NO_HIT    = "websearch_no_hit"
+    INVALID_PAYLOAD     = "invalid_payload"
+    SYSTEM_ERROR        = "system_error"
+
+
 class Content(Base):
     __tablename__ = "contents"
 
@@ -76,6 +115,12 @@ class Content(Base):
     season_number = Column(Integer)
     episode_number = Column(Integer)
 
+    # 9-stage 파이프라인 (ADR-006)
+    intake_channel = Column(Enum(IntakeChannel, name="intakechannel", create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=True)
+    current_stage  = Column(Enum(PipelineStage, name="pipelinestage", create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=True)
+    failure_code   = Column(Enum(FailureCode,   name="failurecode",   create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=False, server_default="none")
+    gate_overrides = Column(JSON, nullable=True)  # {"GATE_1": "auto", ...}
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, index=True)
@@ -105,6 +150,9 @@ class Content(Base):
     )
     ai_results = relationship(
         "ContentAIResult", back_populates="content", cascade="all, delete-orphan"
+    )
+    stage_events = relationship(
+        "StageEvent", back_populates="content", cascade="all, delete-orphan"
     )
 
 
