@@ -15,6 +15,7 @@ from api.monitoring.router import router as monitoring_router
 from api.common.router import router as common_router
 from api.distribution.router import router as distribution_router
 from api.test.pipeline_router import router as pipeline_test_router
+from api.programming.metadata.router_pipeline import router as pipeline_router
 
 @asynccontextmanager
 async def lifespan(app):
@@ -52,6 +53,7 @@ app.include_router(monitoring_router,  prefix="/api/monitoring",  tags=["모니�
 app.include_router(common_router,      prefix="/api/common",      tags=["공통 인프라"])
 app.include_router(distribution_router,prefix="/api/distribution",tags=["배포 AX"])
 app.include_router(pipeline_test_router, prefix="/api/test",      tags=["Pipeline Test (dev)"])
+app.include_router(pipeline_router,      prefix="/api/pipeline",   tags=["Pipeline Board"])
 
 
 @app.get("/health")

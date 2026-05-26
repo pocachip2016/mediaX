@@ -157,6 +157,12 @@ export const docsNav: NavSection[] = [
         href: "/monitoring/security",
         items: [],
       },
+      {
+        title: "파이프라인 로그",
+        href: "/monitoring/pipeline/log",
+        label: "NEW",
+        items: [],
+      },
     ],
   },
 ]

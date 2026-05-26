@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 
 from shared.database import get_db
 from api.programming.metadata import service
-from api.programming.metadata.models import ContentStatus, ContentType, ContentBatchJob
+from api.programming.metadata.models import ContentStatus, ContentType, ContentBatchJob, StageEvent, PipelineStage, StageEventType
 from api.programming.metadata.schemas import (
     ContentCreate, ContentUpdate, ContentOut, ContentDetail, PaginatedContents,
     MetadataReviewAction, AIGenerateRequest, AIGenerateResponse,
@@ -69,6 +69,9 @@ from api.programming.metadata.schemas import (
     PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
     RecommendationsOut,
     PaginatedAiReviewQueue,
+)
+from api.programming.metadata.schemas_timeline import (
+    StageSourceOut, StageOut, ContentTimelineV2,
 )
 from api.programming.metadata.models import CpEmailLog
 from api.programming.metadata import poster_recommend
@@ -1024,6 +1027,89 @@ async def api_enrich_credits(
     return await service.enrich_external_credits(content_id, db)
 
 
+def _build_pipeline_stages(content_id: int, db: Session) -> list[StageOut]:
+    """ADR-006 9-stage timeline 빌드 — StageEvent 테이블 기반."""
+    events = db.query(StageEvent).filter(StageEvent.content_id == content_id).all()
+
+    result = []
+    for stage_enum in PipelineStage:
+        stage_events = [e for e in events if e.stage == stage_enum]
+
+        if not stage_events:
+            result.append(StageOut(stage=stage_enum.value, status="pending"))
+            continue
+
+        # stage의 이벤트 유형 판단
+        event_types = {e.event_type for e in stage_events}
+        has_completed = StageEventType.COMPLETED in event_types or StageEventType.ADVANCED in event_types
+
+        if has_completed:
+            status = "done"
+        elif StageEventType.ENTERED in event_types or StageEventType.FAILED in event_types:
+            status = "active"
+        else:
+            status = "pending"
+
+        # at: ENTERED 이벤트의 started_at (가장 빠른 것)
+        entered_events = [e for e in stage_events if e.event_type == StageEventType.ENTERED]
+        at = min([e.started_at for e in entered_events]) if entered_events else None
+
+        # duration_ms: 총 latency_ms (여러 source가 있으면 합)
+        duration_ms = sum(e.latency_ms for e in stage_events if e.latency_ms) or None
+
+        # sources: source별로 이벤트 그룹화 → result 결정
+        sources_dict = {}
+        for event in stage_events:
+            src = event.source or "system"
+            if src not in sources_dict:
+                sources_dict[src] = []
+            sources_dict[src].append(event)
+
+        sources = []
+        for src, src_events in sorted(sources_dict.items()):
+            src_types = {e.event_type for e in src_events}
+
+            # result 결정
+            if StageEventType.COMPLETED in src_types or StageEventType.ADVANCED in src_types:
+                if stage_enum.value.startswith("s4_"):  # S4는 hit/miss
+                    result_str = "hit"
+                else:
+                    result_str = "ok"
+            elif StageEventType.SKIPPED in src_types:
+                result_str = "miss"
+            elif StageEventType.FAILED in src_types:
+                result_str = "error"
+            else:
+                result_str = "ok"
+
+            # latency_ms: 해당 source의 첫 event
+            latency = (src_events[0].latency_ms) if src_events else None
+
+            # detail: payload 또는 error
+            detail = None
+            if src_events[0].payload_json:
+                detail = src_events[0].payload_json
+            elif src_events[0].error_text:
+                detail = {"error": src_events[0].error_text[:100]}
+
+            sources.append(StageSourceOut(
+                source=src,
+                result=result_str,
+                latency_ms=latency,
+                detail=detail,
+            ))
+
+        result.append(StageOut(
+            stage=stage_enum.value,
+            status=status,
+            at=at,
+            duration_ms=duration_ms,
+            sources=sources,
+        ))
+
+    return result
+
+
 @router.get("/contents/{content_id}/timeline", summary="콘텐츠 파이프라인 타임라인")
 def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
     """6단계 파이프라인 진행 현황을 타임라인으로 반환.
@@ -1153,10 +1239,15 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
         },
     ]
 
+    pipeline_stages = _build_pipeline_stages(content_id, db)
+
     return {
         "content_id": content_id,
         "title": c.title,
         "content_type": c.content_type.value,
         "current_status": current.value,
         "stages": stages,
+        "current_stage": c.current_stage.value if c.current_stage else None,
+        "intake_channel": c.intake_channel.value if c.intake_channel else None,
+        "pipeline_stages": [s.model_dump() for s in pipeline_stages],
     }

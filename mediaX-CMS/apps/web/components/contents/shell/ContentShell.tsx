@@ -6,6 +6,7 @@ import { SourceBadge } from "@/components/source-badge"
 import { SecondaryAccordion } from "@/components/contents/recommend/SecondaryAccordion"
 import { ChildrenTable } from "@/components/contents/detail/ChildrenTable"
 import { isLeafType, TYPE_LABEL } from "@/components/contents/detail/contentType"
+import { ContentTimelineV2 } from "./ContentTimelineV2"
 
 function MissingBadge() {
   return (
@@ -150,7 +151,10 @@ export function ContentShell({
       {/* [7] SecondaryAccordion */}
       <SecondaryAccordion content={content} />
 
-      {/* [8] ChildrenTable (container 전용) */}
+      {/* [8] Pipeline Timeline V2 (ADR-006) */}
+      <ContentTimelineV2 contentId={content.id} />
+
+      {/* [9] ChildrenTable (container 전용) */}
       {isContainer && (
         <ChildrenTable
           children={childrenItems}

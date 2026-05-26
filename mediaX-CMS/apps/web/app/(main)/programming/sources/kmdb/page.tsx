@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database } from "lucide-react"
+import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database, ChevronLeft, ChevronRight } from "lucide-react"
 import {
   kmdbApi,
   type ExternalSourceStats,
@@ -79,11 +79,26 @@ function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: s
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────
 
+const CACHE_SIZE = 50
+
+function buildPages(current: number, total: number): (number | "…")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: (number | "…")[] = [1]
+  if (current > 3) pages.push("…")
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) pages.push(p)
+  if (current < total - 2) pages.push("…")
+  pages.push(total)
+  return pages
+}
+
 export default function KmdbPage() {
   const [stats,   setStats]   = useState<ExternalSourceStats>(MOCK_STATS)
   const [logs,    setLogs]    = useState<TmdbSyncLogItem[]>(MOCK_LOGS)
   const [cache,   setCache]   = useState<KmdbCacheItem[]>(MOCK_CACHE)
+  const [cacheTotal, setCacheTotal] = useState(MOCK_CACHE.length)
+  const [cachePage,  setCachePage]  = useState(1)
   const [cacheSearch, setCacheSearch] = useState("")
+  const [applied, setApplied] = useState("")
 
   const fetchStats = useCallback(async () => {
     try {
@@ -95,16 +110,19 @@ export default function KmdbPage() {
     } catch { /* Mock 유지 */ }
   }, [])
 
-  const fetchCache = useCallback(async (title?: string) => {
+  const fetchCache = useCallback(async (p: number, title: string) => {
     try {
-      const c = await kmdbApi.getCache({ title: title || undefined, size: 20 })
+      const c = await kmdbApi.getCache({ title: title || undefined, page: p, size: CACHE_SIZE })
       setCache(c.items)
+      setCacheTotal(c.total)
     } catch { /* Mock 유지 */ }
   }, [])
 
-  useEffect(() => { fetchStats(); fetchCache() }, [fetchStats, fetchCache])
+  useEffect(() => { fetchStats() }, [fetchStats])
+  useEffect(() => { fetchCache(cachePage, applied) }, [cachePage, applied, fetchCache])
 
-  function applyCacheSearch() { fetchCache(cacheSearch) }
+  function applyCacheSearch() { setApplied(cacheSearch); setCachePage(1) }
+  function clearSearch() { setCacheSearch(""); setApplied(""); setCachePage(1) }
 
   return (
     <div className="space-y-6">
@@ -114,7 +132,7 @@ export default function KmdbPage() {
           <h2 className="text-2xl font-semibold tracking-tight">KMDB</h2>
           <p className="text-sm text-muted-foreground mt-1">한국영상자료원 — 캐시 현황</p>
         </div>
-        <button onClick={() => { fetchStats(); fetchCache(cacheSearch) }}
+        <button onClick={() => { fetchStats(); fetchCache(cachePage, applied) }}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <RefreshCw className="w-4 h-4" />새로고침
         </button>
@@ -164,7 +182,10 @@ export default function KmdbPage() {
 
       {/* 캐시 검색 */}
       <div>
-        <h3 className="text-sm font-medium mb-3">KMDB 로컬 캐시 검색</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium">KMDB 로컬 캐시 검색</h3>
+          <span className="text-xs text-muted-foreground">총 {cacheTotal.toLocaleString()}건</span>
+        </div>
         <div className="flex gap-2 mb-3">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -173,7 +194,7 @@ export default function KmdbPage() {
               placeholder="제목 검색..."
               className="w-full pl-9 pr-8 py-2 text-sm rounded-md border bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
             {cacheSearch && (
-              <button onClick={() => { setCacheSearch(""); fetchCache() }}
+              <button onClick={clearSearch}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                 <X className="w-4 h-4" />
               </button>
@@ -213,6 +234,30 @@ export default function KmdbPage() {
             </tbody>
           </table>
         </div>
+        {/* 페이지네이션 */}
+        {cacheTotal > CACHE_SIZE && (() => {
+          const totalPages = Math.ceil(cacheTotal / CACHE_SIZE)
+          return (
+            <div className="flex items-center justify-center gap-1 mt-3">
+              <button onClick={() => setCachePage((p) => Math.max(1, p - 1))} disabled={cachePage === 1}
+                className="p-1.5 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              {buildPages(cachePage, totalPages).map((p, i) =>
+                p === "…"
+                  ? <span key={`ellipsis-${i}`} className="px-1.5 text-muted-foreground text-sm">…</span>
+                  : <button key={p} onClick={() => setCachePage(p)}
+                      className={`min-w-[32px] h-8 rounded-md text-sm font-medium transition-colors ${cachePage === p ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+                      {p}
+                    </button>
+              )}
+              <button onClick={() => setCachePage((p) => Math.min(totalPages, p + 1))} disabled={cachePage === totalPages}
+                className="p-1.5 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

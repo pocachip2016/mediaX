@@ -15,6 +15,7 @@ import {
   type BatchJobOut,
   type BulkActionResponse,
 } from "@/lib/api"
+import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
 
 const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
 
@@ -1179,6 +1180,9 @@ export default function PipelineMonitoringPage() {
           </button>
         </div>
       </div>
+
+      {/* ADR-006: 파이프라인 보드 (마스터-디테일) */}
+      <PipelineBoard autoRefresh={autoRefresh} />
 
       {/* 전체 현황 카드 */}
       <div className="rounded-xl border border-border bg-card p-5">

@@ -254,10 +254,10 @@ async def _generate_metadata_with_engine(
 CP사: {req.cp_name or '미상'}
 기존 시놉시스: {req.cp_synopsis or '없음'}
 
-아래 JSON 형식으로만 응답하세요:
+아래 JSON 형식으로만 응답하세요 (synopsis는 실제 줄거리를 200자 이상 작성):
 ```json
 {{
-  "synopsis": "200자 이상의 상세 시놉시스",
+  "synopsis": "실제 줄거리 내용",
   "genre_primary": "{' | '.join(GENRES[:10])} 중 하나",
   "genre_secondary": "{' | '.join(GENRES[10:])} 중 하나 또는 null",
   "mood_tags": ["태그1", "태그2", "태그3"],
@@ -285,7 +285,10 @@ mood_tags는 다음 중에서 3~5개 선택: {', '.join(MOOD_TAGS)}"""
             "rating_suggestion": "15세이상관람가",
         }
 
+    _SYNOPSIS_PLACEHOLDERS = {"200자 이상의 상세 시놉시스", "실제 줄거리 내용"}
     synopsis = ai_data.get("synopsis", "")
+    if synopsis in _SYNOPSIS_PLACEHOLDERS:
+        synopsis = ""
     genre_primary = ai_data.get("genre_primary", "")
     genre_secondary = ai_data.get("genre_secondary")
     mood_tags = ai_data.get("mood_tags", [])
