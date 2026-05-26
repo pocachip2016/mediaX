@@ -13,6 +13,36 @@ source .venv/bin/activate 2>/dev/null || true
 
 case "$STEP" in
 
+  kmdb-poster-extract-fix)
+    echo "=== kmdb-poster-extract-fix: migration + pytest + 백필 후 DB 실측 ==="
+    # 1. 마이그레이션 적용
+    cd "$SCRIPT_DIR/.."
+    docker compose exec -T backend alembic upgrade head 2>&1 | tail -5
+    # 2. poster_urls / stillcut_urls 컬럼 존재 확인
+    COL_COUNT=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='kmdb_movie_cache' AND column_name IN ('poster_urls','stillcut_urls');")
+    [ "$COL_COUNT" -eq 2 ] || { echo "FAIL: poster_urls/stillcut_urls 컬럼 없음 (count=$COL_COUNT)"; exit 1; }
+    echo "  ✓ 컬럼 2개 확인"
+    # 3. pytest
+    cd "$BACKEND"
+    python3 -m pytest tests/workers/test_kmdb_extract.py -q
+    echo "  ✓ pytest pass"
+    # 4. 백필 실행
+    docker exec mediax-worker-1 celery -A workers.celery_app call \
+      workers.tasks.kmdb_cache.backfill_kmdb_poster_urls 2>&1 | tail -3
+    sleep 10
+    # 5. DB 실측 — poster_url_filled >= 2600
+    FILLED=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT COUNT(*) FROM kmdb_movie_cache WHERE poster_url IS NOT NULL;")
+    [ "$FILLED" -ge 2600 ] || { echo "FAIL: poster_url_filled=$FILLED (expected >=2600)"; exit 1; }
+    echo "  ✓ poster_url_filled=$FILLED"
+    URLS_FILLED=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT COUNT(*) FROM kmdb_movie_cache WHERE poster_urls IS NOT NULL AND poster_urls::jsonb != '[]'::jsonb;")
+    [ "$URLS_FILLED" -ge 2600 ] || { echo "FAIL: poster_urls_filled=$URLS_FILLED (expected >=2600)"; exit 1; }
+    echo "  ✓ poster_urls_filled=$URLS_FILLED"
+    echo "=== PASS ==="
+    ;;
+
   meta-intelligence-step1)
     echo "=== meta-intelligence-step1: migration 0011 + models ==="
     # 1. ENUM + 모델 import
