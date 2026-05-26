@@ -1,6 +1,6 @@
 # ADR-006 — Pipeline Stage Model (9-Stage + Manual Gates)
 
-- **Status**: Proposed (2026-05-21)
+- **Status**: Accepted (2026-05-26)
 - **Phase**: dev-pipeline-detailed-flow / Step 0
 - **Related**: ADR-002 (pipeline test console, 6-stage), ADR-003 (unified shell)
 - **Index**: 본 문서 = 결정만. 와이어프레임 → [wireframes.md], 데이터 모델 → [data-model.md]

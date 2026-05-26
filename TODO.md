@@ -4,21 +4,18 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [x] dev-pipeline-detailed-flow Step 1 — dpf-schema (enum 4 + Content 컬럼 4 + stage_event 테이블 + alembic 0022 + 10 pytest)
 
 ## Next (이번 마일스톤)
-- [ ] dev-pipeline-detailed-flow Steps 2~4 — record_stage_event() 헬퍼 + 진입점 5곳 훅 / timeline v2 API / pipeline board API
-- [ ] dev-pipeline-detailed-flow Steps 5~8 — PipelineBoard / GatePanel / ContentTimelineV2 / Live Event Log (FE)
-- [ ] dev-pipeline-detailed-flow Step 9 — cutover + 호환 검증 + wrap
+- [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)
 
 ## Later (백로그)
-- [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
 - [ ] 1.3 큐레이션 모듈 설계 확정
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-pipeline-detailed-flow Steps 0~9** — ADR-006(9-stage+6-gate) + schema/service/API + PipelineBoard Master-Detail + GatePanel Drawer + ContentTimelineV2 + Live Event Log 전체 완료 (2026-05-26)
 - [x] fix(content-edit): 편집/검수 화면 버그 수정 — apply-fields 422, manual source 단일화, resolve_metadata, InlineField 동기화, AI 추천 UI(모두적용·유사건·게이지·모드배지) (2026-05-21)
 - [x] **dev-detail-3col-layout Steps 0-5** — ADR-005 + view 2컬럼 + ThreeColumnShell + AI rec + inline edit + row alignment + conflict 한 줄 + 1:1 비율 + readOnly review (2026-05-20)
 - [x] dev-detail-unified-shell Steps 6-7 — 큐 통합 + wrap (2026-05-20)

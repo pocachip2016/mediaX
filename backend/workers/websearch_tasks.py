@@ -33,6 +33,9 @@ def discover_websearch_trending():
 
     db = SessionLocal()
     try:
+        from api.programming.metadata.models.content import PipelineStage, StageEventType
+        from api.programming.metadata.stage_events import record_stage_event
+
         source = WebSearchDiscoverySource(db)
 
         logger.info("[websearch_trending] starting 5 queries")
@@ -51,6 +54,9 @@ def discover_websearch_trending():
             f"matched={result.matched_existing}, "
             f"errors={result.errors}"
         )
+
+        # S6 stub: discovery 완료 후 S6 진입 로깅은 websearch_fill_task(Step 4) 에서 담당
+        # 현재는 event 없이 완료만 반환
 
         return {
             "status": "completed",

@@ -595,6 +595,9 @@ export const metadataApi = {
 
   getTimeline: (id: number) =>
     request<ContentTimeline>(`/api/programming/metadata/contents/${id}/timeline`),
+
+  getTimelineV2: (id: number) =>
+    request<ContentTimelineV2>(`/api/programming/metadata/contents/${id}/timeline`),
 }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
@@ -1224,6 +1227,136 @@ export interface ContentTimeline {
   content_type: string
   current_status: string
   stages: TimelineStage[]
+}
+
+// ── ContentTimelineV2 (ADR-006 9-stage) ──────────────────────
+
+export interface StageSourceOut {
+  source: string
+  result: "ok" | "hit" | "miss" | "error" | "skipped"
+  latency_ms: number | null
+  detail: Record<string, unknown> | null
+}
+
+export interface StageOut {
+  stage: string
+  status: "done" | "active" | "pending"
+  at: string | null
+  duration_ms: number | null
+  sources: StageSourceOut[]
+}
+
+export interface ContentTimelineV2 extends ContentTimeline {
+  current_stage: string | null
+  intake_channel: string | null
+  pipeline_stages: StageOut[]
+}
+
+// ── 파이프라인 보드 타입 (ADR-006) ────────────────────────────
+
+export interface ChannelStats {
+  count: number
+  last_at: string | null
+  status: "ok" | "stale"
+}
+
+export interface StageSourceProgress {
+  source: string
+  result: "ok" | "hit" | "miss" | "error" | "pending"
+  latency_ms: number | null
+}
+
+export interface StageContentItem {
+  id: number
+  title: string
+  entered_at: string | null
+  seconds_in_stage: number | null
+  sources: StageSourceProgress[]
+}
+
+export interface StageCount {
+  count: number
+  total_published?: number | null
+  top_contents: StageContentItem[]
+  avg_seconds?: number | null
+  error_count: number
+}
+
+export interface GateInfo {
+  mode: "manual" | "auto"
+  pending: number
+}
+
+export interface AlertInfo {
+  failed_queue: number
+  rejected_archive: number
+  enrichment_blocked: number
+}
+
+export interface PipelineBoardResponse {
+  channels_24h: Record<string, ChannelStats>
+  stages: Record<string, StageCount>
+  gates: Record<string, GateInfo>
+  alerts: AlertInfo
+}
+
+export interface StageEventOut {
+  id: number
+  content_id: number
+  stage: string
+  event_type: string
+  source: string | null
+  started_at: string
+  actor: string
+  latency_ms: number | null
+  error_text: string | null
+}
+
+export interface PaginatedStageEvents {
+  items: StageEventOut[]
+  next_cursor: number | null
+  total: number
+}
+
+export interface GateAdvanceRequest {
+  content_ids?: number[]
+  simulate?: boolean
+  if_match?: number | null
+}
+
+export interface GateAdvanceResponse {
+  advanced: number
+  skipped: number
+  failed: number
+  next_stage: string
+  events: unknown[]
+}
+
+export const pipelineApi = {
+  getBoard: () =>
+    request<PipelineBoardResponse>("/api/pipeline/board"),
+
+  getEvents: (params?: { since?: number; limit?: number; stage?: string; source?: string; event_type?: string }) => {
+    const q = new URLSearchParams()
+    if (params?.since) q.set("since", String(params.since))
+    if (params?.limit) q.set("limit", String(params.limit))
+    if (params?.stage) q.set("stage", params.stage)
+    if (params?.source) q.set("source", params.source)
+    if (params?.event_type) q.set("event_type", params.event_type)
+    return request<PaginatedStageEvents>(`/api/pipeline/events?${q}`)
+  },
+
+  advanceGate: (gateId: string, req: GateAdvanceRequest) =>
+    request<GateAdvanceResponse>(`/api/pipeline/gate/${gateId}/advance`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  toggleGateMode: (gateId: string, mode: "manual" | "auto") =>
+    request<{ gate_id: string; mode: "manual" | "auto" }>(`/api/pipeline/gate/${gateId}/mode`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 }
 
 const _PT_TOKEN = process.env.NEXT_PUBLIC_PIPELINE_TEST_TOKEN ?? ""

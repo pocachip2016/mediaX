@@ -23,57 +23,65 @@
       "step": 2,
       "name": "dpf-service",
       "phase": "B",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "record_stage_event() + advance_gate() + 5 entry-point hooks (manual/email/enrich/tmdb/kobis) — pytest 7 pass",
+      "completed_at": "2026-05-26T14:33:00+09:00"
     },
     {
       "step": 3,
       "name": "dpf-timeline-api",
       "phase": "B",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "schemas_timeline.py (StageSourceOut/StageOut/ContentTimelineV2) + router.py _build_pipeline_stages() helper + 6 pytest (empty/flow/sources/failed/v1-compat/intake-channel)",
+      "completed_at": "2026-05-26T14:42:00+09:00"
     },
     {
       "step": 4,
       "name": "dpf-board-api",
       "phase": "B",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "GET /api/pipeline/board + POST /gate/{id}/advance (If-Match 409) + GET /events paging + POST /gate/{id}/mode — pytest 5 pass",
+      "completed_at": "2026-05-26T15:10:00+09:00"
     },
     {
       "step": 5,
       "name": "dpf-board-fe",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "Master-Detail Control Center: 좌측 9-stage flow + 6-gate advance, 우측 LiveEventLog (3초 폴링) + drill-down. 7개 컴포넌트(ChannelCard/StageNode/GateButton/PipelineBoard/LiveEventLog/StageContentList/DetailPanel) + pipelineApi 타입 + 30초 auto-refresh + mock fallback. ADR-006 Step 5a(backend)/5b(shell)/5c(detail) 완료.",
+      "completed_at": "2026-05-26T15:45:00+09:00"
     },
     {
       "step": 6,
       "name": "dpf-gate-panel",
       "phase": "C",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "GatePanel Drawer(Sheet) — 5 슬롯(헤더/대상리스트/context/모드/액션), Gate1/Auto/Gate3/Gate5/Gate6 context 컴포넌트, simulate+선택+전체진행 3 액션, 409 충돌 표시. PipelineBoard GateButton → openGate 상태로 연결.",
+      "completed_at": "2026-05-26T16:30:00+09:00"
     },
     {
       "step": 7,
       "name": "dpf-timeline-fe",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "ContentTimelineV2 컴포넌트 — 9-stage Collapsible 타임라인, 행 클릭 source tree + raw JSON 확장, localStorage collapsed 저장. ContentShell [8]에 추가. api.ts ContentTimelineV2 타입 + getTimelineV2() 함수 추가.",
+      "completed_at": "2026-05-26T17:00:00+09:00"
     },
     {
       "step": 8,
       "name": "dpf-event-log",
       "phase": "D",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "Live Event Log 전체 페이지 /monitoring/pipeline/log — StageEventStream(2초 폴링/500건/일시정지/CSV), StageEventFilters(stage/source/eventType), ThroughputMiniChart(CSS bar). 사이드바 메뉴 추가.",
+      "completed_at": "2026-05-26T17:20:00+09:00"
     },
     {
       "step": 9,
       "name": "dpf-cutover",
       "phase": "E",
-      "status": "pending",
-      "summary": ""
+      "status": "completed",
+      "summary": "status_view.py(re-export SSOT) + derive_status_from_stage 매핑 검증. ADR-006 Proposed→Accepted. TODO.md Done 추가. CLAUDE.md 구현현황 갱신. 14 pytest pass.",
+      "completed_at": "2026-05-26T17:40:00+09:00"
     }
   ]
 }

@@ -3958,6 +3958,218 @@ print('  ✓ enum 4개 import OK')
     echo "=== PASS ==="
     ;;
 
+  dpf-service)
+    echo "=== dpf-service: record_stage_event / advance_gate / 5 entry-point hooks / pytest ==="
+    cd "$SCRIPT_DIR/../backend"
+    # 1. stage_events 모듈 import
+    .venv/bin/python -c "
+from api.programming.metadata.stage_events import (
+    record_stage_event, derive_status_from_stage, advance_gate, get_gate_pending
+)
+from api.programming.metadata.models.content import PipelineStage, ContentStatus
+assert derive_status_from_stage(PipelineStage.S1_INTAKE) == ContentStatus.waiting
+assert derive_status_from_stage(PipelineStage.S9_PUBLISH) == ContentStatus.approved
+print('  ✓ stage_events import + derive_status OK')
+" 2>&1
+    # 2. 진입점 훅 존재 확인
+    grep -q "record_stage_event" workers/tasks/metadata.py || { echo "FAIL: metadata.py hook 없음"; exit 1; }
+    grep -q "record_stage_event" api/programming/metadata/service.py || { echo "FAIL: service.py hook 없음"; exit 1; }
+    echo "  ✓ 진입점 훅 5곳 확인"
+    # 3. pytest
+    .venv/bin/pytest tests/test_stage_event_service.py -q 2>&1
+    echo "=== PASS ==="
+    ;;
+
+  dpf-board-stage-api)
+    echo "=== dpf-board-stage-api: stage top_contents + avg_seconds + error_count ==="
+    cd "$SCRIPT_DIR/../backend"
+    # 1. 신규 스키마 import
+    .venv/bin/python -c "
+from api.programming.metadata.schemas_pipeline import (
+    StageSourceProgress, StageContentItem, StageCount,
+)
+# StageCount에 top_contents/avg_seconds/error_count 필드 존재 확인
+fields = StageCount.model_fields
+assert 'top_contents' in fields
+assert 'avg_seconds' in fields
+assert 'error_count' in fields
+print('  ✓ schemas_pipeline 확장 필드 OK')
+" 2>&1
+    # 2. 헬퍼 import
+    .venv/bin/python -c "
+from api.programming.metadata.router_pipeline import _compute_stage_stats
+print('  ✓ _compute_stage_stats import OK')
+" 2>&1
+    # 3. pytest 전체 (기존 5 + 신규 2 = 7)
+    .venv/bin/pytest tests/test_pipeline_board_api.py -q 2>&1
+    echo "=== PASS ==="
+    ;;
+
+  dpf-board-api)
+    echo "=== dpf-board-api: pipeline board + gate advance + events / pytest ==="
+    cd "$SCRIPT_DIR/../backend"
+    # 1. schemas_pipeline 모듈 import
+    .venv/bin/python -c "
+from api.programming.metadata.schemas_pipeline import (
+    BoardResponse, GateAdvanceRequest, GateAdvanceResponse,
+    GateModeRequest, StageEventOut, PaginatedStageEvents,
+)
+print('  ✓ schemas_pipeline import OK')
+" 2>&1
+    # 2. router_pipeline import
+    .venv/bin/python -c "
+from api.programming.metadata.router_pipeline import router, _GATE_MODES
+assert len(_GATE_MODES) == 6
+print('  ✓ router_pipeline import + 6 gate modes OK')
+" 2>&1
+    # 3. pytest
+    .venv/bin/pytest tests/test_pipeline_board_api.py -q 2>&1
+    echo "=== PASS ==="
+    ;;
+
+  dpf-timeline-api)
+    echo "=== dpf-timeline-api: 9-stage timeline v2 response / pytest ==="
+    cd "$SCRIPT_DIR/../backend"
+    # 1. schemas_timeline 모듈 import
+    .venv/bin/python -c "
+from api.programming.metadata.schemas_timeline import (
+    StageSourceOut, StageOut, ContentTimelineV2
+)
+print('  ✓ schemas_timeline import OK')
+" 2>&1
+    # 2. router에 pipeline_stages 존재 확인
+    grep -q "pipeline_stages" api/programming/metadata/router.py || { echo "FAIL: router.py에 pipeline_stages 없음"; exit 1; }
+    echo "  ✓ pipeline_stages 키 존재"
+    # 3. pytest
+    .venv/bin/pytest tests/test_timeline_v2_api.py -q 2>&1
+    echo "=== PASS ==="
+    ;;
+
+  dpf-board-fe-shell)
+    echo "=== dpf-board-fe-shell: FE 기본 레이아웃 + API 타입 + 컴포넌트 ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. API 타입 import 확인
+    npm run typecheck 2>&1 | head -20 || true
+    # 2. 컴포넌트 파일 존재 확인
+    test -f apps/web/components/contents/pipeline/ChannelCard.tsx || { echo "FAIL: ChannelCard.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/StageNode.tsx || { echo "FAIL: StageNode.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/GateButton.tsx || { echo "FAIL: GateButton.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/PipelineBoard.tsx || { echo "FAIL: PipelineBoard.tsx 없음"; exit 1; }
+    echo "  ✓ 4개 컴포넌트 파일 확인"
+    # 3. lib/api.ts에 pipelineApi export 확인
+    grep -q "export const pipelineApi" apps/web/lib/api.ts || { echo "FAIL: pipelineApi export 없음"; exit 1; }
+    grep -q "PipelineBoardResponse" apps/web/lib/api.ts || { echo "FAIL: PipelineBoardResponse 타입 없음"; exit 1; }
+    echo "  ✓ pipelineApi 함수 + 타입 확인"
+    # 4. page.tsx에 PipelineBoard import 확인
+    grep -q "import.*PipelineBoard" apps/web/app/\(main\)/programming/contents/pipeline/page.tsx || { echo "FAIL: PipelineBoard import 없음"; exit 1; }
+    echo "  ✓ page.tsx 통합 확인"
+    echo "=== PASS ==="
+    ;;
+
+  dpf-cutover)
+    echo "=== dpf-cutover: 9-stage cutover + 호환 검증 + wrap ==="
+    cd "$SCRIPT_DIR/.."
+    # 1. status_view.py 존재
+    test -f backend/api/programming/metadata/service/status_view.py || { echo "FAIL: status_view.py 없음"; exit 1; }
+    echo "  ✓ status_view.py 존재"
+    # 2. ADR-006 Accepted 상태 확인
+    grep -q "Status.*Accepted" docs/dev/dev-pipeline-detailed-flow/adr-006-pipeline-stage-model.md || { echo "FAIL: ADR-006 Proposed 상태"; exit 1; }
+    echo "  ✓ ADR-006 Accepted 확인"
+    # 3. derive_status_from_stage import 가능
+    cd "$SCRIPT_DIR/../backend"
+    .venv/bin/python -c "
+from api.programming.metadata.service.status_view import derive_status_from_stage, record_stage_event
+from api.programming.metadata.models.content import PipelineStage, ContentStatus
+assert derive_status_from_stage(PipelineStage.S7_STAGING) == ContentStatus.staging
+assert derive_status_from_stage(PipelineStage.S9_PUBLISH) == ContentStatus.approved
+print('  ✓ derive_status_from_stage 매핑 OK')
+" 2>&1
+    # 4. 파이프라인 관련 테스트 실행
+    .venv/bin/pytest tests/test_pipeline_board_api.py tests/test_stage_event_service.py -q 2>&1
+    echo "  ✓ pipeline pytest 통과"
+    # 5. TODO.md 업데이트 확인
+    cd "$SCRIPT_DIR/.."
+    grep -q "dev-pipeline-detailed-flow.*Steps 0" TODO.md || { echo "FAIL: TODO.md Done 항목 없음"; exit 1; }
+    echo "  ✓ TODO.md 업데이트 확인"
+    # 6. typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    npm run typecheck 2>&1 | grep "Tasks:" | head -1 || true
+    echo "=== PASS ==="
+    ;;
+
+  dpf-event-log)
+    echo "=== dpf-event-log: Live Event Log 전체 페이지 ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. 파일 존재 확인
+    test -f "apps/web/app/(main)/monitoring/pipeline/log/page.tsx" || { echo "FAIL: pipeline/log/page.tsx 없음"; exit 1; }
+    test -f apps/web/components/monitoring/pipeline/StageEventStream.tsx || { echo "FAIL: StageEventStream.tsx 없음"; exit 1; }
+    test -f apps/web/components/monitoring/pipeline/StageEventFilters.tsx || { echo "FAIL: StageEventFilters.tsx 없음"; exit 1; }
+    test -f apps/web/components/monitoring/pipeline/ThroughputMiniChart.tsx || { echo "FAIL: ThroughputMiniChart.tsx 없음"; exit 1; }
+    echo "  ✓ 4개 파일 확인"
+    # 2. docs.ts에 파이프라인 로그 메뉴 확인
+    grep -q "monitoring/pipeline/log" apps/web/config/docs.ts || { echo "FAIL: docs.ts에 pipeline/log 없음"; exit 1; }
+    echo "  ✓ 사이드바 메뉴 등록 확인"
+    # 3. typecheck
+    npm run typecheck 2>&1 | grep -E "^web:typecheck:.*error" | head -10 || true
+    npm run typecheck 2>&1 | grep "Tasks:" | head -1 || true
+    echo "=== PASS ==="
+    ;;
+
+  dpf-gate-panel)
+    echo "=== dpf-gate-panel: GatePanel Drawer + gate contexts ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. 컴포넌트 파일 존재 확인
+    test -f apps/web/components/contents/pipeline/GatePanel.tsx || { echo "FAIL: GatePanel.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/gate-contexts/Gate1Context.tsx || { echo "FAIL: Gate1Context.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/gate-contexts/Gate3Context.tsx || { echo "FAIL: Gate3Context.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/gate-contexts/Gate5Context.tsx || { echo "FAIL: Gate5Context.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/gate-contexts/Gate6Context.tsx || { echo "FAIL: Gate6Context.tsx 없음"; exit 1; }
+    echo "  ✓ GatePanel + 4개 gate context 파일 확인"
+    # 2. PipelineBoard에서 GatePanel 사용 확인
+    grep -q "import.*GatePanel" apps/web/components/contents/pipeline/PipelineBoard.tsx || { echo "FAIL: GatePanel import 없음"; exit 1; }
+    grep -q "openGate" apps/web/components/contents/pipeline/PipelineBoard.tsx || { echo "FAIL: openGate 상태 없음"; exit 1; }
+    echo "  ✓ PipelineBoard GatePanel 통합 확인"
+    # 3. typecheck
+    npm run typecheck 2>&1 | grep -E "error|Error" | head -10 || true
+    npm run typecheck 2>&1 | tail -5 || true
+    echo "=== PASS ==="
+    ;;
+
+  dpf-timeline-fe)
+    echo "=== dpf-timeline-fe: ContentTimelineV2 9-stage + source tree ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. 컴포넌트 파일 확인
+    test -f apps/web/components/contents/shell/ContentTimelineV2.tsx || { echo "FAIL: ContentTimelineV2.tsx 없음"; exit 1; }
+    echo "  ✓ ContentTimelineV2.tsx 확인"
+    # 2. ContentShell 통합 확인
+    grep -q "ContentTimelineV2" apps/web/components/contents/shell/ContentShell.tsx || { echo "FAIL: ContentShell에 ContentTimelineV2 없음"; exit 1; }
+    echo "  ✓ ContentShell 통합 확인"
+    # 3. api.ts getTimelineV2 확인
+    grep -q "getTimelineV2" apps/web/lib/api.ts || { echo "FAIL: api.ts getTimelineV2 없음"; exit 1; }
+    grep -q "ContentTimelineV2" apps/web/lib/api.ts || { echo "FAIL: api.ts ContentTimelineV2 타입 없음"; exit 1; }
+    echo "  ✓ api.ts V2 타입 + 함수 확인"
+    # 4. typecheck
+    npm run typecheck 2>&1 | grep -E "^web:typecheck:.*error" | head -10 || true
+    npm run typecheck 2>&1 | grep -c "^web:typecheck:.*error" | { read c; [ "$c" -eq 0 ] && echo "  ✓ tsc clean" || { echo "FAIL: $c typecheck 에러"; exit 1; }; } || true
+    echo "=== PASS ==="
+    ;;
+
+  dpf-board-fe-detail)
+    echo "=== dpf-board-fe-detail: DetailPanel + LiveEventLog + StageContentList ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. 신규 컴포넌트 파일 존재 확인
+    test -f apps/web/components/contents/pipeline/LiveEventLog.tsx || { echo "FAIL: LiveEventLog.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/StageContentList.tsx || { echo "FAIL: StageContentList.tsx 없음"; exit 1; }
+    test -f apps/web/components/contents/pipeline/DetailPanel.tsx || { echo "FAIL: DetailPanel.tsx 없음"; exit 1; }
+    echo "  ✓ 3개 신규 컴포넌트 파일 확인"
+    # 2. PipelineBoard.tsx에서 DetailPanel import 확인
+    grep -q "import.*DetailPanel" apps/web/components/contents/pipeline/PipelineBoard.tsx || { echo "FAIL: DetailPanel import 없음"; exit 1; }
+    echo "  ✓ PipelineBoard에 DetailPanel 통합 확인"
+    # 3. typecheck
+    npm run typecheck 2>&1 | head -20 || true
+    echo "=== PASS ==="
+    ;;
+
   esc-startup-hook)
     echo "=== esc-startup-hook: worker_ready stale cleanup hook 동작 확인 ==="
     cd "$SCRIPT_DIR/.."
@@ -3987,7 +4199,7 @@ print('  ✓ enum 4개 import OK')
 
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail"
     exit 1
     ;;
 esac

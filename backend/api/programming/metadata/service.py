@@ -37,13 +37,19 @@ from api.programming.metadata.schemas import (
 # ── Content CRUD ──────────────────────────────────────────
 
 def create_content(db: Session, data: ContentCreate) -> Content:
+    from api.programming.metadata.models.content import IntakeChannel, PipelineStage, StageEventType
+    from api.programming.metadata.stage_events import record_stage_event
     content_type = ContentType(data.content_type or "movie")
     if content_type in {ContentType.season, ContentType.episode} and not data.parent_id:
         raise ValueError(f"parent_id required for {content_type.value}")
 
     content = Content(**data.model_dump())
+    if not content.intake_channel:
+        content.intake_channel = IntakeChannel.MANUAL
     db.add(content)
     db.flush()
+    record_stage_event(db, content.id, PipelineStage.S1_INTAKE, StageEventType.ENTERED,
+                       source="manual", actor="user")
     meta = ContentMetadata(content_id=content.id, quality_score=0.0)
     db.add(meta)
     db.commit()
@@ -1797,18 +1803,15 @@ def list_tmdb_cache_recent(db, kind: str, limit: int) -> list:
 # ── 외부 소스 (KOBIS / KMDB) ──────────────────────────────────────────────────
 
 def get_external_source_stats(db, source_type: str) -> dict:
-    """KOBIS 또는 KMDB 통계: external_meta_sources 건수 + sync_log 집계."""
+    """KOBIS 또는 KMDB 통계: 로컬 캐시 테이블 건수 + sync_log 집계."""
     from datetime import datetime, timedelta
     from collections import defaultdict
-    from api.programming.metadata.models import ExternalMetaSource, ExternalSourceType, TmdbSyncLog, TmdbSyncSource
-    from sqlalchemy import func
+    from api.programming.metadata.models import TmdbSyncLog, TmdbSyncSource
 
-    ext_type = ExternalSourceType(source_type)
-    total = db.query(ExternalMetaSource).filter(ExternalMetaSource.source_type == ext_type).count()
-
-    # KOBIS만 sync_log가 있음
     kobis_sources = [TmdbSyncSource.kobis_daily, TmdbSyncSource.kobis_backfill]
     if source_type == "kobis":
+        from api.programming.metadata.models.kobis_cache import KobisMovieCache
+        total = db.query(KobisMovieCache).count()
         sync_sources = kobis_sources
         last_log = (
             db.query(TmdbSyncLog)

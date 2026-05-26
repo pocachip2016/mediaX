@@ -141,6 +141,8 @@ def _save_email_and_extract(db, message_id: str, subject: str, sender: str, body
 
     # 추출된 제목마다 Content(waiting) 생성
     for title in extracted.get("titles", []):
+        from api.programming.metadata.models.content import IntakeChannel, PipelineStage, StageEventType
+        from api.programming.metadata.stage_events import record_stage_event
         content = Content(
             title=title,
             content_type=ContentType.movie,
@@ -148,9 +150,12 @@ def _save_email_and_extract(db, message_id: str, subject: str, sender: str, body
             cp_name=extracted.get("cp_name"),
             production_year=extracted.get("year"),
             cp_email_id=log.id,
+            intake_channel=IntakeChannel.EMAIL_POLL,
         )
         db.add(content)
         db.flush()
+        record_stage_event(db, content.id, PipelineStage.S1_INTAKE, StageEventType.ENTERED,
+                           source="email_poll", actor="email_poller")
         meta = ContentMetadata(content_id=content.id, quality_score=0.0)
         db.add(meta)
 
@@ -532,10 +537,16 @@ def enrich_content_metadata(self, content_id: int):
     ContentMetadata 직접 쓰기 없음 (Aggregator step7 책임).
     """
     from api.meta_core.enrich import enrich_content as _enrich_content
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+    from api.programming.metadata.stage_events import record_stage_event
     db = SessionLocal()
     try:
+        record_stage_event(db, content_id, PipelineStage.S3_LLM_EXTRACT, StageEventType.ENTERED,
+                           source="ollama", actor="system")
         result = _enrich_content(content_id, db)
         db.commit()
+        record_stage_event(db, content_id, PipelineStage.S3_LLM_EXTRACT, StageEventType.COMPLETED,
+                           source="ollama", actor="system")
         logger.info(
             "[enrich] content_id=%d candidates=%d edges=%d suggestions=%d skipped=%s",
             content_id, result.candidates_upserted, result.match_edges_created,
@@ -543,6 +554,12 @@ def enrich_content_metadata(self, content_id: int):
         )
     except Exception as exc:
         logger.error(f"[enrich] content_id={content_id} 실패: {exc}")
+        try:
+            record_stage_event(db, content_id, PipelineStage.S3_LLM_EXTRACT, StageEventType.FAILED,
+                               source="ollama", error=str(exc)[:500], actor="system")
+            db.commit()
+        except Exception:
+            pass
         raise self.retry(exc=exc)
     finally:
         db.close()
@@ -568,13 +585,26 @@ async def _async_enrich_content(content_id: int, db):
     tmdb_result = None
     kobis_result = None
 
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+    from api.programming.metadata.stage_events import record_stage_event
+
     # ── TMDB 검색 ──────────────────────────────────────────
     if tmdb_key:
+        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, StageEventType.ENTERED,
+                           source="tmdb", actor="system")
         tmdb_result = await _tmdb_search_and_save(content, db, tmdb_key)
+        _tmdb_et = StageEventType.COMPLETED if tmdb_result else StageEventType.SKIPPED
+        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, _tmdb_et,
+                           source="tmdb", actor="system")
 
     # ── KOBIS 검색 ─────────────────────────────────────────
     if kobis_key and content.content_type == ContentType.movie:
+        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, StageEventType.ENTERED,
+                           source="kobis", actor="system")
         kobis_result = await _kobis_search_and_save(content, db, kobis_key)
+        _kobis_et = StageEventType.COMPLETED if kobis_result else StageEventType.SKIPPED
+        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, _kobis_et,
+                           source="kobis", actor="system")
 
     # ── ContentMetadata 업데이트 ───────────────────────────
     meta = content.metadata_record
