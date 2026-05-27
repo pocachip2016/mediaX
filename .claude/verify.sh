@@ -2671,6 +2671,38 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  distribution-step3a)
+    echo "=== distribution-step3a: ServiceCategory CRUD API + pytest ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 스키마 클래스 확인 ---"
+    .venv/bin/python3 -c "
+from api.distribution.schemas import (
+    ServiceCategoryCreate, ServiceCategoryUpdate,
+    ServiceCategoryItemCreate, ServiceCategoryItemOut,
+    ServiceCategoryWithItemsOut, ReorderRequest,
+)
+print('  ✓ 모든 스키마 import OK')
+" 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: schemas import"; exit 1; }
+
+    echo "--- service 함수 확인 ---"
+    .venv/bin/python3 -c "
+from api.distribution.service import (
+    create_category, get_category_or_404, get_category_with_items,
+    update_category, delete_category, add_item, remove_item, reorder_items,
+)
+print('  ✓ 모든 service 함수 import OK')
+" 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: service import"; exit 1; }
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/test_distribution_step3.py -v 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   distribution-step3.0)
     echo "=== distribution-step3.0: services-table ==="
     cd "$BACKEND" || exit 1
@@ -4369,7 +4401,7 @@ print('  ✓ derive_status_from_stage 매핑 OK')
 
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail"
     exit 1
     ;;
 esac

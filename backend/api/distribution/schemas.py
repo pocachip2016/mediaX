@@ -65,3 +65,50 @@ class SyncStatusOut(BaseModel):
     channel: str
     total_rows: int
     last_synced_at: Optional[datetime] = None
+
+
+class ServiceCategoryCreate(BaseModel):
+    name: str
+    category_type: str
+    platform: str
+    position: int = 0
+    is_active: bool = True
+
+
+class ServiceCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    category_type: Optional[str] = None
+    platform: Optional[str] = None
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ServiceCategoryItemCreate(BaseModel):
+    content_id: int
+    rank: int
+    score: Optional[float] = None
+
+
+class ServiceCategoryItemOut(BaseModel):
+    id: int
+    category_id: int
+    content_id: int
+    content_title: Optional[str] = None
+    rank: int
+    score: Optional[float] = None
+    added_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ServiceCategoryWithItemsOut(ServiceCategoryOut):
+    items: list[ServiceCategoryItemOut] = []
+
+
+class ReorderItem(BaseModel):
+    id: int
+    rank: int
+
+
+class ReorderRequest(BaseModel):
+    items: list[ReorderItem]

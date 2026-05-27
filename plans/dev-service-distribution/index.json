@@ -32,7 +32,9 @@
     {
       "step": 3,
       "name": "service-category",
-      "status": "pending"
+      "status": "completed",
+      "summary": "ServiceCategory CRUD API + 7개 엔드포인트 (create/read/update/delete/add-item/remove-item/reorder) + 20 pytest pass",
+      "completed_at": "2026-05-27T21:17:02+09:00"
     },
     {
       "step": 4,

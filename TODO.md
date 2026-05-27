@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-service-distribution Step 3 — service-category (ServiceCategory CRUD + 큐레이션 UI)
+- [x] dev-service-distribution Step 3 — service-category (ServiceCategory CRUD + 큐레이션 UI)
 
 ## Next (이번 마일스톤)
 (대기 중)
