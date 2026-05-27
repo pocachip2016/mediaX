@@ -8,6 +8,23 @@ from sqlalchemy.sql import func
 from shared.database import Base
 
 
+class Service(Base):
+    __tablename__ = "services"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
+    kind = Column(String(20), nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_services_kind", "kind"),
+    )
+
+
 class ContentDistribution(Base):
     __tablename__ = "content_distributions"
 

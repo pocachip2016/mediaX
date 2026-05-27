@@ -25,12 +25,16 @@
     {
       "step": 2,
       "name": "ott-popularity-sync",
-      "status": "pending"
+      "status": "completed",
+      "summary": "OttSource ABC + OttItem(base/matcher/writer/runner) + WatchaTopSource(SSR HTML) + NetflixTudumSource(Tudum TSV KR필터) + Wave/Tving stub 2건 + 4 Celery 태스크(max_retries=2) + Beat 4건(06:40/06:50/07:10/07:20) + GET /sync/status(빈DB 4채널 보장) + pytest 19 pass",
+      "completed_at": "2026-05-27T00:00:00+09:00"
     },
     {
       "step": 3,
       "name": "service-category",
-      "status": "pending"
+      "status": "completed",
+      "summary": "ServiceCategory CRUD API + 7개 엔드포인트 (create/read/update/delete/add-item/remove-item/reorder) + 20 pytest pass",
+      "completed_at": "2026-05-27T21:17:02+09:00"
     },
     {
       "step": 4,
