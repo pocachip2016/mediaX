@@ -48,3 +48,9 @@ class DeviceVariantOut(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class SyncStatusOut(BaseModel):
+    channel: str
+    total_rows: int
+    last_synced_at: Optional[datetime] = None

@@ -15,6 +15,7 @@ celery_app = Celery(
         "workers.tasks.kmdb_cache",        # KMDB 로컬 캐시 백필·quota-aware Beat
         "workers.tasks.discovery_tasks",   # Phase C SEED 발굴
         "workers.websearch_tasks",         # Phase D WebSearch SEED 발굴
+        "workers.tasks.distribution",      # OTT popularity sync (Watcha/Netflix/Wave/Tving)
     ],
 )
 
@@ -124,6 +125,23 @@ celery_app.conf.update(
         "backfill-tmdb-historical": {
             "task": "workers.tasks.tmdb_cache.tmdb_quota_backfill_tick",
             "schedule": crontab(hour=8, minute=30),
+        },
+        # OTT popularity sync — 06:40~07:20 KST (06:30 backfill-kobis / 07:00 link-kmdb 충돌 회피)
+        "sync-ott-watcha": {
+            "task": "workers.tasks.distribution.sync_ott_watcha",
+            "schedule": crontab(hour=6, minute=40),
+        },
+        "sync-ott-netflix": {
+            "task": "workers.tasks.distribution.sync_ott_netflix",
+            "schedule": crontab(hour=6, minute=50),
+        },
+        "sync-ott-wave": {
+            "task": "workers.tasks.distribution.sync_ott_wave",
+            "schedule": crontab(hour=7, minute=10),
+        },
+        "sync-ott-tving": {
+            "task": "workers.tasks.distribution.sync_ott_tving",
+            "schedule": crontab(hour=7, minute=20),
         },
     },
     broker_connection_retry_on_startup=True,

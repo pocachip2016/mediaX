@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from shared.database import get_db
-from .schemas import DistributionChannelOut, ServiceCategoryOut, DeviceVariantOut
+from .schemas import DistributionChannelOut, ServiceCategoryOut, DeviceVariantOut, SyncStatusOut
 from . import service
 
 router = APIRouter()
@@ -25,3 +25,8 @@ def get_categories(
 @router.get("/contents/{content_id}/devices", response_model=list[DeviceVariantOut])
 def get_content_devices(content_id: int, db: Session = Depends(get_db)):
     return service.get_devices_for_content(db, content_id)
+
+
+@router.get("/sync/status", response_model=list[SyncStatusOut])
+def get_sync_status(db: Session = Depends(get_db)):
+    return service.get_sync_status(db)

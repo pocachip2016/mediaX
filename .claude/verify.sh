@@ -2584,6 +2584,93 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  distribution-step2.1)
+    echo "=== distribution-step2.1: ott-base-infra (base/matcher/writer/runner) ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    for f in api/distribution/ott/__init__.py api/distribution/ott/base.py api/distribution/ott/matcher.py api/distribution/ott/writer.py api/distribution/ott/runner.py; do
+      [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+      echo "  ✓ $f"
+    done
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_ott_base.py -v 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  distribution-step2.2)
+    echo "=== distribution-step2.2: watcha-top-source ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    [ -f "api/distribution/ott/watcha.py" ] || { echo "MISSING: watcha.py"; exit 1; }
+    echo "  ✓ api/distribution/ott/watcha.py"
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_ott_watcha.py -v 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  distribution-step2.3)
+    echo "=== distribution-step2.3: netflix-tudum-source ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    [ -f "api/distribution/ott/netflix.py" ] || { echo "MISSING: netflix.py"; exit 1; }
+    echo "  ✓ api/distribution/ott/netflix.py"
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_ott_netflix.py -v 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  distribution-step2.4)
+    echo "=== distribution-step2.4: kr-otts-stub (Wave/Tving) ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    [ -f "api/distribution/ott/wave.py" ] || { echo "MISSING: wave.py"; exit 1; }
+    [ -f "api/distribution/ott/tving.py" ] || { echo "MISSING: tving.py"; exit 1; }
+    echo "  ✓ api/distribution/ott/wave.py"
+    echo "  ✓ api/distribution/ott/tving.py"
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_ott_kr_stubs.py -v 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  distribution-step2.5)
+    echo "=== distribution-step2.5: beat-and-monitoring ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    [ -f "workers/tasks/distribution.py" ] || { echo "MISSING: workers/tasks/distribution.py"; exit 1; }
+    echo "  ✓ workers/tasks/distribution.py"
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_sync_status_api.py -v 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "--- import 검증 ---"
+    .venv/bin/python3 -c "from workers.tasks.distribution import sync_ott_watcha, sync_ott_netflix, sync_ott_wave, sync_ott_tving; print('  ✓ tasks import OK')" 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: tasks import"; exit 1; }
+
+    echo "--- Beat 등록 검증 ---"
+    .venv/bin/python3 -c "from workers.celery_app import celery_app; s=celery_app.conf.beat_schedule; [__import__('sys').exit(1) for k in ['sync-ott-watcha','sync-ott-netflix','sync-ott-wave','sync-ott-tving'] if k not in s]; print('  ✓ beat_schedule OK')" 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: beat_schedule"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   recommend-step1.3)
     echo "=== recommend-step1.3: ShortMetaGrid + cells ==="
     MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
