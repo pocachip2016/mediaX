@@ -19,6 +19,14 @@
       "status": "completed",
       "summary": "KMDB raw_json pipe-separated string 파싱 버그 수정 + _split_pipe_urls 헬퍼 추가 + poster_urls / stillcut_urls JSON 컬럼 신설 (migration 0023) + 기존 3,098건 백필 완료 (2,606건 실제 채움). 10개 pytest pass. 하위호환: poster_url (단일 URL) 유지.",
       "completed_at": "2026-05-26"
+    },
+    {
+      "step": 3,
+      "name": "kmdb-content-image-sync",
+      "phase": "implementation",
+      "status": "completed",
+      "summary": "sync_kmdb_poster_to_content_images 태스크 + 07:15 Beat + 7 tests 모두 pass. ExternalMetaSource(kmdb) 링크된 KmdbMovieCache → ContentImage(poster/stillcut) 멱등 동기화. is_primary 규칙: 첫 poster_url이 primary (기존 primary 없을 때만), 나머지는 후보. 07:00 link-kmdb 직후 07:15 실행.",
+      "completed_at": "2026-05-27"
     }
   ],
   "follow_up_candidates": [

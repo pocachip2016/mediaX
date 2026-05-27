@@ -4,6 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
+- [x] **dev-external-poster-audit Step 3** — kmdb-content-image-sync (KMDB cache → ContentImage multi-URL + Beat 07:15 KST)
 
 ## Next (이번 마일스톤)
 - [ ] dev-service-distribution Step 2 — ott-popularity-sync (Watcha/Netflix/Wave/Tving Top10)

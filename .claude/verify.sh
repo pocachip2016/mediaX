@@ -43,6 +43,38 @@ case "$STEP" in
     echo "=== PASS ==="
     ;;
 
+  kmdb-content-image-sync)
+    echo "=== kmdb-content-image-sync: task + pytest + Beat 등록 ==="
+    cd "$BACKEND"
+    # 1. 태스크 import
+    python3 -c "
+from workers.tasks.kmdb_cache import sync_kmdb_poster_to_content_images
+print('  ✓ sync_kmdb_poster_to_content_images import OK')
+"
+    # 2. pytest
+    python3 -m pytest tests/workers/test_kmdb_content_image_sync.py -q
+    echo "  ✓ 7개 테스트 pass"
+    # 3. Beat 등록 확인
+    python3 -c "
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'sync-kmdb-posters-to-content-images' in sched, 'Beat not found'
+task_name = sched['sync-kmdb-posters-to-content-images']['task']
+assert task_name == 'workers.tasks.kmdb_cache.sync_kmdb_poster_to_content_images', f'Wrong task: {task_name}'
+# 시간대 확인 (07:15 KST)
+schedule = sched['sync-kmdb-posters-to-content-images']['schedule']
+assert str(schedule).find('7') >= 0 and str(schedule).find('15') >= 0, f'Wrong schedule: {schedule}'
+print('  ✓ Beat sync-kmdb-posters-to-content-images 07:15 등록 OK')
+"
+    # 4. ExternalMetaSource 링크 체크 (선행 TaskStep: link-kmdb-to-contents)
+    python3 -c "
+from api.programming.metadata.models.external import ExternalSourceType
+assert ExternalSourceType.kmdb, 'ExternalSourceType.kmdb 없음'
+print('  ✓ ExternalSourceType.kmdb 확인 OK')
+"
+    echo "=== PASS ==="
+    ;;
+
   meta-intelligence-step1)
     echo "=== meta-intelligence-step1: migration 0011 + models ==="
     # 1. ENUM + 모델 import
