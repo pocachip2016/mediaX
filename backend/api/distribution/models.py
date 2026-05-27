@@ -58,6 +58,13 @@ class ServiceCategory(Base):
     platform = Column(String(50), nullable=False)
     position = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    # 큐레이션 워크벤치 확장 (alembic 0025)
+    headline_copy = Column(String(200), nullable=True)
+    sub_copy = Column(String(300), nullable=True)
+    theme_features = Column(JSON, nullable=True)
+    source_mode = Column(String(20), default="manual", nullable=False)
+    reference_external_id = Column(String(200), nullable=True)
+    is_draft = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -41,6 +41,12 @@ class ServiceCategoryOut(BaseModel):
     platform: str
     position: int
     is_active: bool
+    headline_copy: Optional[str] = None
+    sub_copy: Optional[str] = None
+    theme_features: Optional[dict[str, Any]] = None
+    source_mode: str = "manual"
+    reference_external_id: Optional[str] = None
+    is_draft: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -73,6 +79,12 @@ class ServiceCategoryCreate(BaseModel):
     platform: str
     position: int = 0
     is_active: bool = True
+    headline_copy: Optional[str] = None
+    sub_copy: Optional[str] = None
+    theme_features: Optional[dict[str, Any]] = None
+    source_mode: str = "manual"
+    reference_external_id: Optional[str] = None
+    is_draft: bool = False
 
 
 class ServiceCategoryUpdate(BaseModel):
@@ -81,6 +93,12 @@ class ServiceCategoryUpdate(BaseModel):
     platform: Optional[str] = None
     position: Optional[int] = None
     is_active: Optional[bool] = None
+    headline_copy: Optional[str] = None
+    sub_copy: Optional[str] = None
+    theme_features: Optional[dict[str, Any]] = None
+    source_mode: Optional[str] = None
+    reference_external_id: Optional[str] = None
+    is_draft: Optional[bool] = None
 
 
 class ServiceCategoryItemCreate(BaseModel):

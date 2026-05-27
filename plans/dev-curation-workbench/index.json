@@ -1,0 +1,77 @@
+{
+  "project": "mediaX",
+  "phase": "dev-curation-workbench",
+  "description": "큐레이션 워크벤치 — ServiceCategory 확장(headline_copy/sub_copy/theme_features/source_mode) + 3-모드(수동/AI제안/외부가져오기) + 외부 OTT 1-Depth Category를 Copy로 활용. Step 3 단순 CRUD를 본격 워크벤치로 확장.",
+  "decisions": {
+    "scope_split": "dev-service-distribution Step 3은 backend CRUD까지로 마감(이미 PR #11). 큐레이션 워크벤치는 별도 phase + 별도 branch(feature/curation-workbench)로 진행.",
+    "modes": "manual / ai_proposed / external_imported 3가지 source_mode 컬럼으로 구분.",
+    "copy_concept": "headline_copy(마케팅 카피·태그라인) + sub_copy(보조). 저작권의 Copyright 아님.",
+    "ott_one_depth_eq_copy": "OTT의 1-Depth Category(섹션명, 예: '이번 주 TOP10', '신작', '장르-코미디')가 곧 카피 후보. OttSource.fetch_sections() 확장으로 multi-section 수집 + section_name 자체를 카피 후보로 노출.",
+    "llm_chain": "카피 생성은 meta_intelligence 기존 패턴 재사용 — Gemini 1차 + Ollama 폴백.",
+    "theme_features": "JSONB schema-less. FE/BE 합의된 컨벤션 스키마: {genres[], moods[], runtime_min, runtime_max, era_from, era_to, target, occasion, free_keywords}.",
+    "wizard_state": "URL ?step= SSOT + sessionStorage draft cache."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "adr",
+      "status": "completed",
+      "summary": "큐레이션 워크벤치 ADR — 3-모드(manual/ai_proposed/external_imported), OTT 1-Depth Category == Copy, ServiceCategory 6컬럼 확장, OttSource.fetch_sections, LLM 폴백 체인, 매칭 알고리즘 설계",
+      "completed_at": "2026-05-28T00:00:00+09:00"
+    },
+    {
+      "step": 1,
+      "name": "schema-extend",
+      "status": "completed",
+      "summary": "alembic 0025 + ServiceCategory 6컬럼(headline_copy/sub_copy/theme_features/source_mode/reference_external_id/is_draft) + schemas Create/Update/Out 반영 + 9 pytest pass",
+      "completed_at": "2026-05-28T00:00:00+09:00"
+    },
+    {
+      "step": 2,
+      "name": "ott-multi-section",
+      "status": "completed",
+      "summary": "OttSection dataclass + OttSource.fetch_sections() 기본 구현 + WatchaTopSource override(h2/h3 헤딩 파싱) + 폴백 + 16 pytest pass + 회귀 없음",
+      "completed_at": "2026-05-28T00:00:00+09:00"
+    },
+    {
+      "step": 3,
+      "name": "matcher-and-external-ref",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "copy-proposer-llm",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "fe-landing-and-list",
+      "status": "pending"
+    },
+    {
+      "step": 6,
+      "name": "fe-mode-a-manual",
+      "status": "pending"
+    },
+    {
+      "step": 7,
+      "name": "fe-mode-b-wizard-12",
+      "status": "pending"
+    },
+    {
+      "step": 8,
+      "name": "fe-mode-b-wizard-34",
+      "status": "pending"
+    },
+    {
+      "step": 9,
+      "name": "fe-mode-c-external-import",
+      "status": "pending"
+    },
+    {
+      "step": 10,
+      "name": "polish-and-wrap",
+      "status": "pending"
+    }
+  ]
+}
