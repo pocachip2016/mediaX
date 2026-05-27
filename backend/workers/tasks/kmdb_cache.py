@@ -2,8 +2,9 @@
 KMDB 캐시 Celery 태스크
 
 태스크 목록:
-  - backfill_kmdb            : 연도별 슬라이싱 백필 (idempotent)
-  - kmdb_quota_backfill_tick : quota-aware Beat 트리거 (Step 5)
+  - backfill_kmdb                       : 연도별 슬라이싱 백필 (idempotent)
+  - kmdb_quota_backfill_tick            : quota-aware Beat 트리거
+  - sync_kmdb_poster_to_content_images  : KMDB poster/stillcut → content_images (07:15 KST Beat)
 
 헬퍼:
   - _upsert_kmdb_movie       : KMDB Result dict → kmdb_movie_cache upsert
@@ -19,6 +20,13 @@ from celery import shared_task
 from shared.database import SessionLocal
 
 logger = logging.getLogger(__name__)
+
+
+def _split_pipe_urls(value) -> list:
+    """KMDB pipe-separated URL string → list[str]. 빈 입력·None 안전."""
+    if not value or not isinstance(value, str):
+        return []
+    return [u.strip() for u in value.split("|") if u.strip()]
 
 
 # ── upsert 헬퍼 ────────────────────────────────────────────────────────────────
@@ -54,12 +62,10 @@ def _upsert_kmdb_movie(db, raw: dict) -> Literal["inserted", "updated", "unchang
     except (ValueError, TypeError):
         runtime = None
 
-    # 포스터: posters.poster[] 목록 중 첫 번째 포스터 URL
-    poster_url = None
-    posters = raw.get("posters") or {}
-    poster_list = posters.get("poster") if isinstance(posters, dict) else []
-    if poster_list and isinstance(poster_list, list):
-        poster_url = poster_list[0].get("posters") or poster_list[0].get("url") or None
+    # 포스터: "url1|url2|..." pipe-separated string → 리스트
+    posters_list = _split_pipe_urls(raw.get("posters"))
+    poster_url = posters_list[0] if posters_list else None
+    stillcuts_list = _split_pipe_urls(raw.get("stlls"))
 
     # 시놉시스
     synopsis = None
@@ -88,6 +94,8 @@ def _upsert_kmdb_movie(db, raw: dict) -> Literal["inserted", "updated", "unchang
             genre=genre,
             runtime=runtime,
             poster_url=poster_url,
+            poster_urls=posters_list,
+            stillcut_urls=stillcuts_list,
             synopsis=synopsis,
             directors=directors,
             actors=actors,
@@ -100,6 +108,8 @@ def _upsert_kmdb_movie(db, raw: dict) -> Literal["inserted", "updated", "unchang
     changed = (
         existing.title != (title or docid)
         or existing.poster_url != poster_url
+        or existing.poster_urls != posters_list
+        or existing.stillcut_urls != stillcuts_list
         or existing.synopsis != synopsis
     )
     if changed:
@@ -111,6 +121,8 @@ def _upsert_kmdb_movie(db, raw: dict) -> Literal["inserted", "updated", "unchang
         existing.genre = genre
         existing.runtime = runtime
         existing.poster_url = poster_url
+        existing.poster_urls = posters_list
+        existing.stillcut_urls = stillcuts_list
         existing.synopsis = synopsis
         existing.directors = directors
         existing.actors = actors
@@ -222,6 +234,63 @@ def backfill_kmdb(self, year: int):
     return summary
 
 
+@shared_task(name="workers.tasks.kmdb_cache.backfill_kmdb_poster_urls", max_retries=0)
+def backfill_kmdb_poster_urls():
+    """기존 kmdb_movie_cache row 의 raw_json 에서 poster_urls/stillcut_urls 재파싱 (1회용 백필).
+
+    _upsert_kmdb_movie 파싱 버그 수정 이전에 적재된 row 를 소급 보정한다.
+    멱등 (재실행 안전). Beat 등록 없음.
+    Returns: {updated, unchanged, errors}
+    """
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+
+    db = SessionLocal()
+    updated = unchanged = errors = 0
+    batch = 0
+
+    try:
+        rows = db.query(KmdbMovieCache).all()
+        for row in rows:
+            try:
+                raw = row.raw_json or {}
+                new_poster_urls = _split_pipe_urls(raw.get("posters"))
+                new_stillcut_urls = _split_pipe_urls(raw.get("stlls"))
+                new_poster_url = new_poster_urls[0] if new_poster_urls else None
+
+                if (
+                    row.poster_url == new_poster_url
+                    and row.poster_urls == new_poster_urls
+                    and row.stillcut_urls == new_stillcut_urls
+                ):
+                    unchanged += 1
+                    continue
+
+                row.poster_url = new_poster_url
+                row.poster_urls = new_poster_urls
+                row.stillcut_urls = new_stillcut_urls
+                updated += 1
+                batch += 1
+
+                if batch >= 100:
+                    db.commit()
+                    batch = 0
+            except Exception as exc:
+                logger.warning("[kmdb-backfill-urls] docid=%s 실패: %s", row.docid, exc)
+                errors += 1
+
+        db.commit()
+    except Exception as exc:
+        logger.error("[kmdb-backfill-urls] 실패: %s", exc)
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+    summary = {"updated": updated, "unchanged": unchanged, "errors": errors}
+    logger.info("[kmdb-backfill-urls] 완료 — %s", summary)
+    return summary
+
+
 _QUOTA_THRESHOLD = 200   # 잔여 quota 가 이 값 미만이면 백필 스킵
 _BACKFILL_START_YEAR = 1990
 
@@ -271,3 +340,140 @@ def kmdb_quota_backfill_tick():
     logger.info("[kmdb-tick] quota=%d → year=%d 백필 트리거", remaining, target_year)
     backfill_kmdb.delay(year=target_year)
     return {"triggered_year": target_year, "remaining": remaining}
+
+
+# ── KMDB poster → content_images 동기화 ─────────────────────────────────────
+
+_IMAGE_BATCH_COMMIT = 100  # N개 content 처리마다 commit
+
+
+@shared_task(
+    name="workers.tasks.kmdb_cache.sync_kmdb_poster_to_content_images",
+    max_retries=0,
+)
+def sync_kmdb_poster_to_content_images():
+    """kmdb_movie_cache.poster_urls / stillcut_urls → content_images 동기화 (idempotent).
+
+    전제: external_meta_sources (source_type=kmdb) 에 content_id 매핑이 존재해야 함.
+    Beat link-kmdb-to-contents (07:00) 이후 07:15 KST 에 실행.
+
+    is_primary 규칙:
+      - poster_urls[0] → is_primary=True (단, 해당 content 에 이미 is_primary poster 가 있으면 False)
+      - poster_urls[1:] → is_primary=False
+      - stillcut_urls → ImageType.stillcut, is_primary=False (항상)
+
+    중복 기준: (content_id, image_type, url) 조합 — 동일하면 insert 스킵.
+    """
+    from sqlalchemy import text
+
+    from api.programming.metadata.models import ContentImage, ImageType
+    from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
+    from api.programming.metadata.models.kmdb_cache import KmdbMovieCache
+
+    db = SessionLocal()
+    posters_added = stillcuts_added = contents_processed = errors = 0
+    batch = 0
+
+    try:
+        # content_id → docid 매핑 (ExternalMetaSource, kmdb 소스)
+        links = (
+            db.query(ExternalMetaSource.content_id, ExternalMetaSource.external_id)
+            .filter(
+                ExternalMetaSource.source_type == ExternalSourceType.kmdb,
+                ExternalMetaSource.content_id.isnot(None),
+            )
+            .all()
+        )
+
+        for content_id, docid in links:
+            cache = db.get(KmdbMovieCache, docid)
+            if not cache:
+                continue
+
+            poster_urls = cache.poster_urls or []
+            stillcut_urls = cache.stillcut_urls or []
+            if not poster_urls and not stillcut_urls:
+                continue
+
+            try:
+                # 기존 poster URL 세트 (중복 체크용)
+                existing_poster_urls: set[str] = {
+                    row[0]
+                    for row in db.query(ContentImage.url).filter(
+                        ContentImage.content_id == content_id,
+                        ContentImage.image_type == ImageType.poster,
+                    ).all()
+                }
+                # 기존 is_primary poster 존재 여부
+                has_primary = db.query(ContentImage.id).filter(
+                    ContentImage.content_id == content_id,
+                    ContentImage.image_type == ImageType.poster,
+                    ContentImage.is_primary == True,  # noqa: E712
+                ).first() is not None
+
+                # poster_urls 처리
+                for idx, url in enumerate(poster_urls):
+                    if url in existing_poster_urls:
+                        continue
+                    make_primary = (idx == 0) and (not has_primary)
+                    db.add(ContentImage(
+                        content_id=content_id,
+                        image_type=ImageType.poster,
+                        url=url,
+                        source="kmdb",
+                        is_primary=make_primary,
+                    ))
+                    existing_poster_urls.add(url)
+                    if make_primary:
+                        has_primary = True
+                    posters_added += 1
+
+                # stillcut_urls 처리
+                existing_stillcut_urls: set[str] = {
+                    row[0]
+                    for row in db.query(ContentImage.url).filter(
+                        ContentImage.content_id == content_id,
+                        ContentImage.image_type == ImageType.stillcut,
+                    ).all()
+                }
+                for url in stillcut_urls:
+                    if url in existing_stillcut_urls:
+                        continue
+                    db.add(ContentImage(
+                        content_id=content_id,
+                        image_type=ImageType.stillcut,
+                        url=url,
+                        source="kmdb",
+                        is_primary=False,
+                    ))
+                    existing_stillcut_urls.add(url)
+                    stillcuts_added += 1
+
+                contents_processed += 1
+                batch += 1
+                if batch >= _IMAGE_BATCH_COMMIT:
+                    db.commit()
+                    batch = 0
+
+            except Exception as exc:
+                logger.warning("[kmdb-image-sync] content_id=%d 처리 실패: %s", content_id, exc)
+                db.rollback()
+                errors += 1
+
+        db.commit()
+
+    except Exception as exc:
+        logger.error("[kmdb-image-sync] 전체 실패: %s", exc)
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+    summary = {
+        "posters_added": posters_added,
+        "stillcuts_added": stillcuts_added,
+        "contents_processed": contents_processed,
+        "errors": errors,
+    }
+    logger.info("[kmdb-image-sync] 완료 — %s", summary)
+    return summary

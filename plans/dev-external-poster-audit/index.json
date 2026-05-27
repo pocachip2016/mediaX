@@ -1,0 +1,40 @@
+{
+  "slug": "dev-external-poster-audit",
+  "title": "외부소스 poster 부재 — 원인 파악 및 보완",
+  "created_at": "2026-05-26",
+  "scope": "TMDB / KMDB / KOBIS (Watcha 배제)",
+  "steps": [
+    {
+      "step": 1,
+      "name": "poster-audit-doc",
+      "phase": "diagnostic",
+      "status": "completed",
+      "summary": "TMDB/KMDB/KOBIS 의 poster 처리 흐름을 DB 실측 + 코드 분석으로 진단하여 docs/1_programming/external-poster-audit.md 작성. 핵심 발견: KMDB worker(kmdb_cache.py:57-62) 의 posters 파싱 버그로 3,098건 100% poster_url NULL. raw_json 에는 평균 2.32개 poster URL + 7.80개 stillcut URL 이 flat string(|) 형태로 보존됨(약 6,050 poster, 12,410 stillcut 후보 자산). KOBIS fallback 영향은 실제 6건만으로 P3 드롭 권장. 우선순위 P1: kmdb-poster-extract-fix + kmdb-content-image-sync.",
+      "completed_at": "2026-05-26"
+    },
+    {
+      "step": 2,
+      "name": "kmdb-poster-extract-fix",
+      "phase": "implementation",
+      "status": "completed",
+      "summary": "KMDB raw_json pipe-separated string 파싱 버그 수정 + _split_pipe_urls 헬퍼 추가 + poster_urls / stillcut_urls JSON 컬럼 신설 (migration 0023) + 기존 3,098건 백필 완료 (2,606건 실제 채움). 10개 pytest pass. 하위호환: poster_url (단일 URL) 유지.",
+      "completed_at": "2026-05-26"
+    },
+    {
+      "step": 3,
+      "name": "kmdb-content-image-sync",
+      "phase": "implementation",
+      "status": "completed",
+      "summary": "sync_kmdb_poster_to_content_images 태스크 + 07:15 Beat + 7 tests 모두 pass. ExternalMetaSource(kmdb) 링크된 KmdbMovieCache → ContentImage(poster/stillcut) 멱등 동기화. is_primary 규칙: 첫 poster_url이 primary (기존 primary 없을 때만), 나머지는 후보. 07:00 link-kmdb 직후 07:15 실행.",
+      "completed_at": "2026-05-27"
+    }
+  ],
+  "follow_up_candidates": [
+    {"slug": "kmdb-poster-extract-fix", "priority": "P1", "area": "BE worker"},
+    {"slug": "kmdb-content-image-sync", "priority": "P1", "area": "BE worker"},
+    {"slug": "kmdb-poster-fe", "priority": "P2", "area": "FE"},
+    {"slug": "content-detail-source-compare", "priority": "P2", "area": "FE"},
+    {"slug": "kmdb-stillcut-extract", "priority": "P3", "area": "BE worker"},
+    {"slug": "kobis-poster-fallback", "priority": "P3 (드롭 권장)", "area": "BE worker"}
+  ]
+}

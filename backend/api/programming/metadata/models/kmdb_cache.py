@@ -23,7 +23,9 @@ class KmdbMovieCache(Base):
     nation = Column(String(200))
     genre = Column(String(200))
     runtime = Column(Integer)                        # 분
-    poster_url = Column(Text)
+    poster_url = Column(Text)                          # 첫 번째 URL (하위호환)
+    poster_urls = Column(JSON)                         # 다중 poster URL 리스트 (|분해)
+    stillcut_urls = Column(JSON)                       # 다중 stillcut URL 리스트
     synopsis = Column(Text)
     directors = Column(JSON)                         # [{directorNm, directorEnNm, ...}, ...]
     actors = Column(JSON)                            # [{actorNm, actorEnNm, ...}, ...]
