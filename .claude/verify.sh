@@ -2671,6 +2671,27 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "=== PASS ==="
     ;;
 
+  distribution-step3.0)
+    echo "=== distribution-step3.0: services-table ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    [ -f "alembic/versions/0024_services_table.py" ] || { echo "MISSING: 0024_services_table.py"; exit 1; }
+    echo "  ✓ 0024_services_table.py"
+    [ -f "api/distribution/models.py" ] || { echo "MISSING: models.py"; exit 1; }
+    echo "  ✓ models.py"
+
+    echo "--- import 검증 ---"
+    .venv/bin/python3 -c "from api.distribution.models import Service; from api.distribution.service import get_services, get_service_by_code; print('  ✓ Service import OK')" 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: Service import"; exit 1; }
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_services_table.py -v 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   recommend-step1.3)
     echo "=== recommend-step1.3: ShortMetaGrid + cells ==="
     MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"

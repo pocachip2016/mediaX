@@ -6,6 +6,17 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class ServiceOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    kind: str
+    position: int
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
 class DistributionChannelOut(BaseModel):
     id: int
     content_id: int

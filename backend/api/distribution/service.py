@@ -1,9 +1,20 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .models import ContentDistribution, ServiceCategory, DeviceVariant
+from .models import ContentDistribution, ServiceCategory, DeviceVariant, Service
 
 _OTT_CHANNELS = ["ott_watcha", "ott_netflix", "ott_wave", "ott_tving"]
+
+
+def get_services(db: Session, kind: str | None = None) -> list[Service]:
+    q = db.query(Service).filter(Service.is_active == True)  # noqa: E712
+    if kind:
+        q = q.filter(Service.kind == kind)
+    return q.order_by(Service.position).all()
+
+
+def get_service_by_code(db: Session, code: str) -> Service | None:
+    return db.query(Service).filter(Service.code == code).first()
 
 
 def get_channels_for_content(db: Session, content_id: int) -> list[ContentDistribution]:

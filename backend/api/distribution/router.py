@@ -2,10 +2,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from shared.database import get_db
-from .schemas import DistributionChannelOut, ServiceCategoryOut, DeviceVariantOut, SyncStatusOut
+from .schemas import DistributionChannelOut, ServiceCategoryOut, DeviceVariantOut, SyncStatusOut, ServiceOut
 from . import service
 
 router = APIRouter()
+
+
+@router.get("/services", response_model=list[ServiceOut])
+def get_services(
+    kind: str | None = Query(None, description="ott | iptv"),
+    db: Session = Depends(get_db),
+):
+    return service.get_services(db, kind=kind)
 
 
 @router.get("/contents/{content_id}/channels", response_model=list[DistributionChannelOut])
