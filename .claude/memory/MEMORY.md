@@ -1,0 +1,1 @@
+- [Services SSOT 테이블](feedback_services_ssot.md) — OTT/IPTV 출처 식별은 `services` 테이블 + service_id FK로 통일, 컬럼 문자열("ott_watcha") 직접 사용 금지
