@@ -56,6 +56,14 @@ services:
       - ./backend/.env
     environment:
       - TZ=Asia/Seoul
+    # bind mount가 WSL2에서 분리되면 /app이 비어 앱이 죽지만 컨테이너는 "Up"으로 남는다.
+    # healthcheck로 실제 앱 생존을 검사해 "unhealthy"로 즉시 가시화한다.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       - postgres
       - redis
