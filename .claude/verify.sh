@@ -2724,6 +2724,88 @@ print('  ✓ 모든 service 함수 import OK')
     echo "=== PASS ==="
     ;;
 
+  curation-step5-fe-landing)
+    echo "=== curation-step5-fe-landing: nav + api.ts + page.tsx + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+
+    echo "--- 파일 존재 확인 ---"
+    PAGE="$CMS/apps/web/app/(main)/programming/categories/page.tsx"
+    NEW_PAGE="$CMS/apps/web/app/(main)/programming/categories/new/page.tsx"
+    [ -f "$PAGE" ] || { echo "MISSING: categories/page.tsx"; exit 1; }
+    echo "  ✓ categories/page.tsx"
+    [ -f "$NEW_PAGE" ] || { echo "MISSING: categories/new/page.tsx"; exit 1; }
+    echo "  ✓ categories/new/page.tsx"
+
+    echo "--- api.ts: distributionApi + ServiceCategoryOut ---"
+    grep -q "distributionApi" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: distributionApi in api.ts"; exit 1; }
+    echo "  ✓ distributionApi"
+    grep -q "ServiceCategoryOut" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: ServiceCategoryOut in api.ts"; exit 1; }
+    echo "  ✓ ServiceCategoryOut"
+
+    echo "--- docs.ts: 큐레이션 nav 등록 ---"
+    grep -q '"/programming/categories"' "$CMS/apps/web/config/docs.ts" || { echo "MISSING: /programming/categories in docs.ts"; exit 1; }
+    echo "  ✓ /programming/categories nav 항목"
+
+    echo "--- page.tsx: 3 CTA 모드 정의 ---"
+    grep -q '"manual"' "$PAGE" || { echo "MISSING: manual mode"; exit 1; }
+    grep -q '"ai"' "$PAGE" || { echo "MISSING: ai mode"; exit 1; }
+    grep -q '"external"' "$PAGE" || { echo "MISSING: external mode"; exit 1; }
+    grep -q 'mode=' "$PAGE" || { echo "MISSING: mode= query param reference"; exit 1; }
+    echo "  ✓ 3 CTA 모드 (manual/ai/external)"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step4-copy-proposer)
+    echo "=== curation-step4-copy-proposer: copy_proposer + propose-copy API + pytest ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    [ -f "api/distribution/copy_proposer.py" ] || { echo "MISSING: copy_proposer.py"; exit 1; }
+    echo "  ✓ api/distribution/copy_proposer.py"
+
+    echo "--- import 검증 ---"
+    .venv/bin/python3 -c "
+from api.distribution.copy_proposer import propose_copy
+from api.distribution.schemas import ProposeCopyRequest, ProposeCopyResponse, CopyCandidateOut
+print('  ✓ copy_proposer + schemas import OK')
+" || { echo "FAIL: import"; exit 1; }
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_copy_proposer.py -q 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step3-matcher)
+    echo "=== curation-step3-matcher: matcher + match-contents API + external-references API ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    for f in api/distribution/curation_matcher.py; do
+      [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+      echo "  ✓ $f"
+    done
+
+    echo "--- import 검증 ---"
+    .venv/bin/python3 -c "
+from api.distribution.curation_matcher import match_contents, score_content
+from api.distribution.schemas import MatchContentsRequest, MatchContentsResponse, ExternalReferencesResponse
+print('  ✓ curation_matcher + schemas import OK')
+" || { echo "FAIL: import"; exit 1; }
+
+    echo "--- pytest (matcher 유닛 + API 엔드포인트) ---"
+    .venv/bin/pytest tests/distribution/test_curation_matcher.py tests/distribution/test_curations_api.py -q 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   recommend-step1.3)
     echo "=== recommend-step1.3: ShortMetaGrid + cells ==="
     MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"

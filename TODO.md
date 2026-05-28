@@ -7,7 +7,7 @@
 (대기 중)
 
 ## Next (이번 마일스톤)
-- [ ] dev-curation-workbench Step 3 — matcher-and-external-ref (매칭 알고리즘 + OTT 참고 API + match-contents API)
+- [ ] dev-curation-workbench Step 6 — fe-mode-a-manual (수동 묶기 master-detail)
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-curation-workbench Steps 3-5** — matcher(45 pytest) + copy-proposer LLM(17 pytest) + FE landing/nav (2026-05-28)
 - [x] **dev-curation-workbench Steps 0-2** — ADR(3-모드·OTT 1-Depth=Copy·SSOT) + schema-extend(alembic 0025·6컬럼) + ott-multi-section(OttSection·multi-section fetch·Watcha 파싱) 25 pytest (2026-05-28)
 - [x] **dev-service-distribution Step 3** — service-category CRUD API (7 엔드포인트·20 pytest) → PR #11 merge (2026-05-27)
 - [x] **dev-service-distribution Step 2** — ott-popularity-sync: OttSource ABC + Watcha(SSR)/Netflix(Tudum TSV) + Wave/Tving stub + 4 Celery tasks + Beat 4건 + GET /sync/status + pytest 19 pass (2026-05-27)

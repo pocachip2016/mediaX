@@ -36,17 +36,23 @@
     {
       "step": 3,
       "name": "matcher-and-external-ref",
-      "status": "pending"
+      "status": "completed",
+      "summary": "매칭 알고리즘(6 가중치: genre/mood/runtime/era/external/keywords) + match-contents/external-references API + 45 pytest pass",
+      "completed_at": "2026-05-28T18:30:00+09:00"
     },
     {
       "step": 4,
       "name": "copy-proposer-llm",
-      "status": "pending"
+      "status": "completed",
+      "summary": "copy_proposer.py(Gemini→Groq→Ollama 폴백) + ProposeCopyRequest/Response 스키마 + POST /curations/propose-copy + 17 pytest pass",
+      "completed_at": "2026-05-28T19:00:00+09:00"
     },
     {
       "step": 5,
       "name": "fe-landing-and-list",
-      "status": "pending"
+      "status": "completed",
+      "summary": "nav 등록(docs.ts) + ServiceCategoryOut/distributionApi(api.ts) + 큐레이션 랜딩(3-모드 CTA 카드+리스트 표+검색/필터/페이지네이션) + new placeholder + typecheck pass",
+      "completed_at": "2026-05-28T20:00:00+09:00"
     },
     {
       "step": 6,

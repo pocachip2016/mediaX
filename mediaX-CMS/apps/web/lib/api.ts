@@ -1387,3 +1387,32 @@ export const pipelineTestApi = {
   summary: () =>
     requestTest<PipelineTestStageSummary>("/api/test/pipeline/summary"),
 }
+
+// ── Distribution / Curation ───────────────────────────────
+
+export interface ServiceCategoryOut {
+  id: number
+  name: string
+  category_type: string
+  platform: string
+  position: number
+  is_active: boolean
+  headline_copy: string | null
+  sub_copy: string | null
+  theme_features: Record<string, unknown> | null
+  source_mode: string        // "manual" | "ai_proposed" | "external_imported"
+  reference_external_id: string | null
+  is_draft: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export const distributionApi = {
+  getCategories: (params?: { platform?: string; is_active?: boolean }) => {
+    const q = new URLSearchParams()
+    if (params?.platform) q.set("platform", params.platform)
+    if (params?.is_active != null) q.set("is_active", String(params.is_active))
+    const qs = q.toString()
+    return request<ServiceCategoryOut[]>(`/api/distribution/categories${qs ? `?${qs}` : ""}`)
+  },
+}

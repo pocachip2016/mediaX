@@ -130,3 +130,69 @@ class ReorderItem(BaseModel):
 
 class ReorderRequest(BaseModel):
     items: list[ReorderItem]
+
+
+# ── 큐레이션 워크벤치 Step 3 ────────────────────────────────────────────────
+
+class MatchContentsRequest(BaseModel):
+    theme_features: dict[str, Any]
+    external_titles: list[str] = []
+    limit: int = 20
+
+
+class ContentMatchCandidateOut(BaseModel):
+    content_id: int
+    title: str
+    content_type: str
+    production_year: Optional[int] = None
+    runtime_minutes: Optional[int] = None
+    score: float
+    score_breakdown: dict[str, float] = {}
+
+
+class MatchContentsResponse(BaseModel):
+    items: list[ContentMatchCandidateOut]
+    total: int
+    theme_features: dict[str, Any]
+
+
+class OttItemOut(BaseModel):
+    title: str
+    rank: int
+    production_year: Optional[int] = None
+    external_id: Optional[str] = None
+
+
+class OttSectionCardOut(BaseModel):
+    section_id: str
+    name: str
+    category_type: str
+    channel: str
+    item_count: int
+    items: list[OttItemOut]
+
+
+class ExternalReferencesResponse(BaseModel):
+    sections: list[OttSectionCardOut]
+    total_sections: int
+
+
+# ── 큐레이션 워크벤치 Step 4 ────────────────────────────────────────────────
+
+class CopyCandidateOut(BaseModel):
+    rank: int
+    headline_copy: str
+    sub_copy: Optional[str] = None
+    source: str  # "ai_proposed" | "external_imported"
+    reasoning: Optional[str] = None
+
+
+class ProposeCopyRequest(BaseModel):
+    theme_features: dict[str, Any]
+    selected_section_names: list[str] = []
+    limit: int = 3
+
+
+class ProposeCopyResponse(BaseModel):
+    candidates: list[CopyCandidateOut]
+    engine_used: Optional[str] = None

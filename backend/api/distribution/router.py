@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -7,8 +9,14 @@ from .schemas import (
     ServiceCategoryCreate, ServiceCategoryUpdate,
     ServiceCategoryItemOut, ServiceCategoryItemCreate,
     ReorderRequest, DeviceVariantOut, SyncStatusOut, ServiceOut,
+    MatchContentsRequest, MatchContentsResponse, ContentMatchCandidateOut,
+    ExternalReferencesResponse, OttSectionCardOut, OttItemOut,
+    ProposeCopyRequest, ProposeCopyResponse, CopyCandidateOut,
 )
 from . import service
+from .curation_matcher import match_contents
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -78,3 +86,89 @@ def get_content_devices(content_id: int, db: Session = Depends(get_db)):
 @router.get("/sync/status", response_model=list[SyncStatusOut])
 def get_sync_status(db: Session = Depends(get_db)):
     return service.get_sync_status(db)
+
+
+# ── 큐레이션 워크벤치 Step 3 ──────────────────────────────────────────────────
+
+@router.post("/curations/match-contents", response_model=MatchContentsResponse)
+def match_curation_contents(body: MatchContentsRequest, db: Session = Depends(get_db)):
+    """theme_features → 보유 콘텐츠 매칭 후보 (결정적 알고리즘, LLM 미사용)."""
+    external_titles = {t.strip().lower() for t in body.external_titles if t.strip()}
+    results = match_contents(db, body.theme_features, external_titles, limit=body.limit)
+    items = [
+        ContentMatchCandidateOut(
+            content_id=r.content_id,
+            title=r.title,
+            content_type=r.content_type,
+            production_year=r.production_year,
+            runtime_minutes=r.runtime_minutes,
+            score=r.score,
+            score_breakdown=r.score_breakdown,
+        )
+        for r in results
+    ]
+    return MatchContentsResponse(
+        items=items,
+        total=len(items),
+        theme_features=body.theme_features,
+    )
+
+
+@router.get("/curations/external-references", response_model=ExternalReferencesResponse)
+def get_external_references(
+    channel: str | None = Query(None, description="특정 채널 필터 (e.g., ott_watcha)"),
+):
+    """OttSource.fetch_sections() 기반 외부 큐레이션 섹션 카드 목록.
+    실시간 크롤링 — 실패 시 해당 소스 빈 목록으로 폴백."""
+    from .ott.watcha import WatchaTopSource
+    from .ott.netflix import NetflixTudumSource
+    from .ott.wave import WaveTopSource
+    from .ott.tving import TvingTopSource
+
+    sources = [WatchaTopSource(), NetflixTudumSource(), WaveTopSource(), TvingTopSource()]
+    if channel:
+        sources = [s for s in sources if s.channel == channel]
+
+    cards: list[OttSectionCardOut] = []
+    for src in sources:
+        try:
+            sections = src.fetch_sections()
+        except Exception:
+            logger.exception("external-references: 소스 실패 channel=%s", src.channel)
+            sections = []
+        for sec in sections:
+            cards.append(OttSectionCardOut(
+                section_id=sec.section_id,
+                name=sec.name,
+                category_type=sec.category_type,
+                channel=src.channel,
+                item_count=len(sec.items),
+                items=[
+                    OttItemOut(
+                        title=item.title,
+                        rank=item.rank,
+                        production_year=item.production_year,
+                        external_id=item.external_id,
+                    )
+                    for item in sec.items
+                ],
+            ))
+
+    return ExternalReferencesResponse(sections=cards, total_sections=len(cards))
+
+
+# ── 큐레이션 워크벤치 Step 4 ──────────────────────────────────────────────────
+
+@router.post("/curations/propose-copy", response_model=ProposeCopyResponse)
+async def propose_curation_copy(body: ProposeCopyRequest):
+    """theme_features + 외부 섹션명 → LLM 카피 후보 (Gemini→Groq→Ollama 폴백).
+    LLM 전체 실패 시 섹션명을 external_imported 후보로 반환."""
+    from .copy_proposer import propose_copy
+
+    candidates_raw, engine_used = await propose_copy(
+        theme_features=body.theme_features,
+        selected_section_names=body.selected_section_names,
+        limit=body.limit,
+    )
+    candidates = [CopyCandidateOut(**c) for c in candidates_raw]
+    return ProposeCopyResponse(candidates=candidates, engine_used=engine_used)
