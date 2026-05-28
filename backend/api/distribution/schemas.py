@@ -137,6 +137,7 @@ class ReorderRequest(BaseModel):
 class MatchContentsRequest(BaseModel):
     theme_features: dict[str, Any]
     external_titles: list[str] = []
+    external_content_ids: list[int] = []  # resolve된 content_id 목록 (정확 매칭 보너스)
     limit: int = 20
 
 
@@ -161,6 +162,7 @@ class OttItemOut(BaseModel):
     rank: int
     production_year: Optional[int] = None
     external_id: Optional[str] = None
+    content_id: Optional[int] = None  # ott/matcher resolve 결과 (영속 테이블 읽을 때만 채워짐)
 
 
 class OttSectionCardOut(BaseModel):

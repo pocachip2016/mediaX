@@ -94,7 +94,12 @@ def get_sync_status(db: Session = Depends(get_db)):
 def match_curation_contents(body: MatchContentsRequest, db: Session = Depends(get_db)):
     """theme_features → 보유 콘텐츠 매칭 후보 (결정적 알고리즘, LLM 미사용)."""
     external_titles = {t.strip().lower() for t in body.external_titles if t.strip()}
-    results = match_contents(db, body.theme_features, external_titles, limit=body.limit)
+    external_content_ids = set(body.external_content_ids) if body.external_content_ids else None
+    results = match_contents(
+        db, body.theme_features, external_titles,
+        external_content_ids=external_content_ids,
+        limit=body.limit,
+    )
     items = [
         ContentMatchCandidateOut(
             content_id=r.content_id,
@@ -117,9 +122,47 @@ def match_curation_contents(body: MatchContentsRequest, db: Session = Depends(ge
 @router.get("/curations/external-references", response_model=ExternalReferencesResponse)
 def get_external_references(
     channel: str | None = Query(None, description="특정 채널 필터 (e.g., ott_watcha)"),
+    db: Session = Depends(get_db),
 ):
-    """OttSource.fetch_sections() 기반 외부 큐레이션 섹션 카드 목록.
-    실시간 크롤링 — 실패 시 해당 소스 빈 목록으로 폴백."""
+    """외부 큐레이션 섹션 카드 목록 — 영속 테이블 읽기 우선, 비었으면 live 크롤 폴백.
+    영속 데이터는 content_id(resolve) 포함."""
+    from .models import ExternalCuration, ExternalCurationItem
+
+    q = db.query(ExternalCuration)
+    if channel:
+        q = q.filter(ExternalCuration.channel == channel)
+    rows = q.order_by(ExternalCuration.channel, ExternalCuration.id).all()
+
+    if rows:
+        cards: list[OttSectionCardOut] = []
+        for row in rows:
+            item_rows = (
+                db.query(ExternalCurationItem)
+                .filter(ExternalCurationItem.external_curation_id == row.id)
+                .order_by(ExternalCurationItem.external_rank)
+                .all()
+            )
+            cards.append(OttSectionCardOut(
+                section_id=row.section_id,
+                name=row.section_name,
+                category_type=row.category_type,
+                channel=row.channel,
+                item_count=row.total_count,
+                items=[
+                    OttItemOut(
+                        title=it.external_title,
+                        rank=it.external_rank,
+                        production_year=it.production_year,
+                        external_id=None,
+                        content_id=it.content_id,
+                    )
+                    for it in item_rows
+                ],
+            ))
+        return ExternalReferencesResponse(sections=cards, total_sections=len(cards))
+
+    # 영속 데이터 없을 때 live 크롤 폴백 (초기 세팅 전 또는 Beat 미실행 시)
+    logger.info("external-references: 영속 데이터 없음 → live 크롤 폴백")
     from .ott.watcha import WatchaTopSource
     from .ott.netflix import NetflixTudumSource
     from .ott.wave import WaveTopSource
@@ -129,15 +172,15 @@ def get_external_references(
     if channel:
         sources = [s for s in sources if s.channel == channel]
 
-    cards: list[OttSectionCardOut] = []
+    live_cards: list[OttSectionCardOut] = []
     for src in sources:
         try:
             sections = src.fetch_sections()
         except Exception:
-            logger.exception("external-references: 소스 실패 channel=%s", src.channel)
+            logger.exception("external-references live폴백: 소스 실패 channel=%s", src.channel)
             sections = []
         for sec in sections:
-            cards.append(OttSectionCardOut(
+            live_cards.append(OttSectionCardOut(
                 section_id=sec.section_id,
                 name=sec.name,
                 category_type=sec.category_type,
@@ -149,12 +192,13 @@ def get_external_references(
                         rank=item.rank,
                         production_year=item.production_year,
                         external_id=item.external_id,
+                        content_id=None,
                     )
                     for item in sec.items
                 ],
             ))
 
-    return ExternalReferencesResponse(sections=cards, total_sections=len(cards))
+    return ExternalReferencesResponse(sections=live_cards, total_sections=len(live_cards))
 
 
 # ── 큐레이션 워크벤치 Step 4 ──────────────────────────────────────────────────

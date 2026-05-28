@@ -4587,9 +4587,107 @@ print('  ✓ derive_status_from_stage 매핑 OK')
     echo "=== PASS ==="
     ;;
 
+  dev-curation-workbench-step10)
+    echo "=== dev-curation-workbench-step10: fe-mode-c-external-import ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. _external.tsx 존재 + ExternalImport export 확인
+    test -f apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: _external.tsx 없음"; exit 1; }
+    grep -q "export function ExternalImport" apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: ExternalImport export 없음"; exit 1; }
+    echo "  ✓ _external.tsx + ExternalImport export 확인"
+    # 2. page.tsx가 ExternalImport import + mode=external 분기 확인
+    grep -q "import.*ExternalImport.*from.*_external" apps/web/app/\(main\)/programming/categories/new/page.tsx || { echo "FAIL: ExternalImport import 없음"; exit 1; }
+    grep -q 'mode === "external"' apps/web/app/\(main\)/programming/categories/new/page.tsx || { echo "FAIL: mode=external 분기 없음"; exit 1; }
+    echo "  ✓ page.tsx ExternalImport 배선 확인"
+    # 3. 핵심 설계 규칙 — source_mode/reference_external_id/addItem 확인
+    grep -q 'source_mode: "external_imported"' apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: source_mode external_imported 없음"; exit 1; }
+    grep -q "reference_external_id" apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: reference_external_id 없음"; exit 1; }
+    grep -q "addItem" apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: addItem 호출 없음"; exit 1; }
+    echo "  ✓ 설계 규칙 (source_mode/reference_external_id/addItem) 확인"
+    # 4. typecheck
+    npm run typecheck 2>&1 | tail -5
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
+  dev-curation-workbench-step9)
+    echo "=== dev-curation-workbench-step9: fe-mode-b-wizard-34 (3단 워크벤치) ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. _wizard.tsx에 Step3Workbench 존재 확인
+    grep -q "function Step3Workbench" apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: Step3Workbench 없음"; exit 1; }
+    echo "  ✓ Step3Workbench 컴포넌트 확인"
+    # 2. api.ts에 proposeCopy/matchContents 함수 확인
+    grep -q "proposeCopy:" apps/web/lib/api.ts || { echo "FAIL: proposeCopy 함수 없음"; exit 1; }
+    grep -q "matchContents:" apps/web/lib/api.ts || { echo "FAIL: matchContents 함수 없음"; exit 1; }
+    echo "  ✓ proposeCopy/matchContents 함수 확인"
+    # 3. 3단 그리드 + ScoreBar 확인
+    grep -q "240px_1fr_340px" apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: 3단 그리드 없음"; exit 1; }
+    grep -q "function ScoreBar" apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: ScoreBar 없음"; exit 1; }
+    echo "  ✓ 3단 그리드 + ScoreBar 확인"
+    # 4. typecheck
+    npm run typecheck 2>&1 | tail -5
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
+  dev-curation-workbench-step8)
+    echo "=== dev-curation-workbench-step8: external-curation-backfill ==="
+    cd "$BACKEND"
+    # 1. 모델 import 확인
+    python3 -c "
+from api.distribution.models import ExternalCuration, ExternalCurationItem
+print('  ✓ ExternalCuration/Item 모델 import OK')
+"
+    # 2. alembic 파일 존재 확인
+    test -f alembic/versions/0026_external_curation_tables.py || { echo "FAIL: 0026 마이그레이션 없음"; exit 1; }
+    echo "  ✓ alembic 0026 파일 확인"
+    # 3. curation_runner import 확인
+    python3 -c "
+from api.distribution.ott.curation_runner import run_curation_source
+print('  ✓ curation_runner import OK')
+"
+    # 4. Beat task 등록 확인
+    python3 -c "
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'backfill-external-curations' in sched, 'FAIL: backfill-external-curations beat 없음'
+print('  ✓ backfill-external-curations Beat 등록 확인')
+"
+    # 5. schemas — OttItemOut.content_id 필드, MatchContentsRequest.external_content_ids 확인
+    python3 -c "
+from api.distribution.schemas import OttItemOut, MatchContentsRequest
+o = OttItemOut(title='test', rank=1, content_id=42)
+assert o.content_id == 42
+r = MatchContentsRequest(theme_features={}, external_content_ids=[1, 2])
+assert r.external_content_ids == [1, 2]
+print('  ✓ 스키마 확장 확인')
+"
+    # 6. pytest
+    python3 -m pytest tests/distribution/test_curation_backfill.py -q
+    echo "  ✓ 11 pytest pass"
+    echo "=== PASS ==="
+    ;;
+
+  dev-curation-workbench-step7)
+    echo "=== dev-curation-workbench-step7: fe-mode-b-wizard-12 (AI 위저드 Step 1·2) ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. _wizard.tsx 파일 존재 확인
+    test -f apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: _wizard.tsx 없음"; exit 1; }
+    echo "  ✓ _wizard.tsx 파일 확인"
+    # 2. new/page.tsx에서 AiWizard import 확인
+    grep -q "import.*AiWizard.*from.*_wizard" apps/web/app/\(main\)/programming/categories/new/page.tsx || { echo "FAIL: AiWizard import 없음"; exit 1; }
+    echo "  ✓ AiWizard import 확인"
+    # 3. lib/api.ts에 OttSectionCardOut 타입 확인
+    grep -q "export interface OttSectionCardOut" apps/web/lib/api.ts || { echo "FAIL: OttSectionCardOut 타입 없음"; exit 1; }
+    echo "  ✓ OttSectionCardOut 타입 확인"
+    # 4. typecheck
+    npm run typecheck 2>&1 | tail -5
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10"
     exit 1
     ;;
 esac

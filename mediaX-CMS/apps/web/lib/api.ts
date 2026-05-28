@@ -1455,6 +1455,59 @@ export interface ServiceCategoryItemCreate {
   score?: number | null
 }
 
+// 큐레이션 워크벤치 — 외부 OTT 참고 (Step 7·8)
+export interface OttItemOut {
+  title: string
+  rank: number
+  production_year: number | null
+  external_id: string | null
+  content_id?: number | null  // 영속 데이터 읽을 때 ott/matcher resolve 결과 (Step 8)
+}
+
+export interface OttSectionCardOut {
+  section_id: string
+  name: string
+  category_type: string
+  channel: string
+  item_count: number
+  items: OttItemOut[]
+}
+
+export interface ExternalReferencesResponse {
+  sections: OttSectionCardOut[]
+  total_sections: number
+}
+
+// 큐레이션 워크벤치 — AI 위저드 Step 3·4 (Step 9)
+export interface CopyCandidateOut {
+  rank: number
+  headline_copy: string
+  sub_copy: string | null
+  source: string  // "ai_proposed" | "external_imported"
+  reasoning: string | null
+}
+
+export interface ProposeCopyResponse {
+  candidates: CopyCandidateOut[]
+  engine_used: string | null
+}
+
+export interface ContentMatchCandidateOut {
+  content_id: number
+  title: string
+  content_type: string
+  production_year: number | null
+  runtime_minutes: number | null
+  score: number
+  score_breakdown: Record<string, number>
+}
+
+export interface MatchContentsResponse {
+  items: ContentMatchCandidateOut[]
+  total: number
+  theme_features: Record<string, unknown>
+}
+
 export const distributionApi = {
   getCategories: (params?: { platform?: string; is_active?: boolean }) => {
     const q = new URLSearchParams()
@@ -1497,5 +1550,33 @@ export const distributionApi = {
     request<void>(`/api/distribution/categories/${categoryId}/items/reorder`, {
       method: "POST",
       body: JSON.stringify({ items }),
+    }),
+
+  getExternalReferences: (channel?: string) => {
+    const qs = channel ? `?channel=${encodeURIComponent(channel)}` : ""
+    return request<ExternalReferencesResponse>(
+      `/api/distribution/curations/external-references${qs}`
+    )
+  },
+
+  proposeCopy: (data: {
+    theme_features: Record<string, unknown>
+    selected_section_names?: string[]
+    limit?: number
+  }) =>
+    request<ProposeCopyResponse>("/api/distribution/curations/propose-copy", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  matchContents: (data: {
+    theme_features: Record<string, unknown>
+    external_titles?: string[]
+    external_content_ids?: number[]
+    limit?: number
+  }) =>
+    request<MatchContentsResponse>("/api/distribution/curations/match-contents", {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 }

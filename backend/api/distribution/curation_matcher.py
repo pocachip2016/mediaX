@@ -110,10 +110,20 @@ def _era_score(production_year: int | None, era_from: int | None, era_to: int | 
     return 1.0 if lo <= production_year <= hi else 0.0
 
 
-def _external_score(title: str, external_titles: set[str]) -> float:
-    if not external_titles:
-        return 0.0
-    return 1.0 if _normalize(title) in external_titles else 0.0
+def _external_score(
+    title: str,
+    external_titles: set[str],
+    content_id: int | None = None,
+    external_content_ids: set[int] | None = None,
+) -> float:
+    # content_id 정확 매칭 우선 (영속 resolve 결과)
+    if external_content_ids and content_id is not None:
+        if content_id in external_content_ids:
+            return 1.0
+    # title fuzzy 매칭 폴백 (기존 호환)
+    if external_titles and _normalize(title) in external_titles:
+        return 1.0
+    return 0.0
 
 
 def _keyword_score(title: str, synopsis: str | None, free_keywords: list[str]) -> float:
@@ -131,6 +141,7 @@ def score_content(
     genre_names: list[str],
     theme_features: dict[str, Any],
     external_titles: set[str],
+    external_content_ids: set[int] | None = None,
 ) -> tuple[float, dict[str, float]]:
     """콘텐츠 1건을 theme_features로 채점 → (total_score, breakdown)"""
     tf = theme_features or {}
@@ -155,7 +166,12 @@ def score_content(
         tf.get("era_from"),
         tf.get("era_to"),
     )
-    x_score = _external_score(content.title or "", external_titles)
+    x_score = _external_score(
+        content.title or "",
+        external_titles,
+        content_id=content.id,
+        external_content_ids=external_content_ids,
+    )
     k_score = _keyword_score(
         content.title or "",
         metadata.ai_synopsis if metadata else None,
@@ -186,10 +202,12 @@ def match_contents(
     db: Session,
     theme_features: dict[str, Any],
     external_titles: set[str] | None = None,
+    external_content_ids: set[int] | None = None,
     limit: int = 20,
 ) -> list[ContentMatchResult]:
     """DB에서 is_deleted=False 콘텐츠를 채점해 상위 limit개 반환."""
     ext_titles = external_titles or set()
+    ext_ids = external_content_ids or set()
 
     # 단일 쿼리로 contents + metadata + genres 로드
     contents = (
@@ -216,6 +234,7 @@ def match_contents(
             genre_names=genre_names,
             theme_features=theme_features,
             external_titles=ext_titles,
+            external_content_ids=ext_ids if ext_ids else None,
         )
         results.append(ContentMatchResult(
             content_id=content.id,

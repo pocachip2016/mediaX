@@ -7,7 +7,10 @@
 (대기 중)
 
 ## Next (이번 마일스톤)
-- [ ] dev-curation-workbench Step 7 — fe-mode-b-wizard-12 (AI 제안 위저드 Step 1·2)
+- [x] **dev-curation-workbench Step 7** — fe-mode-b-wizard-12 (AI 제안 위저드 Step 1·2) (2026-05-28)
+- [x] **dev-curation-workbench Step 8** — external-curation-backfill (외부 큐레이션 영속화 BE) (2026-05-28)
+- [x] **dev-curation-workbench Step 9** — fe-mode-b-wizard-34 (3단 워크벤치: 카피·콘텐츠·근거) (2026-05-28)
+- [x] **dev-curation-workbench Step 10** — fe-mode-c-external-import (외부 참고 가져오기: 섹션 카드+확인 패널) (2026-05-29)
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환

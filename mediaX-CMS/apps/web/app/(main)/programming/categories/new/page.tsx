@@ -3,8 +3,10 @@
 import { Suspense, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Hand, Sparkles, Globe } from "lucide-react"
+import { ArrowLeft, Hand } from "lucide-react"
 import { distributionApi } from "@/lib/api"
+import { AiWizard } from "./_wizard"
+import { ExternalImport } from "./_external"
 
 // ── 상수 ──────────────────────────────────────────────────────
 
@@ -17,11 +19,6 @@ const CATEGORY_TYPE_OPTIONS = [
   "new_release",
   "event",
 ]
-
-const PLACEHOLDER_INFO: Record<string, { icon: React.ElementType; label: string; step: string }> = {
-  ai:       { icon: Sparkles, label: "AI 제안 위저드", step: "Step 7–8" },
-  external: { icon: Globe,    label: "외부 참고 가져오기", step: "Step 9" },
-}
 
 // ── 수동 생성 폼 ───────────────────────────────────────────────
 
@@ -205,33 +202,6 @@ function ManualCreateForm() {
   )
 }
 
-// ── placeholder (ai / external — Step 7~9에서 구현) ────────────
-
-function PlaceholderContent({ mode }: { mode: string }) {
-  const info = PLACEHOLDER_INFO[mode] ?? PLACEHOLDER_INFO["ai"]!
-  const Icon = info.icon
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-      <div className="rounded-full p-4 bg-muted">
-        <Icon className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <div className="text-center space-y-2">
-        <h2 className="text-xl font-semibold">{info.label}</h2>
-        <p className="text-sm text-muted-foreground">
-          이 기능은 {info.step}에서 구현됩니다.
-        </p>
-      </div>
-      <Link
-        href="/programming/categories"
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        큐레이션 목록으로 돌아가기
-      </Link>
-    </div>
-  )
-}
-
 // ── 진입 컴포넌트 ──────────────────────────────────────────────
 
 function NewCategoryContent() {
@@ -239,7 +209,9 @@ function NewCategoryContent() {
   const mode = params.get("mode") ?? "manual"
 
   if (mode === "manual") return <ManualCreateForm />
-  return <PlaceholderContent mode={mode} />
+  if (mode === "ai") return <AiWizard />
+  if (mode === "external") return <ExternalImport />
+  return <ManualCreateForm />
 }
 
 export default function NewCategoryPage() {
