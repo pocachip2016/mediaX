@@ -7,10 +7,7 @@
 (대기 중)
 
 ## Next (이번 마일스톤)
-- [x] **dev-curation-workbench Step 7** — fe-mode-b-wizard-12 (AI 제안 위저드 Step 1·2) (2026-05-28)
-- [x] **dev-curation-workbench Step 8** — external-curation-backfill (외부 큐레이션 영속화 BE) (2026-05-28)
-- [x] **dev-curation-workbench Step 9** — fe-mode-b-wizard-34 (3단 워크벤치: 카피·콘텐츠·근거) (2026-05-28)
-- [x] **dev-curation-workbench Step 10** — fe-mode-c-external-import (외부 참고 가져오기: 섹션 카드+확인 패널) (2026-05-29)
+- [ ] **dev-curation-workbench Step 11** — polish-and-wrap (빈/로딩/에러 상태 보강 + 반응형 + wrap)
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
@@ -19,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-curation-workbench Steps 7-10** — wizard-12 + external-curation-backfill + wizard-34 + external-import (2026-05-29)
 - [x] **dev-curation-workbench Step 6** — manual 수동 묶기 master-detail (api.ts 8함수, 생성폼, 상세 2컬럼, ContentPicker+ItemRow) (2026-05-28)
 - [x] **dev-curation-workbench Steps 3-5** — matcher(45 pytest) + copy-proposer LLM(17 pytest) + FE landing/nav (2026-05-28)
 - [x] **dev-curation-workbench Steps 0-2** — ADR(3-모드·OTT 1-Depth=Copy·SSOT) + schema-extend(alembic 0025·6컬럼) + ott-multi-section(OttSection·multi-section fetch·Watcha 파싱) 25 pytest (2026-05-28)
