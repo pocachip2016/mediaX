@@ -24,27 +24,6 @@ const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string
   rejected: { label: "반려됨", emoji: "✗", color: "bg-red-100 text-red-700" },
 }
 
-const createMockContent = (contentId: number): ContentDetail => ({
-  id: contentId,
-  title: "(Mock) 기생충",
-  original_title: "Parasite",
-  content_type: "movie",
-  status: "approved",
-  cp_name: "CJ ENM",
-  production_year: 2019,
-  runtime_minutes: 132,
-  country: "대한민국",
-  genres: [],
-  synopsis: "가난한 박씨 가족은 부잣집에 하나 둘씩 취업하며 묘한 공생 관계를 형성해간다.",
-  credits: [],
-  metadata_record: {} as any,
-  quality_score: 96,
-  poster_url: null,
-  parent_id: null,
-  created_at: "2026-04-01T09:00:00",
-  updated_at: "2026-04-01T09:00:00",
-} as any)
-
 export default function ContentDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -66,7 +45,7 @@ export default function ContentDetailPage() {
 
   const [content, setContent] = useState<ContentDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [usedMock, setUsedMock] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [posterCandidates, setPosterCandidates] = useState<PosterCandidateOut[] | null>(null)
 
   const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
@@ -81,11 +60,11 @@ export default function ContentDetailPage() {
       try {
         const data = await metadataApi.getContent(contentId)
         setContent(data)
-        setUsedMock(false)
+        setLoadError(null)
       } catch (error) {
         console.error("Failed to fetch content:", error)
-        setContent(createMockContent(contentId))
-        setUsedMock(true)
+        setContent(null)
+        setLoadError(error instanceof Error ? error.message : "불러오기 실패")
       } finally {
         setLoading(false)
       }
@@ -191,7 +170,23 @@ export default function ContentDetailPage() {
   }
 
   if (!content) {
-    return <div className="p-6 text-center text-slate-600">콘텐츠를 찾을 수 없습니다.</div>
+    return (
+      <div className="p-6 max-w-md mx-auto text-center space-y-3">
+        <p className="text-slate-700 font-medium">콘텐츠를 불러올 수 없습니다.</p>
+        {loadError && (
+          <p className="text-xs text-slate-500 break-all">{loadError}</p>
+        )}
+        <p className="text-xs text-slate-500">
+          백엔드 서버 연결을 확인하세요. (id={contentId})
+        </p>
+        <button
+          onClick={() => { setLoading(true); setLoadError(null); router.refresh() }}
+          className="px-4 py-2 rounded-lg border text-sm hover:bg-accent transition-colors"
+        >
+          다시 시도
+        </button>
+      </div>
+    )
   }
 
   // 현재값 매핑 — recommendations 카운트 + 모두적용 시 유사 건 제외 판정용
@@ -379,12 +374,6 @@ export default function ContentDetailPage() {
         onLock={handleLockFields}
         onPreviewClip={handleRequestPreviewClip}
       />
-
-      {usedMock && (
-        <div className="px-6 py-1.5 text-xs text-amber-600 dark:text-amber-400">
-          (샘플 데이터)
-        </div>
-      )}
 
       {/* view: 2컬럼 / edit: 행정렬 AlignedFieldRows / review: 3컬럼 */}
       {mode === "view" ? (
