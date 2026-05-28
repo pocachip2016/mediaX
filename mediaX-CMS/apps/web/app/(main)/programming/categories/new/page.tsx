@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Hand } from "lucide-react"
+import { ArrowLeft, Hand, RefreshCw } from "lucide-react"
 import { distributionApi } from "@/lib/api"
 import { AiWizard } from "./_wizard"
 import { ExternalImport } from "./_external"
@@ -123,7 +123,7 @@ function ManualCreateForm() {
         </div>
 
         {/* 플랫폼 + 유형 */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="text-sm font-medium">
               플랫폼 <span className="text-destructive">*</span>
@@ -214,9 +214,18 @@ function NewCategoryContent() {
   return <ManualCreateForm />
 }
 
+function PageLoading() {
+  return (
+    <div className="flex items-center justify-center min-h-[40vh] text-muted-foreground">
+      <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+      불러오는 중...
+    </div>
+  )
+}
+
 export default function NewCategoryPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<PageLoading />}>
       <NewCategoryContent />
     </Suspense>
   )

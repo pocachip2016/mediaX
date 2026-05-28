@@ -383,9 +383,10 @@ interface ItemsPanelProps {
   categoryId: number
   items: ServiceCategoryItemOut[]
   onItemsChange: (items: ServiceCategoryItemOut[]) => void
+  onError: (msg: string) => void
 }
 
-function ItemsPanel({ categoryId, items, onItemsChange }: ItemsPanelProps) {
+function ItemsPanel({ categoryId, items, onItemsChange, onError }: ItemsPanelProps) {
   const existingIds = new Set(items.map((i) => i.content_id))
 
   const handleAdded = (newItem: ServiceCategoryItemOut) => {
@@ -400,16 +401,14 @@ function ItemsPanel({ categoryId, items, onItemsChange }: ItemsPanelProps) {
         .map((i, idx) => ({ ...i, rank: idx + 1 }))
       onItemsChange(updated)
     } catch {
-      // 실패 시 무시 — 사용자 재시도 가능
+      onError("콘텐츠 제거에 실패했습니다. 다시 시도해 주세요.")
     }
   }
 
   const handleMove = async (index: number, direction: "up" | "down") => {
     const newItems = [...items]
     const targetIndex = direction === "up" ? index - 1 : index + 1
-    // swap
     ;[newItems[index], newItems[targetIndex]] = [newItems[targetIndex]!, newItems[index]!]
-    // reassign ranks
     const reranked = newItems.map((item, idx) => ({ ...item, rank: idx + 1 }))
     onItemsChange(reranked)
     try {
@@ -418,8 +417,8 @@ function ItemsPanel({ categoryId, items, onItemsChange }: ItemsPanelProps) {
         reranked.map((i) => ({ id: i.id, rank: i.rank }))
       )
     } catch {
-      // 실패 시 롤백 — 원본 복원
       onItemsChange(items)
+      onError("순서 변경에 실패했습니다. 다시 시도해 주세요.")
     }
   }
 
@@ -463,15 +462,19 @@ export default function CategoryDetailPage() {
   const router  = useRouter()
   const [category, setCategory] = useState<ServiceCategoryWithItemsOut | null>(null)
   const [loading, setLoading]   = useState(true)
+  const [usedMock, setUsedMock] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const fetchCategory = useCallback(async () => {
     setLoading(true)
     try {
       const data = await distributionApi.getCategory(Number(id))
       setCategory(data)
+      setUsedMock(false)
     } catch (err) {
       console.error("[category-detail] API 실패 → Mock 폴백", err)
       setCategory({ ...MOCK_CATEGORY, id: Number(id) })
+      setUsedMock(true)
     } finally {
       setLoading(false)
     }
@@ -506,6 +509,9 @@ export default function CategoryDetailPage() {
           <div>
             <h1 className="text-xl font-bold">{category.name}</h1>
             <div className="flex items-center gap-2 mt-1">
+              {usedMock && (
+                <span className="text-xs text-amber-600 dark:text-amber-400">(샘플 데이터)</span>
+              )}
               <span
                 className={cn(
                   "inline-block px-2 py-0.5 rounded-full text-xs font-medium",
@@ -552,10 +558,14 @@ export default function CategoryDetailPage() {
             </h2>
           </div>
           <div className="px-5 py-4">
+            {actionError && (
+              <p className="text-xs text-destructive mb-3">{actionError}</p>
+            )}
             <ItemsPanel
               categoryId={category.id}
               items={category.items}
               onItemsChange={updateItems}
+              onError={setActionError}
             />
           </div>
         </div>

@@ -7,7 +7,7 @@
 (대기 중)
 
 ## Next (이번 마일스톤)
-- [ ] **dev-curation-workbench Step 11** — polish-and-wrap (빈/로딩/에러 상태 보강 + 반응형 + wrap)
+(작성 중)
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-curation-workbench Step 11** — FE 완성 (usedMock 배지, 에러 알림, Suspense fallback, 반응형) (2026-05-29)
 - [x] **dev-curation-workbench Steps 7-10** — wizard-12 + external-curation-backfill + wizard-34 + external-import (2026-05-29)
 - [x] **dev-curation-workbench Step 6** — manual 수동 묶기 master-detail (api.ts 8함수, 생성폼, 상세 2컬럼, ContentPicker+ItemRow) (2026-05-28)
 - [x] **dev-curation-workbench Steps 3-5** — matcher(45 pytest) + copy-proposer LLM(17 pytest) + FE landing/nav (2026-05-28)

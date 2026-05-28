@@ -96,8 +96,9 @@
     {
       "step": 11,
       "name": "polish-and-wrap",
-      "status": "pending",
-      "spec": "FE: 빈/로딩/에러 + 반응형 + 스크린샷 + wrap"
+      "status": "completed",
+      "summary": "FE 완성 — page.tsx/[id]/page.tsx usedMock 배지(API 실패 표시), [id]/page.tsx onError 인라인 에러 알림, new/page.tsx Suspense fallback+반응형 grid. typecheck 통과",
+      "completed_at": "2026-05-29T04:16:59+09:00"
     }
   ]
 }

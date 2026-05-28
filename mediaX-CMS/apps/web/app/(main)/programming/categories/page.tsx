@@ -119,8 +119,9 @@ const CTA_MODES = [
 
 export default function CategoriesPage() {
   const router = useRouter()
-  const [categories, setCategories] = useState<ServiceCategoryOut[]>(MOCK_CATEGORIES)
-  const [loading, setLoading] = useState(false)
+  const [categories, setCategories] = useState<ServiceCategoryOut[]>([])
+  const [loading, setLoading] = useState(true)
+  const [usedMock, setUsedMock] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [modeFilter, setModeFilter] = useState<ModeFilter>("all")
   const [page, setPage] = useState(1)
@@ -131,9 +132,11 @@ export default function CategoriesPage() {
     try {
       const data = await distributionApi.getCategories()
       setCategories(data)
+      setUsedMock(false)
     } catch (err) {
       console.error("[categories] API 실패 → Mock 폴백", err)
       setCategories(MOCK_CATEGORIES)
+      setUsedMock(true)
     } finally {
       setLoading(false)
     }
@@ -175,6 +178,9 @@ export default function CategoriesPage() {
           <h1 className="text-2xl font-bold">큐레이션 워크벤치</h1>
           <p className="text-sm text-muted-foreground mt-1">
             테마별 콘텐츠 묶음을 설계하고 관리합니다.
+            {usedMock && (
+              <span className="ml-2 text-amber-600 dark:text-amber-400">(샘플 데이터)</span>
+            )}
           </p>
         </div>
         <Link
