@@ -9,6 +9,20 @@ type CombinedSyncLog = TmdbSyncLogItem & { provider: "TMDB" | "KOBIS" | "KMDB" }
 
 // ── Mock ──────────────────────────────────────────────────
 
+// 오늘 기준 지난 n일 ISO 날짜(오래된→최신) — mock 날짜 하드코딩 방지
+function lastNDates(n: number): string[] {
+  const out: string[] = []
+  const now = new Date()
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now)
+    d.setDate(now.getDate() - i)
+    out.push(d.toISOString().slice(0, 10))
+  }
+  return out
+}
+
+const MOCK_7D = lastNDates(7)
+
 const MOCK_COMBINED_LOGS: CombinedSyncLog[] = [
   { id: 2, run_id: "k2",  source: "kobis_daily",       target_year: null, target_date: "2026-05-18", status: "completed", started_at: "2026-05-18T07:00:00+09:00", finished_at: "2026-05-18T07:00:02+09:00", pages_fetched: 1,    items_fetched: 10,      items_inserted: 2,   items_updated: 6,   items_unchanged: 2, errors: 0, provider: "KOBIS" },
   { id: 2, run_id: "km2", source: "kmdb_backfill",      target_year: 2024, target_date: null,          status: "completed", started_at: "2026-05-18T06:00:05+09:00", finished_at: "2026-05-18T06:01:50+09:00", pages_fetched: 7,    items_fetched: 664,     items_inserted: 664, items_updated: 0,   items_unchanged: 0, errors: 0, provider: "KMDB"  },
@@ -23,14 +37,14 @@ const MOCK_TMDB: TmdbCacheStats = {
   total_movies: 847_230, total_tv: 192_440, total_persons: 0,
   last_24h_movies_added: 65, last_24h_tv_added: 16, last_24h_errors: 0,
   last_7d_daily: [
-    { date: "2026-05-05", movies: 42, tv: 11, errors: 0 },
-    { date: "2026-05-06", movies: 58, tv: 14, errors: 0 },
-    { date: "2026-05-07", movies: 31, tv: 8,  errors: 1 },
-    { date: "2026-05-08", movies: 77, tv: 22, errors: 0 },
-    { date: "2026-05-09", movies: 55, tv: 18, errors: 0 },
-    { date: "2026-05-10", movies: 65, tv: 16, errors: 0 },
-    { date: "2026-05-11", movies: 0,  tv: 0,  errors: 0 },
-  ],
+    { movies: 42, tv: 11, errors: 0 },
+    { movies: 58, tv: 14, errors: 0 },
+    { movies: 31, tv: 8,  errors: 1 },
+    { movies: 77, tv: 22, errors: 0 },
+    { movies: 55, tv: 18, errors: 0 },
+    { movies: 65, tv: 16, errors: 0 },
+    { movies: 48, tv: 13, errors: 0 },
+  ].map((d, i) => ({ date: MOCK_7D[i]!, ...d })),
   oldest_movie_year: 1900, newest_movie_year: 2026,
   last_run_at: "2026-05-10T18:45:00+09:00", last_run_status: "completed",
 }
@@ -39,28 +53,28 @@ const MOCK_KOBIS: ExternalSourceStats = {
   total_synced: 12_840, last_run_at: "2026-05-11T05:10:00+09:00",
   last_run_status: "completed",
   last_7d_daily: [
-    { date: "2026-05-05", count: 42, errors: 0 },
-    { date: "2026-05-06", count: 38, errors: 0 },
-    { date: "2026-05-07", count: 51, errors: 1 },
-    { date: "2026-05-08", count: 44, errors: 0 },
-    { date: "2026-05-09", count: 47, errors: 0 },
-    { date: "2026-05-10", count: 53, errors: 0 },
-    { date: "2026-05-11", count: 49, errors: 0 },
-  ],
+    { count: 42, errors: 0 },
+    { count: 38, errors: 0 },
+    { count: 51, errors: 1 },
+    { count: 44, errors: 0 },
+    { count: 47, errors: 0 },
+    { count: 53, errors: 0 },
+    { count: 49, errors: 0 },
+  ].map((d, i) => ({ date: MOCK_7D[i]!, ...d })),
 }
 
 const MOCK_KMDB: ExternalSourceStats = {
   total_synced: 8_412, last_run_at: "2026-05-11T05:30:00+09:00",
   last_run_status: "completed",
   last_7d_daily: [
-    { date: "2026-05-05", count: 122, errors: 0 },
-    { date: "2026-05-06", count: 98,  errors: 0 },
-    { date: "2026-05-07", count: 145, errors: 0 },
-    { date: "2026-05-08", count: 87,  errors: 1 },
-    { date: "2026-05-09", count: 110, errors: 0 },
-    { date: "2026-05-10", count: 134, errors: 0 },
-    { date: "2026-05-11", count: 101, errors: 0 },
-  ],
+    { count: 122, errors: 0 },
+    { count: 98,  errors: 0 },
+    { count: 145, errors: 0 },
+    { count: 87,  errors: 1 },
+    { count: 110, errors: 0 },
+    { count: 134, errors: 0 },
+    { count: 101, errors: 0 },
+  ].map((d, i) => ({ date: MOCK_7D[i]!, ...d })),
 }
 
 // ── 유틸 ──────────────────────────────────────────────────
