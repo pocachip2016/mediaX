@@ -143,6 +143,11 @@ celery_app.conf.update(
             "task": "workers.tasks.distribution.sync_ott_tving",
             "schedule": crontab(hour=7, minute=20),
         },
+        # 외부 큐레이션 섹션 영속화 — 매일 07:30 KST (OTT sync 완료 후)
+        "backfill-external-curations": {
+            "task": "workers.tasks.distribution.backfill_external_curations",
+            "schedule": crontab(hour=7, minute=30),
+        },
     },
     broker_connection_retry_on_startup=True,
     broker_transport_options={

@@ -22,8 +22,8 @@ def upgrade():
         sa.Column("kind", sa.String(20), nullable=False),
         sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("(datetime('now'))")),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()")),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()")),
     )
     op.create_index("ix_services_code", "services", ["code"], unique=True)
     op.create_index("ix_services_kind", "services", ["kind"])

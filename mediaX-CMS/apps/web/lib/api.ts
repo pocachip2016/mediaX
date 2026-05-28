@@ -1387,3 +1387,196 @@ export const pipelineTestApi = {
   summary: () =>
     requestTest<PipelineTestStageSummary>("/api/test/pipeline/summary"),
 }
+
+// ── Distribution / Curation ───────────────────────────────
+
+export interface ServiceCategoryOut {
+  id: number
+  name: string
+  category_type: string
+  platform: string
+  position: number
+  is_active: boolean
+  headline_copy: string | null
+  sub_copy: string | null
+  theme_features: Record<string, unknown> | null
+  source_mode: string        // "manual" | "ai_proposed" | "external_imported"
+  reference_external_id: string | null
+  is_draft: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface ServiceCategoryItemOut {
+  id: number
+  category_id: number
+  content_id: number
+  content_title: string | null
+  rank: number
+  score: number | null
+  added_at: string | null
+}
+
+export interface ServiceCategoryWithItemsOut extends ServiceCategoryOut {
+  items: ServiceCategoryItemOut[]
+}
+
+export interface ServiceCategoryCreate {
+  name: string
+  category_type: string
+  platform: string
+  position?: number
+  is_active?: boolean
+  headline_copy?: string | null
+  sub_copy?: string | null
+  theme_features?: Record<string, unknown> | null
+  source_mode?: string
+  reference_external_id?: string | null
+  is_draft?: boolean
+}
+
+export interface ServiceCategoryUpdate {
+  name?: string
+  category_type?: string
+  platform?: string
+  position?: number
+  is_active?: boolean
+  headline_copy?: string | null
+  sub_copy?: string | null
+  theme_features?: Record<string, unknown> | null
+  source_mode?: string
+  reference_external_id?: string | null
+  is_draft?: boolean
+}
+
+export interface ServiceCategoryItemCreate {
+  content_id: number
+  rank: number
+  score?: number | null
+}
+
+// 큐레이션 워크벤치 — 외부 OTT 참고 (Step 7·8)
+export interface OttItemOut {
+  title: string
+  rank: number
+  production_year: number | null
+  external_id: string | null
+  content_id?: number | null  // 영속 데이터 읽을 때 ott/matcher resolve 결과 (Step 8)
+}
+
+export interface OttSectionCardOut {
+  section_id: string
+  name: string
+  category_type: string
+  channel: string
+  item_count: number
+  items: OttItemOut[]
+}
+
+export interface ExternalReferencesResponse {
+  sections: OttSectionCardOut[]
+  total_sections: number
+}
+
+// 큐레이션 워크벤치 — AI 위저드 Step 3·4 (Step 9)
+export interface CopyCandidateOut {
+  rank: number
+  headline_copy: string
+  sub_copy: string | null
+  source: string  // "ai_proposed" | "external_imported"
+  reasoning: string | null
+}
+
+export interface ProposeCopyResponse {
+  candidates: CopyCandidateOut[]
+  engine_used: string | null
+}
+
+export interface ContentMatchCandidateOut {
+  content_id: number
+  title: string
+  content_type: string
+  production_year: number | null
+  runtime_minutes: number | null
+  score: number
+  score_breakdown: Record<string, number>
+}
+
+export interface MatchContentsResponse {
+  items: ContentMatchCandidateOut[]
+  total: number
+  theme_features: Record<string, unknown>
+}
+
+export const distributionApi = {
+  getCategories: (params?: { platform?: string; is_active?: boolean }) => {
+    const q = new URLSearchParams()
+    if (params?.platform) q.set("platform", params.platform)
+    if (params?.is_active != null) q.set("is_active", String(params.is_active))
+    const qs = q.toString()
+    return request<ServiceCategoryOut[]>(`/api/distribution/categories${qs ? `?${qs}` : ""}`)
+  },
+
+  createCategory: (data: ServiceCategoryCreate) =>
+    request<ServiceCategoryOut>("/api/distribution/categories", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getCategory: (id: number) =>
+    request<ServiceCategoryWithItemsOut>(`/api/distribution/categories/${id}`),
+
+  updateCategory: (id: number, data: ServiceCategoryUpdate) =>
+    request<ServiceCategoryOut>(`/api/distribution/categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number) =>
+    request<void>(`/api/distribution/categories/${id}`, { method: "DELETE" }),
+
+  addItem: (categoryId: number, data: ServiceCategoryItemCreate) =>
+    request<ServiceCategoryItemOut>(`/api/distribution/categories/${categoryId}/items`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  removeItem: (categoryId: number, itemId: number) =>
+    request<void>(`/api/distribution/categories/${categoryId}/items/${itemId}`, {
+      method: "DELETE",
+    }),
+
+  reorderItems: (categoryId: number, items: { id: number; rank: number }[]) =>
+    request<void>(`/api/distribution/categories/${categoryId}/items/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    }),
+
+  getExternalReferences: (channel?: string) => {
+    const qs = channel ? `?channel=${encodeURIComponent(channel)}` : ""
+    return request<ExternalReferencesResponse>(
+      `/api/distribution/curations/external-references${qs}`
+    )
+  },
+
+  proposeCopy: (data: {
+    theme_features: Record<string, unknown>
+    selected_section_names?: string[]
+    limit?: number
+  }) =>
+    request<ProposeCopyResponse>("/api/distribution/curations/propose-copy", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  matchContents: (data: {
+    theme_features: Record<string, unknown>
+    external_titles?: string[]
+    external_content_ids?: number[]
+    limit?: number
+  }) =>
+    request<MatchContentsResponse>("/api/distribution/curations/match-contents", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+}

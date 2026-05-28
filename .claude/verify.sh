@@ -2724,6 +2724,194 @@ print('  ✓ 모든 service 함수 import OK')
     echo "=== PASS ==="
     ;;
 
+  curation-step6-items)
+    echo "=== curation-step6-items: ContentPicker + ItemRow + items CRUD + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL="$CMS/apps/web/app/(main)/programming/categories/[id]/page.tsx"
+
+    echo "--- 파일 존재 ---"
+    [ -f "$DETAIL" ] || { echo "MISSING: [id]/page.tsx"; exit 1; }
+    echo "  ✓ [id]/page.tsx"
+
+    echo "--- items 심볼 확인 ---"
+    for sym in addItem removeItem reorderItems listContents ContentPicker ItemRow; do
+      grep -q "$sym" "$DETAIL" || { echo "MISSING: $sym"; exit 1; }
+      echo "  ✓ $sym"
+    done
+
+    echo "--- 중복 방지 확인 ---"
+    grep -q "existingIds\|alreadyAdded" "$DETAIL" || { echo "MISSING: 중복 방지 로직"; exit 1; }
+    echo "  ✓ 중복 방지"
+
+    echo "--- 빈 상태 메시지 ---"
+    grep -q "아직 묶인 콘텐츠" "$DETAIL" || { echo "MISSING: 빈 상태 메시지"; exit 1; }
+    echo "  ✓ 빈 상태"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step6-detail)
+    echo "=== curation-step6-detail: [id]/page.tsx 마스터 폼 + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL="$CMS/apps/web/app/(main)/programming/categories/[id]/page.tsx"
+
+    echo "--- 파일 존재 ---"
+    [ -f "$DETAIL" ] || { echo "MISSING: [id]/page.tsx"; exit 1; }
+    echo "  ✓ [id]/page.tsx"
+
+    echo "--- 심볼 확인 ---"
+    for sym in getCategory updateCategory deleteCategory; do
+      grep -q "$sym" "$DETAIL" || { echo "MISSING: $sym"; exit 1; }
+      echo "  ✓ $sym"
+    done
+    grep -q "Mock\|MOCK" "$DETAIL" || { echo "MISSING: Mock 폴백"; exit 1; }
+    echo "  ✓ Mock 폴백"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step6-create)
+    echo "=== curation-step6-create: manual 생성 폼 + placeholder 보존 + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    NEW_PAGE="$CMS/apps/web/app/(main)/programming/categories/new/page.tsx"
+
+    echo "--- 파일 존재 ---"
+    [ -f "$NEW_PAGE" ] || { echo "MISSING: new/page.tsx"; exit 1; }
+    echo "  ✓ new/page.tsx"
+
+    echo "--- manual 생성 폼 심볼 ---"
+    grep -q "createCategory" "$NEW_PAGE" || { echo "MISSING: createCategory 호출"; exit 1; }
+    echo "  ✓ createCategory"
+    grep -q 'source_mode.*manual\|"manual"' "$NEW_PAGE" || { echo "MISSING: source_mode manual"; exit 1; }
+    echo "  ✓ source_mode: manual"
+    grep -q 'router.push' "$NEW_PAGE" || { echo "MISSING: router.push (redirect)"; exit 1; }
+    echo "  ✓ router.push (성공 후 redirect)"
+
+    echo "--- ai/external placeholder 보존 ---"
+    grep -q "PlaceholderContent\|PLACEHOLDER_INFO" "$NEW_PAGE" || { echo "MISSING: placeholder for ai/external"; exit 1; }
+    echo "  ✓ ai/external placeholder 보존"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step6-api)
+    echo "=== curation-step6-api: distributionApi 함수 7개 + 타입 + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    API="$CMS/apps/web/lib/api.ts"
+
+    echo "--- 타입 존재 확인 ---"
+    for sym in ServiceCategoryItemOut ServiceCategoryWithItemsOut ServiceCategoryCreate ServiceCategoryUpdate ServiceCategoryItemCreate; do
+      grep -q "interface $sym" "$API" || { echo "MISSING type: $sym"; exit 1; }
+      echo "  ✓ $sym"
+    done
+
+    echo "--- distributionApi 함수 7개 확인 ---"
+    for fn in getCategories createCategory getCategory updateCategory deleteCategory addItem removeItem reorderItems; do
+      grep -q "$fn" "$API" || { echo "MISSING fn: $fn"; exit 1; }
+      echo "  ✓ $fn"
+    done
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step5-fe-landing)
+    echo "=== curation-step5-fe-landing: nav + api.ts + page.tsx + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+
+    echo "--- 파일 존재 확인 ---"
+    PAGE="$CMS/apps/web/app/(main)/programming/categories/page.tsx"
+    NEW_PAGE="$CMS/apps/web/app/(main)/programming/categories/new/page.tsx"
+    [ -f "$PAGE" ] || { echo "MISSING: categories/page.tsx"; exit 1; }
+    echo "  ✓ categories/page.tsx"
+    [ -f "$NEW_PAGE" ] || { echo "MISSING: categories/new/page.tsx"; exit 1; }
+    echo "  ✓ categories/new/page.tsx"
+
+    echo "--- api.ts: distributionApi + ServiceCategoryOut ---"
+    grep -q "distributionApi" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: distributionApi in api.ts"; exit 1; }
+    echo "  ✓ distributionApi"
+    grep -q "ServiceCategoryOut" "$CMS/apps/web/lib/api.ts" || { echo "MISSING: ServiceCategoryOut in api.ts"; exit 1; }
+    echo "  ✓ ServiceCategoryOut"
+
+    echo "--- docs.ts: 큐레이션 nav 등록 ---"
+    grep -q '"/programming/categories"' "$CMS/apps/web/config/docs.ts" || { echo "MISSING: /programming/categories in docs.ts"; exit 1; }
+    echo "  ✓ /programming/categories nav 항목"
+
+    echo "--- page.tsx: 3 CTA 모드 정의 ---"
+    grep -q '"manual"' "$PAGE" || { echo "MISSING: manual mode"; exit 1; }
+    grep -q '"ai"' "$PAGE" || { echo "MISSING: ai mode"; exit 1; }
+    grep -q '"external"' "$PAGE" || { echo "MISSING: external mode"; exit 1; }
+    grep -q 'mode=' "$PAGE" || { echo "MISSING: mode= query param reference"; exit 1; }
+    echo "  ✓ 3 CTA 모드 (manual/ai/external)"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step4-copy-proposer)
+    echo "=== curation-step4-copy-proposer: copy_proposer + propose-copy API + pytest ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    [ -f "api/distribution/copy_proposer.py" ] || { echo "MISSING: copy_proposer.py"; exit 1; }
+    echo "  ✓ api/distribution/copy_proposer.py"
+
+    echo "--- import 검증 ---"
+    .venv/bin/python3 -c "
+from api.distribution.copy_proposer import propose_copy
+from api.distribution.schemas import ProposeCopyRequest, ProposeCopyResponse, CopyCandidateOut
+print('  ✓ copy_proposer + schemas import OK')
+" || { echo "FAIL: import"; exit 1; }
+
+    echo "--- pytest ---"
+    .venv/bin/pytest tests/distribution/test_copy_proposer.py -q 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step3-matcher)
+    echo "=== curation-step3-matcher: matcher + match-contents API + external-references API ==="
+    cd "$BACKEND" || exit 1
+
+    echo "--- 파일 존재 확인 ---"
+    for f in api/distribution/curation_matcher.py; do
+      [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+      echo "  ✓ $f"
+    done
+
+    echo "--- import 검증 ---"
+    .venv/bin/python3 -c "
+from api.distribution.curation_matcher import match_contents, score_content
+from api.distribution.schemas import MatchContentsRequest, MatchContentsResponse, ExternalReferencesResponse
+print('  ✓ curation_matcher + schemas import OK')
+" || { echo "FAIL: import"; exit 1; }
+
+    echo "--- pytest (matcher 유닛 + API 엔드포인트) ---"
+    .venv/bin/pytest tests/distribution/test_curation_matcher.py tests/distribution/test_curations_api.py -q 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   recommend-step1.3)
     echo "=== recommend-step1.3: ShortMetaGrid + cells ==="
     MEDIAX_CMS="$SCRIPT_DIR/../mediaX-CMS"
@@ -4399,9 +4587,107 @@ print('  ✓ derive_status_from_stage 매핑 OK')
     echo "=== PASS ==="
     ;;
 
+  dev-curation-workbench-step10)
+    echo "=== dev-curation-workbench-step10: fe-mode-c-external-import ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. _external.tsx 존재 + ExternalImport export 확인
+    test -f apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: _external.tsx 없음"; exit 1; }
+    grep -q "export function ExternalImport" apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: ExternalImport export 없음"; exit 1; }
+    echo "  ✓ _external.tsx + ExternalImport export 확인"
+    # 2. page.tsx가 ExternalImport import + mode=external 분기 확인
+    grep -q "import.*ExternalImport.*from.*_external" apps/web/app/\(main\)/programming/categories/new/page.tsx || { echo "FAIL: ExternalImport import 없음"; exit 1; }
+    grep -q 'mode === "external"' apps/web/app/\(main\)/programming/categories/new/page.tsx || { echo "FAIL: mode=external 분기 없음"; exit 1; }
+    echo "  ✓ page.tsx ExternalImport 배선 확인"
+    # 3. 핵심 설계 규칙 — source_mode/reference_external_id/addItem 확인
+    grep -q 'source_mode: "external_imported"' apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: source_mode external_imported 없음"; exit 1; }
+    grep -q "reference_external_id" apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: reference_external_id 없음"; exit 1; }
+    grep -q "addItem" apps/web/app/\(main\)/programming/categories/new/_external.tsx || { echo "FAIL: addItem 호출 없음"; exit 1; }
+    echo "  ✓ 설계 규칙 (source_mode/reference_external_id/addItem) 확인"
+    # 4. typecheck
+    npm run typecheck 2>&1 | tail -5
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
+  dev-curation-workbench-step9)
+    echo "=== dev-curation-workbench-step9: fe-mode-b-wizard-34 (3단 워크벤치) ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. _wizard.tsx에 Step3Workbench 존재 확인
+    grep -q "function Step3Workbench" apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: Step3Workbench 없음"; exit 1; }
+    echo "  ✓ Step3Workbench 컴포넌트 확인"
+    # 2. api.ts에 proposeCopy/matchContents 함수 확인
+    grep -q "proposeCopy:" apps/web/lib/api.ts || { echo "FAIL: proposeCopy 함수 없음"; exit 1; }
+    grep -q "matchContents:" apps/web/lib/api.ts || { echo "FAIL: matchContents 함수 없음"; exit 1; }
+    echo "  ✓ proposeCopy/matchContents 함수 확인"
+    # 3. 3단 그리드 + ScoreBar 확인
+    grep -q "240px_1fr_340px" apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: 3단 그리드 없음"; exit 1; }
+    grep -q "function ScoreBar" apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: ScoreBar 없음"; exit 1; }
+    echo "  ✓ 3단 그리드 + ScoreBar 확인"
+    # 4. typecheck
+    npm run typecheck 2>&1 | tail -5
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
+  dev-curation-workbench-step8)
+    echo "=== dev-curation-workbench-step8: external-curation-backfill ==="
+    cd "$BACKEND"
+    # 1. 모델 import 확인
+    python3 -c "
+from api.distribution.models import ExternalCuration, ExternalCurationItem
+print('  ✓ ExternalCuration/Item 모델 import OK')
+"
+    # 2. alembic 파일 존재 확인
+    test -f alembic/versions/0026_external_curation_tables.py || { echo "FAIL: 0026 마이그레이션 없음"; exit 1; }
+    echo "  ✓ alembic 0026 파일 확인"
+    # 3. curation_runner import 확인
+    python3 -c "
+from api.distribution.ott.curation_runner import run_curation_source
+print('  ✓ curation_runner import OK')
+"
+    # 4. Beat task 등록 확인
+    python3 -c "
+from workers.celery_app import celery_app
+sched = celery_app.conf.beat_schedule
+assert 'backfill-external-curations' in sched, 'FAIL: backfill-external-curations beat 없음'
+print('  ✓ backfill-external-curations Beat 등록 확인')
+"
+    # 5. schemas — OttItemOut.content_id 필드, MatchContentsRequest.external_content_ids 확인
+    python3 -c "
+from api.distribution.schemas import OttItemOut, MatchContentsRequest
+o = OttItemOut(title='test', rank=1, content_id=42)
+assert o.content_id == 42
+r = MatchContentsRequest(theme_features={}, external_content_ids=[1, 2])
+assert r.external_content_ids == [1, 2]
+print('  ✓ 스키마 확장 확인')
+"
+    # 6. pytest
+    python3 -m pytest tests/distribution/test_curation_backfill.py -q
+    echo "  ✓ 11 pytest pass"
+    echo "=== PASS ==="
+    ;;
+
+  dev-curation-workbench-step7)
+    echo "=== dev-curation-workbench-step7: fe-mode-b-wizard-12 (AI 위저드 Step 1·2) ==="
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    # 1. _wizard.tsx 파일 존재 확인
+    test -f apps/web/app/\(main\)/programming/categories/new/_wizard.tsx || { echo "FAIL: _wizard.tsx 없음"; exit 1; }
+    echo "  ✓ _wizard.tsx 파일 확인"
+    # 2. new/page.tsx에서 AiWizard import 확인
+    grep -q "import.*AiWizard.*from.*_wizard" apps/web/app/\(main\)/programming/categories/new/page.tsx || { echo "FAIL: AiWizard import 없음"; exit 1; }
+    echo "  ✓ AiWizard import 확인"
+    # 3. lib/api.ts에 OttSectionCardOut 타입 확인
+    grep -q "export interface OttSectionCardOut" apps/web/lib/api.ts || { echo "FAIL: OttSectionCardOut 타입 없음"; exit 1; }
+    echo "  ✓ OttSectionCardOut 타입 확인"
+    # 4. typecheck
+    npm run typecheck 2>&1 | tail -5
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10"
     exit 1
     ;;
 esac

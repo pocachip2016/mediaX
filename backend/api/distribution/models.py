@@ -58,6 +58,13 @@ class ServiceCategory(Base):
     platform = Column(String(50), nullable=False)
     position = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    # 큐레이션 워크벤치 확장 (alembic 0025)
+    headline_copy = Column(String(200), nullable=True)
+    sub_copy = Column(String(300), nullable=True)
+    theme_features = Column(JSON, nullable=True)
+    source_mode = Column(String(20), default="manual", nullable=False)
+    reference_external_id = Column(String(200), nullable=True)
+    is_draft = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -79,6 +86,48 @@ class ServiceCategoryItem(Base):
     __table_args__ = (
         UniqueConstraint("category_id", "content_id", name="uq_cat_item_content"),
         Index("ix_cat_item_rank", "category_id", "rank"),
+    )
+
+
+class ExternalCuration(Base):
+    """외부 OTT 큐레이션 섹션 영속화 — section_name이 카피 후보, content_id resolved."""
+    __tablename__ = "external_curations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    channel = Column(String(50), nullable=False)
+    section_id = Column(String(200), nullable=False)
+    section_name = Column(String(300), nullable=False)
+    category_type = Column(String(50), nullable=False)
+    trend_type = Column(String(20), default="ott", nullable=False)  # ott | trend | seasonal
+    season_tag = Column(String(50), nullable=True)
+    collected_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    matched_count = Column(Integer, default=0)
+    total_count = Column(Integer, default=0)
+
+    items = relationship("ExternalCurationItem", back_populates="curation", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("channel", "section_id", name="uq_ext_curation_channel_section"),
+        Index("ix_ext_curation_channel", "channel"),
+    )
+
+
+class ExternalCurationItem(Base):
+    """외부 큐레이션 섹션의 개별 작품 — content_id nullable (미매칭 시 NULL 보존)."""
+    __tablename__ = "external_curation_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_curation_id = Column(Integer, ForeignKey("external_curations.id"), nullable=False)
+    content_id = Column(Integer, ForeignKey("contents.id"), nullable=True)
+    external_title = Column(String(300), nullable=False)
+    external_rank = Column(Integer, nullable=False)
+    production_year = Column(Integer, nullable=True)
+
+    curation = relationship("ExternalCuration", back_populates="items")
+
+    __table_args__ = (
+        UniqueConstraint("external_curation_id", "external_rank", name="uq_ext_item_rank"),
+        Index("ix_ext_item_content_id", "content_id"),
     )
 
 
