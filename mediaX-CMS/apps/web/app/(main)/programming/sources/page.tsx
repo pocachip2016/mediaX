@@ -51,7 +51,16 @@ const MOCK_KOBIS: ExternalSourceStats = {
 
 const MOCK_KMDB: ExternalSourceStats = {
   total_synced: 8_412, last_run_at: "2026-05-11T05:30:00+09:00",
-  last_run_status: null, last_7d_daily: [],
+  last_run_status: "completed",
+  last_7d_daily: [
+    { date: "2026-05-05", count: 122, errors: 0 },
+    { date: "2026-05-06", count: 98,  errors: 0 },
+    { date: "2026-05-07", count: 145, errors: 0 },
+    { date: "2026-05-08", count: 87,  errors: 1 },
+    { date: "2026-05-09", count: 110, errors: 0 },
+    { date: "2026-05-10", count: 134, errors: 0 },
+    { date: "2026-05-11", count: 101, errors: 0 },
+  ],
 }
 
 // ── 유틸 ──────────────────────────────────────────────────
@@ -200,6 +209,7 @@ export default function SourcesDashboard() {
   const tmdbBarData = tmdb.last_7d_daily.map((d) => ({ count: d.movies + d.tv }))
   const tmdbMaxBar  = Math.max(...tmdbBarData.map((d) => d.count), 1)
   const kobisMaxBar = Math.max(...kobis.last_7d_daily.map((d) => d.count), 1)
+  const kmdbMaxBar  = Math.max(...kmdb.last_7d_daily.map((d) => d.count), 1)
 
   return (
     <div className="space-y-6">
@@ -268,8 +278,8 @@ export default function SourcesDashboard() {
           total={kmdb.total_synced.toLocaleString()}
           lastRun={kmdb.last_run_at}
           lastStatus={kmdb.last_run_status}
-          barData={[]}
-          maxBar={1}
+          barData={kmdb.last_7d_daily}
+          maxBar={kmdbMaxBar}
           accent=""
         />
       </div>
