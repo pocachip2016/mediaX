@@ -2724,6 +2724,112 @@ print('  ✓ 모든 service 함수 import OK')
     echo "=== PASS ==="
     ;;
 
+  curation-step6-items)
+    echo "=== curation-step6-items: ContentPicker + ItemRow + items CRUD + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL="$CMS/apps/web/app/(main)/programming/categories/[id]/page.tsx"
+
+    echo "--- 파일 존재 ---"
+    [ -f "$DETAIL" ] || { echo "MISSING: [id]/page.tsx"; exit 1; }
+    echo "  ✓ [id]/page.tsx"
+
+    echo "--- items 심볼 확인 ---"
+    for sym in addItem removeItem reorderItems listContents ContentPicker ItemRow; do
+      grep -q "$sym" "$DETAIL" || { echo "MISSING: $sym"; exit 1; }
+      echo "  ✓ $sym"
+    done
+
+    echo "--- 중복 방지 확인 ---"
+    grep -q "existingIds\|alreadyAdded" "$DETAIL" || { echo "MISSING: 중복 방지 로직"; exit 1; }
+    echo "  ✓ 중복 방지"
+
+    echo "--- 빈 상태 메시지 ---"
+    grep -q "아직 묶인 콘텐츠" "$DETAIL" || { echo "MISSING: 빈 상태 메시지"; exit 1; }
+    echo "  ✓ 빈 상태"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step6-detail)
+    echo "=== curation-step6-detail: [id]/page.tsx 마스터 폼 + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    DETAIL="$CMS/apps/web/app/(main)/programming/categories/[id]/page.tsx"
+
+    echo "--- 파일 존재 ---"
+    [ -f "$DETAIL" ] || { echo "MISSING: [id]/page.tsx"; exit 1; }
+    echo "  ✓ [id]/page.tsx"
+
+    echo "--- 심볼 확인 ---"
+    for sym in getCategory updateCategory deleteCategory; do
+      grep -q "$sym" "$DETAIL" || { echo "MISSING: $sym"; exit 1; }
+      echo "  ✓ $sym"
+    done
+    grep -q "Mock\|MOCK" "$DETAIL" || { echo "MISSING: Mock 폴백"; exit 1; }
+    echo "  ✓ Mock 폴백"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step6-create)
+    echo "=== curation-step6-create: manual 생성 폼 + placeholder 보존 + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    NEW_PAGE="$CMS/apps/web/app/(main)/programming/categories/new/page.tsx"
+
+    echo "--- 파일 존재 ---"
+    [ -f "$NEW_PAGE" ] || { echo "MISSING: new/page.tsx"; exit 1; }
+    echo "  ✓ new/page.tsx"
+
+    echo "--- manual 생성 폼 심볼 ---"
+    grep -q "createCategory" "$NEW_PAGE" || { echo "MISSING: createCategory 호출"; exit 1; }
+    echo "  ✓ createCategory"
+    grep -q 'source_mode.*manual\|"manual"' "$NEW_PAGE" || { echo "MISSING: source_mode manual"; exit 1; }
+    echo "  ✓ source_mode: manual"
+    grep -q 'router.push' "$NEW_PAGE" || { echo "MISSING: router.push (redirect)"; exit 1; }
+    echo "  ✓ router.push (성공 후 redirect)"
+
+    echo "--- ai/external placeholder 보존 ---"
+    grep -q "PlaceholderContent\|PLACEHOLDER_INFO" "$NEW_PAGE" || { echo "MISSING: placeholder for ai/external"; exit 1; }
+    echo "  ✓ ai/external placeholder 보존"
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
+  curation-step6-api)
+    echo "=== curation-step6-api: distributionApi 함수 7개 + 타입 + typecheck ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    API="$CMS/apps/web/lib/api.ts"
+
+    echo "--- 타입 존재 확인 ---"
+    for sym in ServiceCategoryItemOut ServiceCategoryWithItemsOut ServiceCategoryCreate ServiceCategoryUpdate ServiceCategoryItemCreate; do
+      grep -q "interface $sym" "$API" || { echo "MISSING type: $sym"; exit 1; }
+      echo "  ✓ $sym"
+    done
+
+    echo "--- distributionApi 함수 7개 확인 ---"
+    for fn in getCategories createCategory getCategory updateCategory deleteCategory addItem removeItem reorderItems; do
+      grep -q "$fn" "$API" || { echo "MISSING fn: $fn"; exit 1; }
+      echo "  ✓ $fn"
+    done
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || [ $? -eq 0 ] || { echo "FAIL: typecheck"; exit 1; }
+
+    echo "=== PASS ==="
+    ;;
+
   curation-step5-fe-landing)
     echo "=== curation-step5-fe-landing: nav + api.ts + page.tsx + typecheck ==="
     CMS="$SCRIPT_DIR/../mediaX-CMS"

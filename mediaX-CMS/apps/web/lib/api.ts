@@ -1407,6 +1407,54 @@ export interface ServiceCategoryOut {
   updated_at: string | null
 }
 
+export interface ServiceCategoryItemOut {
+  id: number
+  category_id: number
+  content_id: number
+  content_title: string | null
+  rank: number
+  score: number | null
+  added_at: string | null
+}
+
+export interface ServiceCategoryWithItemsOut extends ServiceCategoryOut {
+  items: ServiceCategoryItemOut[]
+}
+
+export interface ServiceCategoryCreate {
+  name: string
+  category_type: string
+  platform: string
+  position?: number
+  is_active?: boolean
+  headline_copy?: string | null
+  sub_copy?: string | null
+  theme_features?: Record<string, unknown> | null
+  source_mode?: string
+  reference_external_id?: string | null
+  is_draft?: boolean
+}
+
+export interface ServiceCategoryUpdate {
+  name?: string
+  category_type?: string
+  platform?: string
+  position?: number
+  is_active?: boolean
+  headline_copy?: string | null
+  sub_copy?: string | null
+  theme_features?: Record<string, unknown> | null
+  source_mode?: string
+  reference_external_id?: string | null
+  is_draft?: boolean
+}
+
+export interface ServiceCategoryItemCreate {
+  content_id: number
+  rank: number
+  score?: number | null
+}
+
 export const distributionApi = {
   getCategories: (params?: { platform?: string; is_active?: boolean }) => {
     const q = new URLSearchParams()
@@ -1415,4 +1463,39 @@ export const distributionApi = {
     const qs = q.toString()
     return request<ServiceCategoryOut[]>(`/api/distribution/categories${qs ? `?${qs}` : ""}`)
   },
+
+  createCategory: (data: ServiceCategoryCreate) =>
+    request<ServiceCategoryOut>("/api/distribution/categories", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getCategory: (id: number) =>
+    request<ServiceCategoryWithItemsOut>(`/api/distribution/categories/${id}`),
+
+  updateCategory: (id: number, data: ServiceCategoryUpdate) =>
+    request<ServiceCategoryOut>(`/api/distribution/categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number) =>
+    request<void>(`/api/distribution/categories/${id}`, { method: "DELETE" }),
+
+  addItem: (categoryId: number, data: ServiceCategoryItemCreate) =>
+    request<ServiceCategoryItemOut>(`/api/distribution/categories/${categoryId}/items`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  removeItem: (categoryId: number, itemId: number) =>
+    request<void>(`/api/distribution/categories/${categoryId}/items/${itemId}`, {
+      method: "DELETE",
+    }),
+
+  reorderItems: (categoryId: number, items: { id: number; rank: number }[]) =>
+    request<void>(`/api/distribution/categories/${categoryId}/items/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    }),
 }

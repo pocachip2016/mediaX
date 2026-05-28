@@ -57,7 +57,9 @@
     {
       "step": 6,
       "name": "fe-mode-a-manual",
-      "status": "pending"
+      "status": "completed",
+      "summary": "manual 수동 묶기 master-detail — api.ts 타입+함수 8개, 생성 폼(new?mode=manual), 상세 2컬럼(편집+삭제), ContentPicker(검색·중복방지) + ItemRow(reorder↑↓·remove), typecheck pass",
+      "completed_at": "2026-05-28T21:00:00+09:00"
     },
     {
       "step": 7,
