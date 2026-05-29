@@ -183,7 +183,7 @@ function SampleSeedPanel({
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">S0 — 시드 생성 패널</h3>
+          <h3 className="text-sm font-semibold">시드 생성</h3>
           <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 15건 격리 데이터 관리 · cp_name=TEST_PIPELINE + tags=pipeline-test</p>
         </div>
         {summary && summary.total > 0 && (
@@ -510,7 +510,7 @@ function AddContentInlinePanel({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">S1 — 단건 콘텐츠 등록</h3>
+        <h3 className="text-sm font-semibold">단건 콘텐츠 등록</h3>
         <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE CP 고정 · 파이프라인 생성 단계 검증</p>
       </div>
 
@@ -614,7 +614,7 @@ function BulkUploadEmbed({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">S2 — CSV 벌크 업로드</h3>
+        <h3 className="text-sm font-semibold">CSV 벌크 업로드</h3>
         <p className="text-xs text-muted-foreground mt-0.5">CSV/Excel → 다수 콘텐츠 일괄 등록 · /upload/batch 재사용</p>
       </div>
 
@@ -665,6 +665,51 @@ function BulkUploadEmbed({ onRefresh }: { onRefresh: () => void }) {
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+const CREATION_TABS = [
+  { key: "seed", label: "🧪 시드" },
+  { key: "single", label: "➕ 건별" },
+  { key: "bulk", label: "📤 대량(CSV)" },
+] as const
+
+function CreationTabsPanel({
+  summary,
+  onRefresh,
+}: {
+  summary: PipelineTestStageSummary | null
+  onRefresh: () => void
+}) {
+  const [activeTab, setActiveTab] = useState<"seed" | "single" | "bulk">("seed")
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">① 생성 — waiting로 투입</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">시드 · 건별 · 대량(CSV) 입력으로 waiting 상태 콘텐츠 생성</p>
+      </div>
+      {/* 탭 바 */}
+      <div className="flex gap-4 border-b border-amber-200 dark:border-amber-800/40">
+        {CREATION_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === tab.key
+                ? "border-amber-500 text-amber-600 dark:text-amber-400"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {/* 탭 본문 */}
+      {activeTab === "seed" && <SampleSeedPanel summary={summary} onRefresh={onRefresh} />}
+      {activeTab === "single" && <AddContentInlinePanel onRefresh={onRefresh} />}
+      {activeTab === "bulk" && <BulkUploadEmbed onRefresh={onRefresh} />}
     </div>
   )
 }
@@ -1400,17 +1445,17 @@ export default function PipelineMonitoringPage() {
                 {activeStage !== null ? (
                   <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
                     {activeStage === 1 ? (
-                      <SampleSeedPanel summary={testSummary} onRefresh={refreshTestSummary} />
+                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} />
                     ) : activeStage === 2 ? (
-                      <AddContentInlinePanel onRefresh={refreshTestSummary} />
-                    ) : activeStage === 3 ? (
-                      <BulkUploadEmbed onRefresh={refreshTestSummary} />
-                    ) : activeStage === 4 ? (
                       <BatchAiTrigger onRefresh={refreshTestSummary} />
-                    ) : activeStage === 5 ? (
+                    ) : activeStage === 3 ? (
                       <BatchEnrichTrigger onRefresh={refreshTestSummary} />
-                    ) : activeStage === 6 ? (
+                    ) : activeStage === 4 ? (
                       <TestReviewPanel onRefresh={refreshTestSummary} />
+                    ) : activeStage === 5 || activeStage === 6 ? (
+                      <div className="text-center text-xs text-muted-foreground py-8">
+                        {activeStage === 5 ? "승인" : "게시"} 단계 패널 준비 중 — 검수 통과 후 자동 전이 현황을 우측 목록·타임라인에서 확인하세요
+                      </div>
                     ) : null}
                   </div>
                 ) : (
