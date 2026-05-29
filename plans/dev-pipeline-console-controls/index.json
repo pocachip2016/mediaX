@@ -2,14 +2,15 @@
   "project": "mediaX",
   "phase": "dev-pipeline-console-controls",
   "description": "Pipeline Test Console ② AI처리 패널을 제어판으로 재설계 — 수동/자동 on/off, 자동 진행 조건(품질점수 임계값), 실시간 진행 로그, 외부 메타·평가값 표시, 단계 건수/목록 통합. 전제: BE 상태머신 분리(단일 전이). 보류 상태 — 수동 단계 검증 후 진행.",
-  "status": "deferred",
+  "status": "active",
   "decisions": {
     "trigger": "사용자: CSV 대량 업로드가 콘텐츠를 자동으로 review까지 진행시켜 수동 단계 검증 불가. 원인 추적 결과 _process_movie_row(service_batch_import.py:155)가 process_content_metadata.delay() 자동 dispatch → process_content_ai(ai_engine.py:329)가 waiting→processing→review/approved 한 번에 처리(staging 건너뜀).",
     "root_cause": "process_content_ai가 단일 태스크에서 다단계 전이를 수행하고 staging(enrich)을 건너뜀. 점수 임계값(90)이 ai_engine.py:385에 하드코딩.",
     "be_state_machine": "단일 전이로 분리 제안 — ②AI처리: waiting→processing 정지 / ③Enrich: processing→staging / ④검수: staging→review/approved/rejected. process_content_ai(content_id, *, auto_chain: bool, score_threshold: int) 파라미터화.",
     "adr_007_pipeline_redefine": "ADR-007(docs/dev/dev-pipeline-console-controls/adr-007-ai-processing-vs-enrich.md): 회수 우선 원칙. 단계 순서 재정의 — 생성 → 회수(Enrich+WebSearch 통합, 외부조회 단일화) → AI 처리(회수 데이터 정제·확장: 긴 줄거리 축약/확장 메타 생성, 검수 직전) → 검수. ②AI처리↔③Enrich 순서 교체. LLM은 회수 사실 변환·정제·확장만, 무에서 창작은 폴백+미검증 플래그. process_content_ai의 _fetch_external_meta 제거→enrich 이관. status enum 재정렬(remap vs rename)은 미해결.",
     "upload_auto_guard": "A안 — /upload/batch에 auto_process: bool=True 파라미터 추가, Test Console 대량 탭만 false로 호출. 줄 155를 if auto_process로 가드. 프로덕션 기본 동작 보존.",
-    "adr_007_decisions": "ADR-007 Accepted (2026-05-29). (1) status enum 재명명 raw→enriched→ai→review→approved/rejected (마이그레이션 필요). (2) AI 메타 항목 Phase1: short_synopsis(요약)·genre_normalized(분류)·mood_tags(분류)·keywords(추출), Phase2: tagline(생성)·rating(분류) — 모두 grounding. (3) 항목별 on/off 토글 + 기존 LLM/WebSearch provider 체인 확장점 재사용 + QuotaManager 경유 + 입력해시 캐시.",
+    "adr_007_decisions": "ADR-007 Accepted (2026-05-29). (1) status enum 재명명 raw→enriched→ai→review→approved/rejected (마이그레이션 필요). (2) AI 메타 항목 Phase1: translate_synopsis(ko↔en 로컬LLM 번역)·short_synopsis(요약)·genre_normalized(분류)·mood_tags(분류)·keywords(추출), Phase2: tagline(생성)·rating(분류) — 모두 grounding. (3) 항목별 on/off 토글 + 기존 LLM/WebSearch provider 체인 확장점 재사용 + QuotaManager 경유 + 입력해시 캐시.",
+    "ai_task_framework": "AI 처리를 AiTask 플러그인 registry로 표준화 — 신규 AI 기능은 AiTask(build_input/run/apply) 구현 + AI_TASK_REGISTRY 등록만으로 추가. Runner가 활성 task 순회 → input_hash 캐시 → provider체인+quota → apply + content_ai_results + stage_event. 첫 task=translate_synopsis(ko↔en). 저장: content_metadata.synopsis_ko/synopsis_en/short_synopsis/tagline + content_ai_results.input_hash.",
     "open_questions": [
       "AI 확장 메타 저장 스키마 — content_metadata 컬럼 vs content_ai_results JSON vs 신규 테이블",
       "항목별 캐시 키 정의 (content_id + item + input_hash)",
@@ -18,11 +19,18 @@
     "fe_data_surface": "listContents({status,cp_name}) ✓ / bulkProcess({ids}) → {auto_chain,score_threshold,sources} 확장 필요 / getContent(id)→quality_score·score_breakdown·external_sources ✓ / pipelineTestApi.summary() ✓ / stage_event 테이블·LiveEventLog 존재"
   },
   "steps": [
-    { "step": 0, "name": "design", "status": "pending", "summary": "ASCII 와이어프레임·컴포넌트 트리·데이터/API·상태처리 설계 (이 문서)" },
-    { "step": 1, "name": "be-state-machine", "status": "pending", "summary": "ai_engine.process_content_ai 파라미터화(auto_chain, score_threshold) + 수동모드 processing 정지 + bulk/process·단건 /process 라우터 전달" },
-    { "step": 2, "name": "be-upload-auto-guard", "status": "pending", "summary": "/upload/batch auto_process 플래그(A안) — 대량 탭 false. 줄 155 가드" },
-    { "step": 3, "name": "fe-ai-process-panel", "status": "pending", "summary": "AiProcessPanel 신설 — ProcessSettings(mode/threshold/sources) + WaitingItemList(체크박스 선택+점수/상태) + ProcessActions. 폴링 없는 1차" },
-    { "step": 4, "name": "fe-progress-log-eval", "status": "pending", "summary": "ProgressLog(폴링) + ResultSummary + 외부메타·평가값 표시" },
-    { "step": 5, "name": "verify", "status": "pending", "summary": "단계별 수동 진행 E2E 검증" }
+    { "step": 0, "name": "design", "status": "completed", "summary": "ADR-007 + step0 설계 (회수 우선·단계 재정의·AI Task 구조·번역)", "completed_at": "2026-05-29T22:30:00+09:00" },
+    { "step": "A1", "name": "be-enum-rename", "status": "pending", "summary": "ContentStatus 재명명 raw→enriched→ai→review + alembic 0027(ALTER TYPE RENAME VALUE) + BE 22곳 치환 + enum 순서 점검. pytest" },
+    { "step": "A2", "name": "be-state-machine-split", "status": "pending", "summary": "회수/AI 분리 — process_content_ai의 _fetch_external_meta 제거→enrich 이관. enrich: raw→enriched, ai_process: enriched→ai. process_content_ai(*, auto_chain, score_threshold) + stage_event 기록" },
+    { "step": "A3", "name": "be-bugfix-bulk-upload", "status": "pending", "summary": "bulk_process 실제 AI 큐잉(#9) + response_model 정합(#8) + /upload/batch auto_process 가드(#1)" },
+    { "step": "B1", "name": "ai-task-framework", "status": "pending", "summary": "AiTask 추상(build_input/run/apply) + AI_TASK_REGISTRY + Runner(input_hash 캐시/provider체인+quota/content_ai_results+stage_event). 저장 스키마 alembic 0028(synopsis_ko/en/short_synopsis/tagline + input_hash)" },
+    { "step": "B2", "name": "task-translate-synopsis", "status": "pending", "summary": "첫 task translate_synopsis(ko↔en) 로컬 LLM 번역 — 언어 감지 → 반대 언어 채움. pytest로 구조 입증" },
+    { "step": "B3", "name": "tasks-phase1-rest", "status": "pending", "summary": "Phase1 나머지 task — short_synopsis(요약)·genre_normalized(분류)·mood_tags(분류)·keywords(추출)" },
+    { "step": "B4", "name": "ai-task-settings", "status": "pending", "summary": "항목별 on/off 설정 배선 (Phase2 tagline·rating은 후속)" },
+    { "step": "C1", "name": "fe-status-rename", "status": "pending", "summary": "FE ContentStatus 타입/라벨/STAGE_DEFS 재명명 (14파일 동기)" },
+    { "step": "C2", "name": "fe-card-reorder", "status": "pending", "summary": "콘솔 카드 순서·패널 재배선 — ②회수(Enrich+WebSearch) ③AI처리" },
+    { "step": "C3", "name": "fe-ai-process-panel", "status": "pending", "summary": "AiProcessPanel — AI Task 목록 on/off 설정 + 입력→출력 diff + 평가값(번역 ko/en 비교 포함)" },
+    { "step": "C4", "name": "fe-progress-log", "status": "pending", "summary": "ProgressLog — GET /test/pipeline/events?content_id= 폴링 엔드포인트 + 표시" },
+    { "step": "D1", "name": "verify-e2e", "status": "pending", "summary": "단계별 수동 진행 E2E + verify.sh step 등록" }
   ]
 }

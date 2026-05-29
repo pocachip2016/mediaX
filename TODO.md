@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-(대기 중)
+- [ ] **dev-pipeline-console-controls** — ADR-007 구현 (next: A1 enum 재명명 raw→enriched→ai→review). Phase A(BE 상태머신)~D(verify), 12 step
 
 ## Next (이번 마일스톤)
 (작성 중)
@@ -16,6 +16,9 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-pipeline-console-controls 설계** — ADR-007(회수 우선·AI Task registry·번역 ko↔en) + 12-step plan + IMPROVEMENTS 백로그 (2026-05-29)
+- [x] **fix(pipeline-console)** — 생성 입력 3탭 통합(CreationTabsPanel) + status 기준 카드 정렬 (2026-05-29)
+- [x] **chore(env)** — OLLAMA_MODEL qwen3:4b 전환 (모델명 불일치 LLM 전체 실패 해소) (2026-05-29)
 - [x] **fix(tmdb-cache)** — search API poster 필터 + popularity 정렬 추가 (2026-05-29)
 - [x] **dev-curation-workbench Step 11** — FE 완성 (usedMock 배지, 에러 알림, Suspense fallback, 반응형) (2026-05-29)
 - [x] **dev-curation-workbench Steps 7-10** — wizard-12 + external-curation-backfill + wizard-34 + external-import (2026-05-29)

@@ -82,8 +82,9 @@ status: raw → enriched → ai → review → approved/rejected
 
 모든 AI 동작은 **grounding**(회수 사실을 입력 제공)으로 환각을 억제한다. AI 로직 4종: 요약 / 분류 / 추출 / 생성.
 
-| 항목 | AI 로직 | 입력(grounding) | 출력 | 환각 통제 | Phase |
+| Task id | AI 로직 | 입력(grounding) | 출력 | 환각 통제 | Phase |
 |---|---|---|---|---|---|
+| **translate_synopsis** (ko↔en) | 번역 | 회수 synopsis(언어 자동 감지) | 반대 언어 synopsis | 입력 텍스트 번역만(창작 X) | 1 |
 | **short_synopsis** (카드 요약) | 요약(abstractive·길이제한) | 회수 full synopsis | ≤100자 | 입력 사실 압축만 | 1 |
 | **genre_normalized** | 분류(taxonomy 매핑) | 회수 장르 텍스트/코드 | 내부 `GENRES` 코드 | 통제 어휘 강제 | 1 |
 | **mood_tags** | 분류(multi-label) | 정제 synopsis | `MOOD_TAGS` 3~5 | 통제 어휘 강제 | 1 |
@@ -91,10 +92,37 @@ status: raw → enriched → ai → review → approved/rejected
 | **tagline** (한 줄 카피) | 생성(grounded) | 회수 synopsis+장르 | ≤30자 | `ai_generated`+검수 강제 | 2 |
 | **rating/audience 제안** | 분류 | 회수 데이터+synopsis | 등급 후보(제안) | 확정은 검수 | 2 |
 
+- **번역**: TMDB=영어 overview, KMDB/KOBIS=한글 회수 → 부족한 언어를 로컬 LLM으로 채움. "입력 텍스트를 번역"만 — 새 사실 추가 금지. 출력 `synopsis_ko`/`synopsis_en`.
 - **요약**: 회수 긴 줄거리 → "이 내용만으로 N자 압축", 새 사실 금지.
 - **분류**: 출력을 통제 어휘로 제한 → 어휘 밖 값 불가(최저 위험).
 - **추출**: 입력 텍스트에 등장하는 것만.
 - **생성**: 유일한 창작 — 회수 위에서 카피 작성 + 미검증 플래그 필수.
+
+### AI Task 확장 구조 (plugin registry) — 결정
+
+모든 AI 처리 항목을 단일 추상 단위 `AiTask`로 표준화한다. **신규 AI 기능은 `AiTask` 구현 + registry 등록만으로 추가** (LLM provider 체인과 동일 철학의 상위 레이어).
+
+```python
+class AiTask(ABC):
+    id: str                 # "translate_synopsis", "short_synopsis", ...
+    label: str
+    default_enabled: bool
+    requires: list[str]     # grounding 필드 (예: ["synopsis"])
+
+    def build_input(self, content, meta, db) -> dict        # grounding 수집
+    async def run(self, llm, payload: dict) -> AiTaskResult  # LLM 호출(프롬프트)
+    def apply(self, result, content, meta, db) -> None       # 산출물 저장
+
+AI_TASK_REGISTRY: dict[str, AiTask] = {...}   # id → task
+```
+
+**Runner (③ AI 처리 단계 실행기):**
+1. 활성(on) task 순회 (설정 on/off = task id별 토글)
+2. `input_hash = sha256(build_input)` → `content_ai_results`에 동일 해시 있으면 **호출 skip**(idempotent 캐시)
+3. miss 시 LLM provider 체인(`AI_ENGINE`) + QuotaManager 경유 호출
+4. `apply()` 저장 + `content_ai_results`(task_id·engine·input_hash·is_final) 기록 + `stage_event` 1건
+
+**번역 task 예시**: `translate_synopsis` — 회수 synopsis 언어 감지 → 반대 언어로 로컬 LLM 번역 → `synopsis_ko`/`synopsis_en` 채움. 양방향 각각 토글 가능. 추후 다국어는 동일 패턴으로 task 추가.
 
 ### 설정 on/off · provider 확장 · quota (결정)
 
@@ -148,6 +176,7 @@ status: raw → enriched → ai → review → approved/rejected
 3. ✅ **설정 on/off + provider 확장 + quota** → 항목별 토글, 기존 LLM/WebSearch provider 체인 확장점 재사용, QuotaManager 경유 + 입력해시 캐시.
 
 ## 남은 구현 결정 (후속 step 설계 시)
-- AI 확장 메타 저장 스키마 — `content_metadata` 컬럼 추가 vs `content_ai_results` JSON vs 신규 테이블.
-- 항목별 캐시 키 정의 (content_id + item + input_hash).
+- 저장 스키마(권장): `content_metadata`에 `synopsis_ko`/`synopsis_en`(번역)·`short_synopsis`·`tagline` 컬럼 + 모든 task 산출은 `content_ai_results`(task_id·engine·`input_hash`·is_final). `mood_tags`/`genre`는 기존 `ai_mood_tags`/`content_genres` 재사용. 다국어 확장 시 `content_synopsis_i18n(content_id, lang, text)` 테이블로 승격 검토.
+- 캐시 키: `content_id + task_id + sha256(build_input)` → `content_ai_results.input_hash`.
 - enum 마이그레이션과 기존 `ai_synopsis`(창작본) 데이터의 출처 플래그 백필.
+- 언어 감지 방식: 휴리스틱(한글 음절 비율) vs LLM 판별 — 번역 task 착수 시 확정.
