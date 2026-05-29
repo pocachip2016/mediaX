@@ -2,10 +2,11 @@
 TMDB 캐시 Celery 태스크
 
 태스크 목록:
-  - backfill_movies      : 연도별 슬라이싱 영화 백필 (1회성, idempotent)
-  - backfill_tv          : 연도별 슬라이싱 TV 백필
-  - daily_changes        : 일일 변경 영화/TV upsert
-  - daily_new_releases   : 어제 신규 개봉/방영 콘텐츠 upsert
+  - backfill_movies                      : 연도별 슬라이싱 영화 백필 (1회성, idempotent)
+  - backfill_tv                          : 연도별 슬라이싱 TV 백필
+  - daily_changes                        : 일일 변경 영화/TV upsert
+  - daily_new_releases                   : 어제 신규 개봉/방영 콘텐츠 upsert
+  - sync_tmdb_poster_to_content_images   : TMDB poster/backdrop → content_images (07:50 KST Beat)
 """
 
 import asyncio
@@ -620,3 +621,129 @@ def tmdb_quota_backfill_tick() -> dict:
     backfill_movies.delay(year_from=target_year, year_to=target_year)
     backfill_tv.delay(year_from=target_year, year_to=target_year)
     return {"triggered_year": target_year, "remaining": remaining}
+
+
+# ── TMDB 포스터 → ContentImage 동기화 ────────────────────────────────────────────
+
+_TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
+
+
+@celery_app.task(name="workers.tasks.tmdb_cache.sync_tmdb_poster_to_content_images", max_retries=0)
+def sync_tmdb_poster_to_content_images():
+    """ExternalMetaSource(tmdb) raw_json.poster_path/backdrop_path → content_images 동기화 (idempotent).
+
+    전제: external_meta_sources (source_type=tmdb) 에 content_id 매핑이 존재해야 함.
+    Beat link-tmdb-to-contents (07:30) 이후 07:50 KST 에 실행.
+
+    is_primary 규칙:
+      - poster_path 첫 URL → is_primary=True (단, 해당 content 에 이미 is_primary poster 가 있으면 False)
+      - backdrop_path → ImageType.banner, is_primary=False (항상)
+
+    중복 기준: (content_id, image_type, url) 조합 — 동일하면 insert 스킵.
+    """
+    from api.programming.metadata.models import ContentImage, ImageType
+    from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
+
+    db = SessionLocal()
+    posters_added = banners_added = contents_processed = errors = 0
+
+    try:
+        # content_id 매핑 (ExternalMetaSource, tmdb 소스)
+        links = (
+            db.query(ExternalMetaSource.content_id, ExternalMetaSource.external_id)
+            .filter(
+                ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+                ExternalMetaSource.content_id.isnot(None),
+            )
+            .all()
+        )
+
+        for content_id, tmdb_id in links:
+            raw_json = (
+                db.query(ExternalMetaSource.raw_json)
+                .filter(
+                    ExternalMetaSource.content_id == content_id,
+                    ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+                )
+                .scalar() or {}
+            )
+            if not raw_json:
+                continue
+
+            poster_path = raw_json.get("poster_path")
+            backdrop_path = raw_json.get("backdrop_path")
+            if not poster_path and not backdrop_path:
+                continue
+
+            try:
+                # 기존 포스터/배너 URL 세트 (중복 체크용)
+                existing_poster_urls: set[str] = {
+                    row[0]
+                    for row in db.query(ContentImage.url).filter(
+                        ContentImage.content_id == content_id,
+                        ContentImage.image_type == ImageType.poster,
+                    ).all()
+                }
+                existing_banner_urls: set[str] = {
+                    row[0]
+                    for row in db.query(ContentImage.url).filter(
+                        ContentImage.content_id == content_id,
+                        ContentImage.image_type == ImageType.banner,
+                    ).all()
+                }
+                # 기존 is_primary poster 존재 여부
+                has_primary = db.query(ContentImage.id).filter(
+                    ContentImage.content_id == content_id,
+                    ContentImage.image_type == ImageType.poster,
+                    ContentImage.is_primary == True,  # noqa: E712
+                ).first() is not None
+
+                # poster_path 처리
+                if poster_path:
+                    poster_url = f"{_TMDB_IMAGE_BASE}/w500{poster_path}"
+                    if poster_url not in existing_poster_urls:
+                        make_primary = not has_primary
+                        db.add(ContentImage(
+                            content_id=content_id,
+                            image_type=ImageType.poster,
+                            url=poster_url,
+                            source="tmdb",
+                            is_primary=make_primary,
+                        ))
+                        existing_poster_urls.add(poster_url)
+                        if make_primary:
+                            has_primary = True
+                        posters_added += 1
+
+                # backdrop_path 처리 (banner 타입)
+                if backdrop_path:
+                    banner_url = f"{_TMDB_IMAGE_BASE}/w1280{backdrop_path}"
+                    if banner_url not in existing_banner_urls:
+                        db.add(ContentImage(
+                            content_id=content_id,
+                            image_type=ImageType.banner,
+                            url=banner_url,
+                            source="tmdb",
+                            is_primary=False,
+                        ))
+                        existing_banner_urls.add(banner_url)
+                        banners_added += 1
+
+                contents_processed += 1
+            except Exception as exc:
+                logger.warning(f"[tmdb-poster-sync] content_id={content_id} 처리 실패: {exc}")
+                errors += 1
+
+        db.commit()
+        logger.info(f"[tmdb-poster-sync] posters={posters_added} banners={banners_added} contents={contents_processed} errors={errors}")
+        return {
+            "posters_added": posters_added,
+            "banners_added": banners_added,
+            "contents_processed": contents_processed,
+            "errors": errors,
+        }
+    except Exception as exc:
+        logger.error(f"[tmdb-poster-sync] 실패: {exc}")
+        return {"error": str(exc)}
+    finally:
+        db.close()
