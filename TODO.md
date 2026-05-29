@@ -20,6 +20,7 @@
 - [x] **dev-curation-workbench Steps 7-10** — wizard-12 + external-curation-backfill + wizard-34 + external-import (2026-05-29)
 - [x] **dev-curation-workbench Step 6** — manual 수동 묶기 master-detail (api.ts 8함수, 생성폼, 상세 2컬럼, ContentPicker+ItemRow) (2026-05-28)
 - [x] **dev-curation-workbench Steps 3-5** — matcher(45 pytest) + copy-proposer LLM(17 pytest) + FE landing/nav (2026-05-28)
+- [x] **dev-service-module-split Steps 0~8** — service.py(3534줄) → 8개 도메인 파일 분할 + shim(296줄) + pre-commit shadowing guard — 근본 원인(service/ 패키지 shadowing) 영구 차단 (2026-05-28)
 - [x] **dev-curation-workbench Steps 0-2** — ADR(3-모드·OTT 1-Depth=Copy·SSOT) + schema-extend(alembic 0025·6컬럼) + ott-multi-section(OttSection·multi-section fetch·Watcha 파싱) 25 pytest (2026-05-28)
 - [x] **dev-service-distribution Step 3** — service-category CRUD API (7 엔드포인트·20 pytest) → PR #11 merge (2026-05-27)
 - [x] **dev-service-distribution Step 2** — ott-popularity-sync: OttSource ABC + Watcha(SSR)/Netflix(Tudum TSV) + Wave/Tving stub + 4 Celery tasks + Beat 4건 + GET /sync/status + pytest 19 pass (2026-05-27)

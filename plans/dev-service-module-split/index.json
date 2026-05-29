@@ -1,0 +1,25 @@
+{
+  "project": "mediaX",
+  "phase": "dev-service-module-split",
+  "description": "backend/api/programming/metadata/service.py (3534줄·70+함수 monolith) 도메인별 분할 + service/ 패키지 shadowing 영구 차단 (pre-commit guard). 7520709 fix의 미봉책(파일 복사) 대신 근본 해결.",
+  "decisions": {
+    "trigger": "사용자 rollback: 외부소스 페이지(KMDB/KOBIS/TMDB) 로컬 캐시 목록이 자꾸 몇 개만 표시되는 증상이 반복. 원인 추적 결과 service.py vs service/__init__.py 중복(128615 bytes 동일) shadowing.",
+    "shadowing_history": "530ddb5(dpf 머지)에서 빈 service/__init__.py 생성 → 500 에러. 7520709(fix)에서 service.py 내용을 service/__init__.py에 복사 → 두 파일 공존 상태 유지. 향후 누가 service.py만 수정하면 또 반복.",
+    "naming_convention": "도메인별 prefix → service_<domain>.py. 새 도메인은 새 파일로 추가 → service/ 패키지를 만들 동기 자체 소멸.",
+    "shim_policy": "service.py를 명시 re-export shim으로 축소(약 80줄). test의 mock.patch('api.programming.metadata.service.X') 호환 위해 public+private 함수 모두 명시 import (from .x import *는 _prefix 누락하므로 금지).",
+    "router_compat": "router.py에서 from api.programming.metadata import service 1곳만 사용 → shim 유지 시 무변경.",
+    "guard": "backend/scripts/check_no_module_package_shadowing.sh + .git/hooks/pre-commit. 동일 부모 아래 X.py + X/ 디렉토리 공존 감지 시 commit 차단.",
+    "out_of_scope": "distribution/service.py(179줄, 안전) 손대지 않음. 함수 본문 리팩토링 없음 — 순수 이동만."
+  },
+  "steps": [
+    { "step": 0, "name": "adr", "status": "completed", "summary": "분할 컨벤션·shim 정책·pre-commit guard 사양·migration 순서 ADR 작성 (doc-only)", "completed_at": "2026-05-28T07:30:00+09:00" },
+    { "step": 1, "name": "remove-package-and-add-guard", "status": "completed", "summary": "git rm service/__init__.py + rm -rf __pycache__ 불가 → guard를 __init__.py 존재 여부로 수정. check_no_module_package_shadowing.sh + .git/hooks/pre-commit 설치. pytest 68 pass.", "completed_at": "2026-05-28T07:35:00+09:00" },
+    { "step": 2, "name": "extract-external-cache", "status": "completed", "summary": "service_external_cache.py 생성(9 함수) + service.py 블록 제거 + re-export 추가. pytest 68 pass.", "completed_at": "2026-05-28T07:45:00+09:00" },
+    { "step": 3, "name": "extract-external-mapping-and-sources", "status": "completed", "summary": "service_external_mapping.py(2함수) + service_sources.py(7함수) 생성. service.py re-export 추가. pytest 68 pass.", "completed_at": "2026-05-28T10:00:00+09:00" },
+    { "step": 4, "name": "extract-recommendations-and-meta", "status": "completed", "summary": "service_recommendations.py(14함수+4상수) + service_meta.py(17함수) 생성. build_ai_review_queue는 monkeypatch 호환 위해 service.py에 직접 유지. pytest 68 pass.", "completed_at": "2026-05-28T10:30:00+09:00" },
+    { "step": 5, "name": "extract-content-and-batch", "status": "completed", "summary": "service_content.py(17함수) + service_batch_import.py(4함수) 생성. service.py re-export 추가. pytest 68 pass.", "completed_at": "2026-05-28T11:00:00+09:00" },
+    { "step": 6, "name": "extract-bulk-and-ai-suggest", "status": "completed", "summary": "service_bulk.py(12함수) 생성. AI suggest는 이미 service_meta.py에 포함. service.py 273줄로 축소. pytest 68 pass.", "completed_at": "2026-05-28T11:30:00+09:00" },
+    { "step": 7, "name": "finalize-shim", "status": "completed", "summary": "service.py를 296줄 shim으로 정리. 불필요한 import 제거, __all__ 추가, ⚠️ shadowing 경고 docstring 추가. pytest 68 pass.", "completed_at": "2026-05-28T12:00:00+09:00" },
+    { "step": 8, "name": "verify-and-wrap", "status": "completed", "summary": "전체 pytest 362 pass (pre-existing 실패 24건은 분할 전부터 존재). shadowing guard OK. TODO.md Done 갱신. UI smoke test 는 Docker 미기동으로 생략.", "completed_at": "2026-05-28T12:30:00+09:00" }
+  ]
+}
