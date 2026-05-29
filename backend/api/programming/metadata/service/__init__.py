@@ -1851,7 +1851,7 @@ def get_external_source_stats(db, source_type: str) -> dict:
             day_str = _kst_day(log.started_at)
             if day_str is None:
                 continue
-            day_map[day_str]["count"] += log.items_inserted or 0
+            day_map[day_str]["count"] += (log.cache_inserted or 0) + (log.cache_updated or 0)
             day_map[day_str]["errors"] += log.errors or 0
         last_7d = [{"date": d, "count": day_map[d]["count"], "errors": day_map[d]["errors"]} for d in _last_7_kst_dates()]
         return {
@@ -1882,7 +1882,7 @@ def get_external_source_stats(db, source_type: str) -> dict:
         day_str = _kst_day(log.started_at)
         if day_str is None:
             continue
-        day_map[day_str]["count"] += log.items_inserted or 0
+        day_map[day_str]["count"] += (log.cache_inserted or 0) + (log.cache_updated or 0)
         day_map[day_str]["errors"] += log.errors or 0
     last_7d = [{"date": d, "count": day_map[d]["count"], "errors": day_map[d]["errors"]} for d in _last_7_kst_dates()]
     return {
