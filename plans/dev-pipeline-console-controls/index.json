@@ -1,0 +1,28 @@
+{
+  "project": "mediaX",
+  "phase": "dev-pipeline-console-controls",
+  "description": "Pipeline Test Console ② AI처리 패널을 제어판으로 재설계 — 수동/자동 on/off, 자동 진행 조건(품질점수 임계값), 실시간 진행 로그, 외부 메타·평가값 표시, 단계 건수/목록 통합. 전제: BE 상태머신 분리(단일 전이). 보류 상태 — 수동 단계 검증 후 진행.",
+  "status": "deferred",
+  "decisions": {
+    "trigger": "사용자: CSV 대량 업로드가 콘텐츠를 자동으로 review까지 진행시켜 수동 단계 검증 불가. 원인 추적 결과 _process_movie_row(service_batch_import.py:155)가 process_content_metadata.delay() 자동 dispatch → process_content_ai(ai_engine.py:329)가 waiting→processing→review/approved 한 번에 처리(staging 건너뜀).",
+    "root_cause": "process_content_ai가 단일 태스크에서 다단계 전이를 수행하고 staging(enrich)을 건너뜀. 점수 임계값(90)이 ai_engine.py:385에 하드코딩.",
+    "be_state_machine": "단일 전이로 분리 제안 — ②AI처리: waiting→processing 정지 / ③Enrich: processing→staging / ④검수: staging→review/approved/rejected. process_content_ai(content_id, *, auto_chain: bool, score_threshold: int) 파라미터화.",
+    "adr_007_pipeline_redefine": "ADR-007(docs/dev/dev-pipeline-console-controls/adr-007-ai-processing-vs-enrich.md): 회수 우선 원칙. 단계 순서 재정의 — 생성 → 회수(Enrich+WebSearch 통합, 외부조회 단일화) → AI 처리(회수 데이터 정제·확장: 긴 줄거리 축약/확장 메타 생성, 검수 직전) → 검수. ②AI처리↔③Enrich 순서 교체. LLM은 회수 사실 변환·정제·확장만, 무에서 창작은 폴백+미검증 플래그. process_content_ai의 _fetch_external_meta 제거→enrich 이관. status enum 재정렬(remap vs rename)은 미해결.",
+    "upload_auto_guard": "A안 — /upload/batch에 auto_process: bool=True 파라미터 추가, Test Console 대량 탭만 false로 호출. 줄 155를 if auto_process로 가드. 프로덕션 기본 동작 보존.",
+    "adr_007_decisions": "ADR-007 Accepted (2026-05-29). (1) status enum 재명명 raw→enriched→ai→review→approved/rejected (마이그레이션 필요). (2) AI 메타 항목 Phase1: short_synopsis(요약)·genre_normalized(분류)·mood_tags(분류)·keywords(추출), Phase2: tagline(생성)·rating(분류) — 모두 grounding. (3) 항목별 on/off 토글 + 기존 LLM/WebSearch provider 체인 확장점 재사용 + QuotaManager 경유 + 입력해시 캐시.",
+    "open_questions": [
+      "AI 확장 메타 저장 스키마 — content_metadata 컬럼 vs content_ai_results JSON vs 신규 테이블",
+      "항목별 캐시 키 정의 (content_id + item + input_hash)",
+      "진행 로그 소스 — 신규 stage_event 조회 엔드포인트 vs content status 폴링"
+    ],
+    "fe_data_surface": "listContents({status,cp_name}) ✓ / bulkProcess({ids}) → {auto_chain,score_threshold,sources} 확장 필요 / getContent(id)→quality_score·score_breakdown·external_sources ✓ / pipelineTestApi.summary() ✓ / stage_event 테이블·LiveEventLog 존재"
+  },
+  "steps": [
+    { "step": 0, "name": "design", "status": "pending", "summary": "ASCII 와이어프레임·컴포넌트 트리·데이터/API·상태처리 설계 (이 문서)" },
+    { "step": 1, "name": "be-state-machine", "status": "pending", "summary": "ai_engine.process_content_ai 파라미터화(auto_chain, score_threshold) + 수동모드 processing 정지 + bulk/process·단건 /process 라우터 전달" },
+    { "step": 2, "name": "be-upload-auto-guard", "status": "pending", "summary": "/upload/batch auto_process 플래그(A안) — 대량 탭 false. 줄 155 가드" },
+    { "step": 3, "name": "fe-ai-process-panel", "status": "pending", "summary": "AiProcessPanel 신설 — ProcessSettings(mode/threshold/sources) + WaitingItemList(체크박스 선택+점수/상태) + ProcessActions. 폴링 없는 1차" },
+    { "step": 4, "name": "fe-progress-log-eval", "status": "pending", "summary": "ProgressLog(폴링) + ResultSummary + 외부메타·평가값 표시" },
+    { "step": 5, "name": "verify", "status": "pending", "summary": "단계별 수동 진행 E2E 검증" }
+  ]
+}
