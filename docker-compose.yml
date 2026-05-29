@@ -112,6 +112,7 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_ENABLE_PIPELINE_TEST=true
     depends_on:
       - backend
 
