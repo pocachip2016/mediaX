@@ -14,8 +14,9 @@
 import os
 import httpx
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, case
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -1694,6 +1695,24 @@ def list_external_mapped_contents(
     return items, total
 
 
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def _last_7_kst_dates() -> list[str]:
+    """오늘(KST) 기준 지난 7일 연속 날짜(오래된→최신) ISO 문자열."""
+    today = datetime.now(_KST).date()
+    return [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+
+
+def _kst_day(dt) -> str | None:
+    """datetime(aware/naive)을 KST 날짜 ISO 문자열로 변환. naive는 UTC로 간주."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_KST).date().isoformat()
+
+
 def get_tmdb_cache_stats(db) -> dict:
     """tmdb_movie_cache / tmdb_tv_cache / tmdb_sync_log 기반 통계."""
     from datetime import datetime, timedelta
@@ -1705,7 +1724,7 @@ def get_tmdb_cache_stats(db) -> dict:
 
     now = datetime.utcnow()
     cutoff_24h = now - timedelta(hours=24)
-    cutoff_7d = now - timedelta(days=7)
+    cutoff_7d = now - timedelta(days=8)  # KST 경계 보호 — 최종 축이 7일로 필터
 
     total_movies = db.query(TmdbMovieCache).count()
     total_tv = db.query(TmdbTvCache).count()
@@ -1727,15 +1746,17 @@ def get_tmdb_cache_stats(db) -> dict:
 
     day_map: dict = defaultdict(lambda: {"movies": 0, "tv": 0, "errors": 0})
     for log in recent_logs:
-        if log.started_at:
-            day_str = log.started_at.strftime("%Y-%m-%d")
-            is_movie = "movie" in str(log.source)
-            day_map[day_str]["movies" if is_movie else "tv"] += log.items_inserted or 0
-            day_map[day_str]["errors"] += log.errors or 0
+        day_str = _kst_day(log.started_at)
+        if day_str is None:
+            continue
+        is_movie = "movie" in str(log.source)
+        day_map[day_str]["movies" if is_movie else "tv"] += log.items_inserted or 0
+        day_map[day_str]["errors"] += log.errors or 0
 
+    # 오늘(KST) 기준 연속 7일 축 — 데이터 없는 날은 0
     last_7d = [
-        {"date": d, "movies": v["movies"], "tv": v["tv"], "errors": v["errors"]}
-        for d, v in sorted(day_map.items())
+        {"date": d, "movies": day_map[d]["movies"], "tv": day_map[d]["tv"], "errors": day_map[d]["errors"]}
+        for d in _last_7_kst_dates()
     ]
 
     oldest = db.query(func.min(TmdbMovieCache.release_date)).scalar()
@@ -1819,7 +1840,7 @@ def get_external_source_stats(db, source_type: str) -> dict:
             .order_by(TmdbSyncLog.started_at.desc())
             .first()
         )
-        cutoff_7d = datetime.utcnow() - timedelta(days=7)
+        cutoff_7d = datetime.utcnow() - timedelta(days=8)  # KST 경계 보호
         recent_logs = (
             db.query(TmdbSyncLog)
             .filter(TmdbSyncLog.source.in_(sync_sources), TmdbSyncLog.started_at >= cutoff_7d)
@@ -1827,11 +1848,12 @@ def get_external_source_stats(db, source_type: str) -> dict:
         )
         day_map: dict = defaultdict(lambda: {"count": 0, "errors": 0})
         for log in recent_logs:
-            if log.started_at:
-                day_str = log.started_at.strftime("%Y-%m-%d")
-                day_map[day_str]["count"] += log.items_inserted or 0
-                day_map[day_str]["errors"] += log.errors or 0
-        last_7d = [{"date": d, "count": v["count"], "errors": v["errors"]} for d, v in sorted(day_map.items())]
+            day_str = _kst_day(log.started_at)
+            if day_str is None:
+                continue
+            day_map[day_str]["count"] += (log.cache_inserted or 0) + (log.cache_updated or 0)
+            day_map[day_str]["errors"] += log.errors or 0
+        last_7d = [{"date": d, "count": day_map[d]["count"], "errors": day_map[d]["errors"]} for d in _last_7_kst_dates()]
         return {
             "total_synced": total,
             "last_run_at": last_log.started_at if last_log else None,
@@ -1849,7 +1871,7 @@ def get_external_source_stats(db, source_type: str) -> dict:
         .order_by(TmdbSyncLog.started_at.desc())
         .first()
     )
-    cutoff_7d = datetime.utcnow() - timedelta(days=7)
+    cutoff_7d = datetime.utcnow() - timedelta(days=8)  # KST 경계 보호
     recent_logs = (
         db.query(TmdbSyncLog)
         .filter(TmdbSyncLog.source.in_(kmdb_sources), TmdbSyncLog.started_at >= cutoff_7d)
@@ -1857,11 +1879,12 @@ def get_external_source_stats(db, source_type: str) -> dict:
     )
     day_map: dict = defaultdict(lambda: {"count": 0, "errors": 0})
     for log in recent_logs:
-        if log.started_at:
-            day_str = log.started_at.strftime("%Y-%m-%d")
-            day_map[day_str]["count"] += log.items_inserted or 0
-            day_map[day_str]["errors"] += log.errors or 0
-    last_7d = [{"date": d, "count": v["count"], "errors": v["errors"]} for d, v in sorted(day_map.items())]
+        day_str = _kst_day(log.started_at)
+        if day_str is None:
+            continue
+        day_map[day_str]["count"] += (log.cache_inserted or 0) + (log.cache_updated or 0)
+        day_map[day_str]["errors"] += log.errors or 0
+    last_7d = [{"date": d, "count": day_map[d]["count"], "errors": day_map[d]["errors"]} for d in _last_7_kst_dates()]
     return {
         "total_synced": total_cache,
         "last_run_at": last_log.started_at if last_log else None,

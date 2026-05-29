@@ -116,6 +116,11 @@ celery_app.conf.update(
             "task": "workers.tasks.metadata.link_tmdb_cache_to_contents",
             "schedule": crontab(hour=7, minute=30),
         },
+        # TMDB poster/backdrop → content_images — 매일 07:50 KST (link-tmdb 07:30 완료 후)
+        "sync-tmdb-posters-to-content-images": {
+            "task": "workers.tasks.tmdb_cache.sync_tmdb_poster_to_content_images",
+            "schedule": crontab(hour=7, minute=50),
+        },
         # KOBIS 캐시 → contents 링크 — 매일 07:45 KST (kobis_movie_cache, idempotent)
         "link-kobis-to-contents": {
             "task": "workers.tasks.metadata.link_kobis_cache_to_contents",
