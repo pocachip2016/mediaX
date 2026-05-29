@@ -734,11 +734,15 @@ def list_tmdb_cache_recent(
 def search_tmdb_cache(
     title: Optional[str] = Query(None),
     kind: str = Query("movie", description="movie | tv"),
+    has_poster: Optional[bool] = Query(None, description="true=포스터 있음만 / false=없음만 / 미지정=전체"),
+    sort: str = Query("popularity", description="popularity(인기순 기본) | recent(최근 fetch순)"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    items, total = service.search_tmdb_cache(db, title=title, kind=kind, page=page, size=size)
+    items, total = service.search_tmdb_cache(
+        db, title=title, kind=kind, has_poster=has_poster, sort=sort, page=page, size=size,
+    )
     return PaginatedTmdbCache(items=items, total=total, page=page)
 
 

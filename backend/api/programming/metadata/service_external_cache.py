@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 
@@ -239,17 +240,47 @@ def search_kmdb_cache(db, title: str | None, year: int | None, page: int, size: 
     return items, total
 
 
-def search_tmdb_cache(db, title: str | None, kind: str, page: int, size: int):
-    """tmdb_movie_cache / tmdb_tv_cache 단일 종류 검색."""
+def _apply_poster_filter(q, poster_col, has_poster: bool | None):
+    """has_poster=True → poster 있음, False → 없음, None → 필터 없음."""
+    if has_poster is True:
+        return q.filter(poster_col.isnot(None), poster_col != "")
+    if has_poster is False:
+        return q.filter(or_(poster_col.is_(None), poster_col == ""))
+    return q
+
+
+def search_tmdb_cache(
+    db, title: str | None, kind: str, page: int, size: int,
+    has_poster: bool | None = None, sort: str = "popularity",
+):
+    """tmdb_movie_cache / tmdb_tv_cache 단일 종류 검색.
+
+    sort: "popularity"(기본, 인기순 DESC NULLS LAST) | "recent"(최근 fetch 순).
+    has_poster: True 포스터 있음만 / False 없음만 / None 전체.
+    기본 정렬을 인기순으로 둬, 포스터 없는 비인기 롱테일이 상단을 점유하지 않게 한다.
+    """
     from api.programming.metadata.models import TmdbMovieCache, TmdbTvCache
     from api.programming.metadata.tmdb_client import TmdbClient
 
     if kind == "tv":
-        q = db.query(TmdbTvCache)
-        if title:
-            q = q.filter(TmdbTvCache.name.ilike(f"%{title}%"))
-        total = q.count()
-        rows = q.order_by(TmdbTvCache.last_fetched_at.desc()).offset((page - 1) * size).limit(size).all()
+        Model, name_col = TmdbTvCache, TmdbTvCache.name
+    else:
+        Model, name_col = TmdbMovieCache, TmdbMovieCache.title
+
+    q = db.query(Model)
+    if title:
+        q = q.filter(name_col.ilike(f"%{title}%"))
+    q = _apply_poster_filter(q, Model.poster_path, has_poster)
+
+    total = q.count()
+
+    if sort == "recent":
+        order = Model.last_fetched_at.desc()
+    else:
+        order = Model.popularity.desc().nullslast()
+    rows = q.order_by(order).offset((page - 1) * size).limit(size).all()
+
+    if kind == "tv":
         items = [{
             "id": r.id, "title": r.name, "original_title": r.original_name,
             "release_date": None, "first_air_date": r.first_air_date,
@@ -258,11 +289,6 @@ def search_tmdb_cache(db, title: str | None, kind: str, page: int, size: int):
             "kind": "tv", "fetched_at": r.last_fetched_at,
         } for r in rows]
     else:
-        q = db.query(TmdbMovieCache)
-        if title:
-            q = q.filter(TmdbMovieCache.title.ilike(f"%{title}%"))
-        total = q.count()
-        rows = q.order_by(TmdbMovieCache.last_fetched_at.desc()).offset((page - 1) * size).limit(size).all()
         items = [{
             "id": r.id, "title": r.title, "original_title": r.original_title,
             "release_date": r.release_date, "first_air_date": None,
