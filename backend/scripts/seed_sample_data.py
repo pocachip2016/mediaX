@@ -651,9 +651,9 @@ def pick_status(quality: float) -> ContentStatus:
     elif quality >= 70:
         return random.choice([ContentStatus.review, ContentStatus.approved])
     elif quality >= 50:
-        return random.choice([ContentStatus.review, ContentStatus.waiting])
+        return random.choice([ContentStatus.review, ContentStatus.raw])
     else:
-        return random.choice([ContentStatus.waiting, ContentStatus.rejected])
+        return random.choice([ContentStatus.raw, ContentStatus.rejected])
 
 
 def get_genre_id(db, code: str) -> int | None:
@@ -995,7 +995,7 @@ def seed(db):
         c = Content(
             title=title, original_title=orig,
             content_type=ContentType.series,
-            status=ContentStatus.waiting,
+            status=ContentStatus.raw,
             cp_name=cp, production_year=year, country="KR",
         )
         db.add(c)
@@ -1011,7 +1011,7 @@ def seed(db):
     total_meta = db.query(ContentMetadata).count()
     approved = db.query(Content).filter(Content.status == ContentStatus.approved).count()
     review = db.query(Content).filter(Content.status == ContentStatus.review).count()
-    waiting = db.query(Content).filter(Content.status == ContentStatus.waiting).count()
+    waiting = db.query(Content).filter(Content.status == ContentStatus.raw).count()
 
     print(f"\n=== 시딩 완료 ===")
     print(f"  전체 콘텐츠: {total_contents}개")

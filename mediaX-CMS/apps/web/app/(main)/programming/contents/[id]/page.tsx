@@ -16,12 +16,12 @@ import { AISummaryBottom } from "@/components/contents/recommend/AISummaryBottom
 import { isRecSimilarToCurrent } from "@/lib/recommendDerive"
 
 const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
-  waiting: { label: "대기", emoji: "⏳", color: "bg-slate-100 text-slate-600" },
-  processing: { label: "처리중", emoji: "🔄", color: "bg-blue-100 text-blue-700" },
-  staging: { label: "검토대기", emoji: "📋", color: "bg-violet-100 text-violet-700" },
-  review: { label: "검수", emoji: "🟧", color: "bg-amber-100 text-amber-700" },
-  approved: { label: "승인됨", emoji: "✓", color: "bg-green-100 text-green-700" },
-  rejected: { label: "반려됨", emoji: "✗", color: "bg-red-100 text-red-700" },
+  raw:      { label: "수신",      emoji: "⏳", color: "bg-slate-100 text-slate-600" },
+  enriched: { label: "회수완료",  emoji: "🔄", color: "bg-blue-100 text-blue-700" },
+  ai:       { label: "AI처리완료", emoji: "📋", color: "bg-violet-100 text-violet-700" },
+  review:   { label: "검수",      emoji: "🟧", color: "bg-amber-100 text-amber-700" },
+  approved: { label: "승인됨",    emoji: "✓",  color: "bg-green-100 text-green-700" },
+  rejected: { label: "반려됨",    emoji: "✗",  color: "bg-red-100 text-red-700" },
 }
 
 export default function ContentDetailPage() {
@@ -341,7 +341,7 @@ export default function ContentDetailPage() {
     }
   }
 
-  const statusInfo = (STATUS_BADGE[content.status] ?? STATUS_BADGE.waiting)!
+  const statusInfo = (STATUS_BADGE[content.status] ?? STATUS_BADGE.raw)!
   const qualityScore = content.quality_score ?? 0
 
   // Container(series/season) → 자식 목록 레이아웃으로 디스패치

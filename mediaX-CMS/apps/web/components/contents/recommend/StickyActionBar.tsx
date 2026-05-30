@@ -13,15 +13,15 @@ export type PageMode = "review" | "readonly" | "processing"
 export function deriveMode(status?: string): PageMode {
   if (!status) return "processing"
   if (status === "approved" || status === "rejected") return "readonly"
-  if (status === "waiting" || status === "processing") return "processing"
+  if (status === "raw" || status === "enriched") return "processing"
   return "review"
 }
 
 const STATUS_BADGE: Record<string, { label: string; color: string }> = {
-  waiting:    { label: "대기",     color: "bg-slate-100 text-slate-600" },
-  processing: { label: "처리중",   color: "bg-blue-100 text-blue-700" },
-  staging:    { label: "검토대기", color: "bg-violet-100 text-violet-700" },
-  review:     { label: "검수",     color: "bg-amber-100 text-amber-700" },
+  raw:      { label: "수신",       color: "bg-slate-100 text-slate-600" },
+  enriched: { label: "회수완료",   color: "bg-blue-100 text-blue-700" },
+  ai:       { label: "AI처리완료", color: "bg-violet-100 text-violet-700" },
+  review:   { label: "검수",       color: "bg-amber-100 text-amber-700" },
   approved:   { label: "✓ 승인됨", color: "bg-green-100 text-green-700" },
   rejected:   { label: "✗ 반려됨", color: "bg-red-100 text-red-700" },
 }
@@ -42,7 +42,7 @@ interface Props {
 }
 
 export function StickyActionBar({ content, mode, actions, returnLabel, returnHref, onPreview, breadcrumbParents, seriesReviewHref }: Props) {
-  const badge = STATUS_BADGE[content.status] ?? STATUS_BADGE.waiting!
+  const badge = STATUS_BADGE[content.status] ?? STATUS_BADGE.raw!
   const qualityScore = content.quality_score ?? 0
 
   return (

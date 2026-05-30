@@ -52,8 +52,8 @@ def test_board_response_structure(test_db, client):
 
     # 9 stage 모두 포함
     assert len(data["stages"]) == 9
-    for s in ("s1_intake", "s2_normalize", "s3_llm_extract", "s4_source_match",
-              "s5_gap_detect", "s6_websearch_fill", "s7_staging", "s8_review", "s9_publish"):
+    for s in ("s1_intake", "s2_normalize", "s6_llm_extract", "s3_source_match",
+              "s4_gap_detect", "s5_websearch_fill", "s7_staging", "s8_review", "s9_publish"):
         assert s in data["stages"]
 
     # 6 gate 포함
@@ -71,10 +71,10 @@ def test_board_response_structure(test_db, client):
 
 def test_gate_advance_normal(test_db, client):
     """GATE_2 advance → 2 contents S4 이동 + advanced=2."""
-    c1 = Content(title="영화A", content_type=ContentType.movie, status=ContentStatus.processing,
-                 current_stage=PipelineStage.S3_LLM_EXTRACT)
-    c2 = Content(title="영화B", content_type=ContentType.movie, status=ContentStatus.processing,
-                 current_stage=PipelineStage.S3_LLM_EXTRACT)
+    c1 = Content(title="영화A", content_type=ContentType.movie, status=ContentStatus.enriched,
+                 current_stage=PipelineStage.S6_LLM_EXTRACT)
+    c2 = Content(title="영화B", content_type=ContentType.movie, status=ContentStatus.enriched,
+                 current_stage=PipelineStage.S6_LLM_EXTRACT)
     test_db.add_all([c1, c2])
     test_db.commit()
 
@@ -82,24 +82,24 @@ def test_gate_advance_normal(test_db, client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["advanced"] == 2
-    assert data["next_stage"] == "s4_source_match"
+    assert data["next_stage"] == "s3_source_match"
 
     # DB 반영 확인
     test_db.refresh(c1)
-    assert c1.current_stage == PipelineStage.S4_SOURCE_MATCH
+    assert c1.current_stage == PipelineStage.S3_SOURCE_MATCH
 
 
 def test_gate_advance_if_match_conflict(test_db, client):
     """if_match 제공 시 최신 이벤트보다 오래되면 409."""
-    content = Content(title="충돌 테스트", content_type=ContentType.movie, status=ContentStatus.processing,
-                      current_stage=PipelineStage.S3_LLM_EXTRACT)
+    content = Content(title="충돌 테스트", content_type=ContentType.movie, status=ContentStatus.enriched,
+                      current_stage=PipelineStage.S6_LLM_EXTRACT)
     test_db.add(content)
     test_db.flush()
 
     # 이벤트 추가 (id > 0 이면 항상 최신)
     ev = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S3_LLM_EXTRACT,
+        stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.ENTERED,
         actor="system",
     )
@@ -135,28 +135,28 @@ def test_board_stage_top_contents(test_db, client):
     from datetime import datetime, timezone, timedelta
 
     now = datetime.now(timezone.utc)
-    c1 = Content(title="외계+인 2부", content_type=ContentType.movie, status=ContentStatus.processing,
-                 current_stage=PipelineStage.S4_SOURCE_MATCH)
-    c2 = Content(title="파묘", content_type=ContentType.movie, status=ContentStatus.processing,
-                 current_stage=PipelineStage.S4_SOURCE_MATCH)
+    c1 = Content(title="외계+인 2부", content_type=ContentType.movie, status=ContentStatus.enriched,
+                 current_stage=PipelineStage.S3_SOURCE_MATCH)
+    c2 = Content(title="파묘", content_type=ContentType.movie, status=ContentStatus.enriched,
+                 current_stage=PipelineStage.S3_SOURCE_MATCH)
     test_db.add_all([c1, c2])
     test_db.flush()
 
     # c1: tmdb hit + kobis miss + dam hit
     test_db.add_all([
-        StageEvent(content_id=c1.id, stage=PipelineStage.S4_SOURCE_MATCH,
+        StageEvent(content_id=c1.id, stage=PipelineStage.S3_SOURCE_MATCH,
                    event_type=StageEventType.ENTERED, source=None,
                    started_at=now - timedelta(minutes=5), actor="system"),
-        StageEvent(content_id=c1.id, stage=PipelineStage.S4_SOURCE_MATCH,
+        StageEvent(content_id=c1.id, stage=PipelineStage.S3_SOURCE_MATCH,
                    event_type=StageEventType.COMPLETED, source="tmdb",
                    latency_ms=412, actor="system"),
-        StageEvent(content_id=c1.id, stage=PipelineStage.S4_SOURCE_MATCH,
+        StageEvent(content_id=c1.id, stage=PipelineStage.S3_SOURCE_MATCH,
                    event_type=StageEventType.SKIPPED, source="kobis",
                    latency_ms=201, actor="system"),
     ])
     # c2: tmdb only
     test_db.add(StageEvent(
-        content_id=c2.id, stage=PipelineStage.S4_SOURCE_MATCH,
+        content_id=c2.id, stage=PipelineStage.S3_SOURCE_MATCH,
         event_type=StageEventType.ENTERED, source=None,
         started_at=now - timedelta(minutes=2), actor="system",
     ))
@@ -164,7 +164,7 @@ def test_board_stage_top_contents(test_db, client):
 
     resp = client.get("/api/pipeline/board")
     assert resp.status_code == 200
-    s4 = resp.json()["stages"]["s4_source_match"]
+    s4 = resp.json()["stages"]["s3_source_match"]
     assert s4["count"] == 2
     assert len(s4["top_contents"]) == 2
 
@@ -185,27 +185,27 @@ def test_board_stage_stats(test_db, client):
     from datetime import datetime, timezone, timedelta
 
     now = datetime.now(timezone.utc)
-    c = Content(title="에러 테스트", content_type=ContentType.movie, status=ContentStatus.processing,
-                current_stage=PipelineStage.S3_LLM_EXTRACT)
+    c = Content(title="에러 테스트", content_type=ContentType.movie, status=ContentStatus.enriched,
+                current_stage=PipelineStage.S6_LLM_EXTRACT)
     test_db.add(c)
     test_db.flush()
 
     # ENTERED 10분 전 → 약 600s
     test_db.add(StageEvent(
-        content_id=c.id, stage=PipelineStage.S3_LLM_EXTRACT,
+        content_id=c.id, stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.ENTERED, source=None,
         started_at=now - timedelta(minutes=10), actor="system",
     ))
     # FAILED 최근 1h 이내
     test_db.add(StageEvent(
-        content_id=c.id, stage=PipelineStage.S3_LLM_EXTRACT,
+        content_id=c.id, stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.FAILED, source="ollama",
         started_at=now - timedelta(minutes=3), error_text="timeout", actor="system",
     ))
     test_db.commit()
 
     resp = client.get("/api/pipeline/board")
-    s3 = resp.json()["stages"]["s3_llm_extract"]
+    s3 = resp.json()["stages"]["s6_llm_extract"]
     # avg_seconds: 약 600 (±20s 허용)
     assert s3["avg_seconds"] is not None
     assert 580 <= s3["avg_seconds"] <= 620
@@ -215,7 +215,7 @@ def test_board_stage_stats(test_db, client):
 
 def test_events_paging(test_db, client):
     """이벤트 10개 삽입 후 since/limit 페이징 검증."""
-    content = Content(title="페이징 테스트", content_type=ContentType.movie, status=ContentStatus.processing)
+    content = Content(title="페이징 테스트", content_type=ContentType.movie, status=ContentStatus.enriched)
     test_db.add(content)
     test_db.flush()
 

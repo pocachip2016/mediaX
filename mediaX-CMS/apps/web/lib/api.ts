@@ -25,7 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── 타입 ──────────────────────────────────────────────────
 
-export type ContentStatus = "waiting" | "processing" | "staging" | "review" | "approved" | "rejected"
+export type ContentStatus = "raw" | "enriched" | "ai" | "review" | "approved" | "rejected"
 export type ContentType = "movie" | "series" | "season" | "episode"
 
 export interface ContentOut {
@@ -409,9 +409,11 @@ export const metadataApi = {
     request<PipelineStatus>("/api/programming/metadata/pipeline/status"),
 
   // ── 배치 업로드 ──────────────────────────────────────
-  uploadBatch: (formData: FormData) => {
+  uploadBatch: (formData: FormData, autoProcess?: boolean) => {
     const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-    return fetch(`${BASE_URL}/api/programming/metadata/upload/batch`, {
+    const url = new URL(`${BASE_URL}/api/programming/metadata/upload/batch`)
+    if (autoProcess !== undefined) url.searchParams.set("auto_process", String(autoProcess))
+    return fetch(url.toString(), {
       method: "POST",
       body: formData,
     }).then(async (res) => {

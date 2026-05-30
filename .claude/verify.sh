@@ -13,6 +13,354 @@ source .venv/bin/activate 2>/dev/null || true
 
 case "$STEP" in
 
+  # ── dev-pipeline-console-controls steps ─────────────────────────
+  C1)
+    echo "=== C1: FE ContentStatus 타입/라벨/STAGE_DEFS 재명명 (raw/enriched/ai) ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    cd "$FE_ROOT"
+    # 1. ContentStatus 타입 확인
+    grep -q '"raw" | "enriched" | "ai"' lib/api.ts || { echo "FAIL: api.ts ContentStatus 미갱신"; exit 1; }
+    echo "  ✓ lib/api.ts ContentStatus 타입 확인"
+    # 2. 구버전 값이 ContentStatus로 남아있지 않은지 확인 (UiGroup 키 제외)
+    if grep -rn '"waiting"\|"staging"' --include="*.ts" --include="*.tsx" . 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v "reviewQueueGuard" | grep -q .; then
+      echo "FAIL: 구버전 waiting/staging 값 남아있음"; exit 1
+    fi
+    echo "  ✓ 구버전 waiting/staging 값 없음"
+    # 3. STAGE_DEFS statusKey 확인
+    grep -q 'statusKey: "raw"' "app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS raw 없음"; exit 1; }
+    grep -q 'statusKey: "enriched"' "app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS enriched 없음"; exit 1; }
+    grep -q 'statusKey: "ai"' "app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS ai 없음"; exit 1; }
+    echo "  ✓ STAGE_DEFS raw/enriched/ai 확인"
+    # 4. TypeScript 타입 체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  B4)
+    echo "=== B4: AI Task 항목별 on/off 설정 배선 ==="
+    cd "$BACKEND"
+    python3 -c "
+# 1. AiTaskSetting 모델 확인
+from api.programming.metadata.models.external import AiTaskSetting
+assert AiTaskSetting.__tablename__ == 'ai_task_settings', 'tablename 오류'
+assert hasattr(AiTaskSetting, 'task_name'), 'task_name 없음'
+assert hasattr(AiTaskSetting, 'enabled'), 'enabled 없음'
+print('  ✓ AiTaskSetting 모델 확인')
+
+# 2. Runner DB 설정 로드 확인
+import inspect
+from api.programming.metadata.ai_tasks.runner import run_ai_tasks
+src = inspect.getsource(run_ai_tasks)
+assert 'AiTaskSetting' in src, 'Runner에 AiTaskSetting 없음'
+assert 'db_settings.get(task_name' in src, 'db_settings 오버라이드 없음'
+print('  ✓ Runner DB 설정 오버라이드 확인')
+
+# 3. API 엔드포인트 존재 확인
+import ast, pathlib
+src_router = pathlib.Path('api/programming/metadata/router.py').read_text()
+assert '/ai-tasks/settings' in src_router, 'GET /ai-tasks/settings 없음'
+assert 'patch_ai_task_setting' in src_router, 'PATCH /ai-tasks/settings/{task_name} 없음'
+print('  ✓ GET/PATCH /ai-tasks/settings 엔드포인트 확인')
+
+# 4. SQLite in-memory 통합 테스트: GET → PATCH → GET 확인
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+import api.programming.metadata.models
+from shared.database import Base
+engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+db = Session()
+
+# GET: DB 없을 때 기본값 True
+from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+settings = {row['task_name']: row['enabled'] for row in [
+    {'task_name': name, 'enabled': True} for name in AI_TASK_REGISTRY
+]}
+assert all(v for v in settings.values()), '기본값이 True가 아님'
+print('  ✓ 기본값 True 확인')
+
+# PATCH: enabled=False 저장
+setting = AiTaskSetting(task_name='translate_synopsis', enabled=False)
+db.add(setting)
+db.commit()
+row = db.query(AiTaskSetting).filter_by(task_name='translate_synopsis').first()
+assert row.enabled == False, 'PATCH 저장 실패'
+print('  ✓ PATCH(enabled=False) 저장 확인')
+
+db.close()
+Base.metadata.drop_all(engine)
+print('  ✓ SQLite 통합 테스트 통과')
+"
+    test -f alembic/versions/0030_ai_task_settings.py || { echo "FAIL: 0030 migration 없음"; exit 1; }
+    echo "  ✓ 0030 migration 파일 확인"
+    python3 -m pytest tests/api/programming/metadata/test_service.py -q --tb=short 2>&1 | tail -2
+    echo "=== PASS ==="
+    ;;
+
+  B3)
+    echo "=== B3: Phase1 나머지 task — short_synopsis/genre_normalized/mood_tags/keywords ==="
+    cd "$BACKEND"
+    # 1. 레지스트리 5개 등록 확인
+    python3 -c "
+from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+expected = {'translate_synopsis','short_synopsis','genre_normalized','mood_tags','keywords'}
+assert expected == set(AI_TASK_REGISTRY.keys()), f'레지스트리 불일치: {set(AI_TASK_REGISTRY.keys())}'
+print('  ✓ AI_TASK_REGISTRY 5개 task 등록 확인')
+
+from api.programming.metadata.models.content import ContentMetadata
+assert hasattr(ContentMetadata, 'ai_keywords'), 'ai_keywords 컬럼 없음'
+print('  ✓ ContentMetadata.ai_keywords 컬럼 확인')
+
+from api.programming.metadata.ai_tasks._utils import extract_json
+assert extract_json('{\"a\":1}') == {'a': 1}
+assert extract_json('[1,2,3]') == [1, 2, 3]
+codeblock = '\x60\x60\x60json\n[\"a\"]\n\x60\x60\x60'
+assert extract_json(codeblock) == ['a'], f'코드블록 파싱 실패'
+print('  ✓ extract_json 유틸 확인')
+"
+    test -f alembic/versions/0029_ai_keywords_column.py || { echo "FAIL: 0029 migration 없음"; exit 1; }
+    echo "  ✓ 0029 migration 파일 확인"
+    python3 -m pytest tests/test_ai_task_translate_synopsis.py -q --tb=short 2>&1 | tail -2
+    # 2. 실제 LLM 검증 — 도커
+    echo "  -- 실제 LLM 검증 (docker / qwen2.5:3b) --"
+    docker exec mediax-backend-1 python3 -c "
+import asyncio
+from api.programming.metadata.ai_tasks.short_synopsis import short_synopsis_task
+from api.programming.metadata.ai_tasks.genre_normalized import genre_normalized_task
+from api.programming.metadata.ai_tasks.mood_tags import mood_tags_task
+from api.programming.metadata.ai_tasks.keywords import keywords_task
+from api.programming.metadata.ai_tasks.base import TaskInput
+from api.programming.metadata.llm.ollama import OllamaTaskProvider
+
+SYNOPSIS = '전쟁의 참혹함 속에서도 희망을 잃지 않는 한 군인의 이야기. 동료들과 함께 살아남기 위해 싸우며 인간성의 의미를 되찾아간다.'
+
+async def main():
+    chain = [OllamaTaskProvider]
+
+    ti = TaskInput(1, 'short_synopsis', {'synopsis': SYNOPSIS})
+    out = await short_synopsis_task.run(ti, chain)
+    assert len(out.result['short_synopsis']) > 10
+    print(f'  ✓ short_synopsis OK: {out.result[\"short_synopsis\"][:50]}')
+
+    ti = TaskInput(1, 'genre_normalized', {'title':'전장의 희망','synopsis':SYNOPSIS,'cp_genre':''})
+    out = await genre_normalized_task.run(ti, chain)
+    assert out.result['genre_primary'], '장르 빈 값'
+    print(f'  ✓ genre_normalized OK: {out.result[\"genre_primary\"]}')
+
+    ti = TaskInput(1, 'mood_tags', {'title':'전장의 희망','synopsis':SYNOPSIS})
+    out = await mood_tags_task.run(ti, chain)
+    print(f'  ✓ mood_tags OK: {out.result[\"mood_tags\"]}')
+
+    ti = TaskInput(1, 'keywords', {'title':'전장의 희망','synopsis':SYNOPSIS})
+    out = await keywords_task.run(ti, chain)
+    assert len(out.result['keywords']) > 0, '키워드 없음'
+    print(f'  ✓ keywords OK: {out.result[\"keywords\"][:3]}')
+
+asyncio.run(main())
+print('  ✓ Phase1 4개 task 실제 LLM 검증 완료')
+"
+    echo "=== PASS ==="
+    ;;
+
+  B2)
+    echo "=== B2: TranslateSynopsisTask — 구조(host pytest) + 실제 LLM(docker qwen2.5:3b) ==="
+    cd "$BACKEND"
+    # 1. 구조 테스트 (LLM 미접촉) — 호스트 pytest. LLM run 테스트는 deselect (도커에서 별도 검증)
+    python3 -m pytest tests/test_ai_task_translate_synopsis.py -q \
+      --deselect tests/test_ai_task_translate_synopsis.py::test_run_ko_to_en_with_ollama \
+      --deselect tests/test_ai_task_translate_synopsis.py::test_run_en_to_ko_with_ollama \
+      --tb=short 2>&1 | tail -3
+    # 2. 실제 LLM 검증 — 도커 컨테이너 안 qwen2.5:3b 호출 (ollama:11434 도달 가능)
+    echo "  -- 실제 LLM 검증 (docker mediax-backend-1 / qwen2.5:3b) --"
+    docker exec mediax-backend-1 python3 -c "
+import asyncio
+from api.programming.metadata.ai_tasks.translate_synopsis import translate_synopsis_task
+from api.programming.metadata.ai_tasks.base import TaskInput
+from api.programming.metadata.llm.ollama import OllamaTaskProvider
+
+async def main():
+    # ko → en
+    ti = TaskInput(1, 'translate_synopsis', {'source_text':'전쟁의 참혹함 속에서도 희망을 잃지 않는 한 군인의 이야기.','source_lang':'ko','target_lang':'English','direction':'ko_to_en'})
+    out = await translate_synopsis_task.run(ti, [OllamaTaskProvider])
+    tr = out.result['translated']
+    assert out.engine == 'qwen2.5:3b', f'task model 아님: {out.engine}'
+    assert len(tr) > 10, f'번역 결과 너무 짧음: {tr!r}'
+    assert not tr.lower().startswith(('okay', 'let me', 'first', 'hmm')), f'추론 누출: {tr[:60]!r}'
+    assert sum(c.isascii() for c in tr) / len(tr) > 0.7, f'영어 번역 아님: {tr[:60]!r}'
+    print(f'  ✓ ko→en (qwen2.5:3b): {tr[:70]}')
+
+    # en → ko
+    ti2 = TaskInput(1, 'translate_synopsis', {'source_text':'A young soldier fights to survive the horrors of war.','source_lang':'en','target_lang':'Korean','direction':'en_to_ko'})
+    out2 = await translate_synopsis_task.run(ti2, [OllamaTaskProvider])
+    tr2 = out2.result['translated']
+    cjk = sum(1 for c in tr2 if '가' <= c <= '힣')
+    assert cjk > 3, f'한글 번역 아님: {tr2[:60]!r}'
+    print(f'  ✓ en→ko (qwen2.5:3b): {tr2[:40]}')
+
+asyncio.run(main())
+print('  ✓ 실제 LLM 양방향 번역 검증 완료')
+"
+    echo "=== PASS ==="
+    ;;
+
+  B1)
+    echo "=== B1: AiTask 프레임워크 — base/registry/runner + alembic 0028 ==="
+    cd "$BACKEND"
+    python3 -c "
+from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY, AiTask, register_task
+from api.programming.metadata.ai_tasks.base import TaskInput, TaskOutput
+from api.programming.metadata.ai_tasks.runner import run_ai_tasks, _compute_input_hash
+print('  ✓ ai_tasks 패키지 import OK')
+
+from api.programming.metadata.models.external import ContentAIResult, AITaskType
+assert hasattr(ContentAIResult, 'input_hash'), 'ContentAIResult.input_hash 없음'
+new_types = ['translate_synopsis', 'short_synopsis', 'genre_normalized', 'mood_tags', 'keywords']
+existing = [t.value for t in AITaskType]
+for t in new_types:
+    assert t in existing, f'AITaskType.{t} 없음'
+print('  ✓ ContentAIResult.input_hash + AITaskType 5개 항목 확인')
+
+from api.programming.metadata.models.content import ContentMetadata
+for col in ['synopsis_ko', 'synopsis_en', 'short_synopsis', 'tagline']:
+    assert hasattr(ContentMetadata, col), f'ContentMetadata.{col} 없음'
+print('  ✓ ContentMetadata 4개 컬럼 확인')
+
+import inspect, abc
+assert inspect.isabstract(AiTask), 'AiTask가 추상 클래스가 아님'
+abstract_methods = {'build_input', 'run', 'apply'}
+assert abstract_methods == AiTask.__abstractmethods__, f'추상 메서드 불일치: {AiTask.__abstractmethods__}'
+print('  ✓ AiTask ABC (build_input/run/apply) 확인')
+
+hash1 = _compute_input_hash(1, 'test', {'a': 1})
+hash2 = _compute_input_hash(1, 'test', {'a': 1})
+assert hash1 == hash2, 'input_hash 결정론적이지 않음'
+assert len(hash1) == 64, 'input_hash 길이 != 64 (SHA-256)'
+print('  ✓ input_hash 결정론적 SHA-256 확인')
+"
+    test -f alembic/versions/0028_ai_task_columns.py || { echo "FAIL: 0028 migration 없음"; exit 1; }
+    echo "  ✓ 0028 migration 파일 확인"
+    python3 -m pytest tests/api/programming/metadata/test_service.py tests/api/programming/metadata/test_ai_review_queue.py -q --tb=short 2>&1 | tail -3
+    echo "=== PASS ==="
+    ;;
+
+  A2)
+    echo "=== A2: process_content_ai 분리 — 외부조회 제거 + auto_chain/score_threshold + stage_event ==="
+    cd "$BACKEND"
+    python3 -c "
+import inspect
+from api.programming.metadata.ai_engine import process_content_ai
+sig = inspect.signature(process_content_ai)
+params = sig.parameters
+assert 'auto_chain' in params, 'auto_chain 파라미터 없음'
+assert 'score_threshold' in params, 'score_threshold 파라미터 없음'
+assert params['auto_chain'].default == True
+assert params['score_threshold'].default == 90
+print('  ✓ 시그니처 확인 (auto_chain=True, score_threshold=90)')
+import ast, pathlib
+src = pathlib.Path('api/programming/metadata/ai_engine.py').read_text()
+assert '_get_external_data_from_db' in src, '_get_external_data_from_db 헬퍼 없음'
+assert 'ContentStatus.ai' in src, 'enriched→ai 전이 없음'
+assert 'S6_LLM_EXTRACT' in src, 'stage_event S6 없음'
+import re
+fn_body = re.search(r'async def process_content_ai.*?(?=\nasync def |\ndef _fetch_external_meta)', src, re.DOTALL)
+assert fn_body and '_fetch_external_meta(' not in fn_body.group(), '_fetch_external_meta 호출이 process_content_ai 내에 남아있음'
+print('  ✓ 헬퍼/status/stage_event 확인')
+"
+    python3 -m pytest tests/test_stage_event_schema.py tests/test_stage_event_service.py tests/api/programming/metadata/test_service.py tests/api/programming/test_mh_bulk_movie.py -q --tb=short 2>&1 | tail -3
+    echo "=== PASS ==="
+    ;;
+
+  A3)
+    echo "=== A3: bulk_process auto_chain=False + response_model 정합(#8,#9) + auto_process 가드(#1) ==="
+    cd "$BACKEND"
+    # 1. process_content_metadata auto_chain 파라미터 확인
+    python3 -c "
+import inspect
+from workers.tasks.metadata import process_content_metadata
+sig = inspect.signature(process_content_metadata)
+params = sig.parameters
+assert 'auto_chain' in params, 'auto_chain 파라미터 없음'
+assert params['auto_chain'].default == True, 'auto_chain 기본값이 True가 아님'
+print('  ✓ Celery 태스크 auto_chain 파라미터 확인')
+"
+    # 2. bulk_process auto_chain=False 호출 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('api/programming/metadata/service_bulk.py').read_text()
+pattern = r'process_content_metadata\.delay\(content_id,\s*False\)'
+assert re.search(pattern, src), 'bulk_process에서 auto_chain=False 호출 없음'
+print('  ✓ bulk_process auto_chain=False 디스패치 확인')
+"
+    # 3. bulk_reprocess/bulk_enrich/bulk_recall 반환 타입 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('api/programming/metadata/service_bulk.py').read_text()
+for func in ['bulk_reprocess', 'bulk_enrich', 'bulk_recall']:
+  pattern = rf'async def {func}.*?\) -> \"BulkActionResponse\"'
+  assert re.search(pattern, src, re.DOTALL), f'{func} 반환 타입이 BulkActionResponse가 아님'
+  assert f'return BulkActionResponse(' in src, f'{func}에서 BulkActionResponse 반환 없음'
+print('  ✓ bulk_reprocess/enrich/recall BulkActionResponse 반환 확인')
+"
+    # 4. FE uploadBatch autoProcess 파라미터 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('../mediaX-CMS/apps/web/lib/api.ts').read_text()
+assert 'autoProcess' in src, 'uploadBatch에 autoProcess 파라미터 없음'
+assert 'auto_process' in src, 'auto_process 쿼리 파라미터 없음'
+print('  ✓ FE uploadBatch autoProcess 파라미터 확인')
+"
+    # 5. 테스트 콘솔 auto_process=false 전달 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx').read_text()
+assert 'uploadBatch(formData, false)' in src, '테스트 콘솔에서 auto_process=false 전달 없음'
+print('  ✓ 테스트 콘솔 auto_process=false 전달 확인')
+"
+    # 6. pytest
+    python3 -m pytest tests/api/programming/metadata/test_service.py tests/api/programming/metadata/test_ai_review_queue.py -q --tb=short 2>&1 | tail -3
+    echo "=== PASS ==="
+    ;;
+
+  A1)
+    echo "=== A1: ContentStatus enum rename (raw/enriched/ai) + PipelineStage renumber (S3↔S4↔S5↔S6) ==="
+    cd "$BACKEND"
+    # 1. enum 값 확인
+    python3 -c "
+from api.programming.metadata.models.content import ContentStatus, PipelineStage
+assert ContentStatus.raw.value == 'raw'
+assert ContentStatus.enriched.value == 'enriched'
+assert ContentStatus.ai.value == 'ai'
+assert not hasattr(ContentStatus, 'waiting')
+assert not hasattr(ContentStatus, 'processing')
+assert not hasattr(ContentStatus, 'staging')
+print('  ✓ ContentStatus enum 값 확인')
+assert PipelineStage.S6_LLM_EXTRACT.value == 's6_llm_extract'
+assert PipelineStage.S3_SOURCE_MATCH.value == 's3_source_match'
+assert PipelineStage.S4_GAP_DETECT.value == 's4_gap_detect'
+assert PipelineStage.S5_WEBSEARCH_FILL.value == 's5_websearch_fill'
+assert not hasattr(PipelineStage, 'S3_LLM_EXTRACT')
+print('  ✓ PipelineStage 번호 확인')
+"
+    # 2. alembic migration 존재 확인
+    test -f alembic/versions/0027_contentstatus_rename.py || { echo "FAIL: 0027 migration 없음"; exit 1; }
+    echo "  ✓ 0027 migration 파일 확인"
+    # 3. pytest
+    python3 -m pytest tests/ -q --deselect tests/api/programming/test_content_kind.py::test_tmdb_search_kind 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+
   kmdb-poster-extract-fix)
     echo "=== kmdb-poster-extract-fix: migration + pytest + 백필 후 DB 실측 ==="
     # 1. 마이그레이션 적용

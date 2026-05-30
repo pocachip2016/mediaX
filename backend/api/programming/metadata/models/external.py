@@ -31,12 +31,17 @@ class ExternalSourceType(str, enum.Enum):
 
 
 class AITaskType(str, enum.Enum):
-    synopsis = "synopsis"   # 시놉시스 생성
-    genre = "genre"         # 장르 분류
-    tagging = "tagging"     # 감성·태그 분류
-    rating = "rating"       # 시청등급 제안
-    entity = "entity"       # 엔티티 추출 (인물/키워드)
-    quality = "quality"     # 품질 평가
+    synopsis = "synopsis"               # 시놉시스 생성
+    genre = "genre"                     # 장르 분류
+    tagging = "tagging"                 # 감성·태그 분류
+    rating = "rating"                   # 시청등급 제안
+    entity = "entity"                   # 엔티티 추출 (인물/키워드)
+    quality = "quality"                 # 품질 평가
+    translate_synopsis = "translate_synopsis"   # 줄거리 ko↔en 번역 (Phase1)
+    short_synopsis = "short_synopsis"           # 줄거리 요약 (Phase1)
+    genre_normalized = "genre_normalized"       # 표준 장르 분류 (Phase1)
+    mood_tags = "mood_tags"                     # 감성 태그 분류 (Phase1)
+    keywords = "keywords"                       # 키워드 추출 (Phase1)
 
 
 class ExternalMetaSource(Base):
@@ -74,6 +79,19 @@ class ContentAIResult(Base):
     quality_score = Column(Float)       # 이 결과의 품질 스코어
     is_final = Column(Boolean, default=False, index=True)  # 현재 채택된 결과 여부
     error_message = Column(Text)        # 처리 실패 시 에러 메시지
+    input_hash = Column(String(64), index=True)  # SHA-256(content_id+task+input) — 캐시 키
     processed_at = Column(DateTime(timezone=True), server_default=func.now())
 
     content = relationship("Content", back_populates="ai_results")
+
+
+class AiTaskSetting(Base):
+    """
+    AI Task 항목별 on/off 설정 — ADR-007 B4
+    task_name = AITaskType value 문자열 (예: "translate_synopsis")
+    """
+    __tablename__ = "ai_task_settings"
+
+    task_name = Column(String(100), primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -364,7 +364,7 @@ def get_staging_queue(
             joinedload(Content.external_sources),
             joinedload(Content.children).joinedload(Content.metadata_record),
         )
-        .filter(Content.status == ContentStatus.staging)
+        .filter(Content.status == ContentStatus.ai)
         .filter(Content.parent_id.is_(None))
     )
     if content_type:
@@ -389,7 +389,7 @@ def bulk_approve_staging(db: Session, req: BulkActionRequest) -> dict:
     contents = (
         db.query(Content)
         .filter(Content.id.in_(req.content_ids))
-        .filter(Content.status == ContentStatus.staging)
+        .filter(Content.status == ContentStatus.ai)
         .all()
     )
     approved_ids = []
@@ -415,7 +415,7 @@ def bulk_reject_staging(db: Session, req: BulkActionRequest) -> dict:
     contents = (
         db.query(Content)
         .filter(Content.id.in_(req.content_ids))
-        .filter(Content.status == ContentStatus.staging)
+        .filter(Content.status == ContentStatus.ai)
         .all()
     )
     rejected_ids = []
@@ -456,7 +456,7 @@ def get_pipeline_status(db: Session) -> PipelineStatus:
     failed_enrichment = (
         db.query(Content)
         .filter(
-            Content.status == ContentStatus.processing,
+            Content.status == ContentStatus.enriched,
             Content.updated_at < cutoff,
         )
         .count()
@@ -465,9 +465,9 @@ def get_pipeline_status(db: Session) -> PipelineStatus:
     avg_score = db.query(func.avg(ContentMetadata.quality_score)).scalar() or 0.0
 
     return PipelineStatus(
-        waiting_count=_count(ContentStatus.waiting),
-        processing_count=_count(ContentStatus.processing),
-        staging_count=_count(ContentStatus.staging),
+        waiting_count=_count(ContentStatus.raw),
+        processing_count=_count(ContentStatus.enriched),
+        staging_count=_count(ContentStatus.ai),
         review_count=_count(ContentStatus.review),
         approved_count=_count(ContentStatus.approved),
         rejected_count=_count(ContentStatus.rejected),

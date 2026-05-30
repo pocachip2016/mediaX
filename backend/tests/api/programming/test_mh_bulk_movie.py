@@ -108,4 +108,4 @@ def test_movie_content_type_and_status(mock_task, db):
     process_batch_rows(db, job, [{"title": "테스트영화", "content_type": "movie"}])
     content = db.query(Content).first()
     assert content.content_type == ContentType.movie
-    assert content.status == ContentStatus.waiting
+    assert content.status == ContentStatus.raw

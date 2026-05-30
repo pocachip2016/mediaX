@@ -41,17 +41,15 @@ def _kobis_rate_allowed() -> bool:
 
 @celery_app.task(bind=True, name="workers.tasks.metadata.process_content_metadata",
                  max_retries=3, default_retry_delay=60)
-def process_content_metadata(self, content_id: int):
+def process_content_metadata(self, content_id: int, auto_chain: bool = True):
     """
-    콘텐츠 AI 처리 태스크
-    - Ollama llama3.2:3b 호출 → 시놉시스/장르/태그 생성
-    - 외부 메타 조회 (KOBIS + TMDB)
-    - 품질 스코어 산정 → status 자동 설정
+    콘텐츠 AI 처리 태스크.
+    auto_chain=False 시 enriched→ai 전이만 수행하고 review/approved 자동 체인 없음 (테스트 콘솔용).
     """
     db = SessionLocal()
     try:
         from api.programming.metadata.ai_engine import process_content_ai
-        asyncio.run(process_content_ai(content_id, db))
+        asyncio.run(process_content_ai(content_id, db, auto_chain=auto_chain))
         logger.info(f"[metadata] content_id={content_id} AI 처리 완료")
     except Exception as exc:
         logger.error(f"[metadata] content_id={content_id} 처리 실패: {exc}")
@@ -146,7 +144,7 @@ def _save_email_and_extract(db, message_id: str, subject: str, sender: str, body
         content = Content(
             title=title,
             content_type=ContentType.movie,
-            status=ContentStatus.waiting,
+            status=ContentStatus.raw,
             cp_name=extracted.get("cp_name"),
             production_year=extracted.get("year"),
             cp_email_id=log.id,
@@ -354,7 +352,7 @@ async def _async_sync_tmdb(db, api_key: str) -> dict:
         .filter(
             ExternalMetaSource.id.is_(None),
             Content.content_type.in_([ContentType.movie, ContentType.series]),
-            Content.status != ContentStatus.waiting,
+            Content.status != ContentStatus.raw,
         )
         .limit(BATCH_LIMIT)
         .all()
@@ -504,11 +502,11 @@ def enrich_content_metadata(self, content_id: int):
     from api.programming.metadata.stage_events import record_stage_event
     db = SessionLocal()
     try:
-        record_stage_event(db, content_id, PipelineStage.S3_LLM_EXTRACT, StageEventType.ENTERED,
+        record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT, StageEventType.ENTERED,
                            source="ollama", actor="system")
         result = _enrich_content(content_id, db)
         db.commit()
-        record_stage_event(db, content_id, PipelineStage.S3_LLM_EXTRACT, StageEventType.COMPLETED,
+        record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT, StageEventType.COMPLETED,
                            source="ollama", actor="system")
         logger.info(
             "[enrich] content_id=%d candidates=%d edges=%d suggestions=%d skipped=%s",
@@ -518,7 +516,7 @@ def enrich_content_metadata(self, content_id: int):
     except Exception as exc:
         logger.error(f"[enrich] content_id={content_id} 실패: {exc}")
         try:
-            record_stage_event(db, content_id, PipelineStage.S3_LLM_EXTRACT, StageEventType.FAILED,
+            record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT, StageEventType.FAILED,
                                source="ollama", error=str(exc)[:500], actor="system")
             db.commit()
         except Exception:
@@ -553,20 +551,20 @@ async def _async_enrich_content(content_id: int, db):
 
     # ── TMDB 검색 ──────────────────────────────────────────
     if tmdb_key:
-        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, StageEventType.ENTERED,
+        record_stage_event(db, content_id, PipelineStage.S3_SOURCE_MATCH, StageEventType.ENTERED,
                            source="tmdb", actor="system")
         tmdb_result = await _tmdb_search_and_save(content, db, tmdb_key)
         _tmdb_et = StageEventType.COMPLETED if tmdb_result else StageEventType.SKIPPED
-        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, _tmdb_et,
+        record_stage_event(db, content_id, PipelineStage.S3_SOURCE_MATCH, _tmdb_et,
                            source="tmdb", actor="system")
 
     # ── KOBIS 검색 ─────────────────────────────────────────
     if kobis_key and content.content_type == ContentType.movie:
-        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, StageEventType.ENTERED,
+        record_stage_event(db, content_id, PipelineStage.S3_SOURCE_MATCH, StageEventType.ENTERED,
                            source="kobis", actor="system")
         kobis_result = await _kobis_search_and_save(content, db, kobis_key)
         _kobis_et = StageEventType.COMPLETED if kobis_result else StageEventType.SKIPPED
-        record_stage_event(db, content_id, PipelineStage.S4_SOURCE_MATCH, _kobis_et,
+        record_stage_event(db, content_id, PipelineStage.S3_SOURCE_MATCH, _kobis_et,
                            source="kobis", actor="system")
 
     # ── ContentMetadata 업데이트 ───────────────────────────
@@ -581,7 +579,7 @@ async def _async_enrich_content(content_id: int, db):
 
 
     # ── status → staging ──────────────────────────────────
-    content.status = ContentStatus.staging
+    content.status = ContentStatus.ai
 
     # AI 결과 기록 (enrichment 태스크)
     db.query(ContentAIResult).filter(
@@ -818,7 +816,7 @@ async def _tmdb_collect_seasons(content, series_detail: dict, db, api_key: str, 
             season_content = Content(
                 title=season_name,
                 content_type=ContentType.season,
-                status=ContentStatus.staging,
+                status=ContentStatus.ai,
                 parent_id=content.id,
                 season_number=season_num,
                 cp_name=content.cp_name,
@@ -856,7 +854,7 @@ async def _tmdb_collect_seasons(content, series_detail: dict, db, api_key: str, 
                     ep_content = Content(
                         title=ep_title,
                         content_type=ContentType.episode,
-                        status=ContentStatus.staging,
+                        status=ContentStatus.ai,
                         parent_id=season_content.id,
                         season_number=season_num,
                         episode_number=ep_num,
@@ -1019,7 +1017,7 @@ def retry_failed_enrichments():
         stalled = (
             db.query(Content)
             .filter(
-                Content.status == ContentStatus.processing,
+                Content.status == ContentStatus.enriched,
                 Content.updated_at < cutoff,
             )
             .limit(50)

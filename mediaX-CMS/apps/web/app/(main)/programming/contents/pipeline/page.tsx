@@ -22,9 +22,9 @@ const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
 // ── Pipeline Test Console 설정 ────────────────────────────
 
 const STAGE_DEFS = [
-  { stage: 1, name: "생성",    statusKey: "waiting",    colorClass: "bg-yellow-500" },
-  { stage: 2, name: "AI처리",  statusKey: "processing", colorClass: "bg-blue-500" },
-  { stage: 3, name: "Enrich", statusKey: "staging",    colorClass: "bg-violet-500" },
+  { stage: 1, name: "생성",    statusKey: "raw",      colorClass: "bg-yellow-500" },
+  { stage: 2, name: "회수",    statusKey: "enriched", colorClass: "bg-blue-500" },
+  { stage: 3, name: "AI처리",  statusKey: "ai",       colorClass: "bg-violet-500" },
   { stage: 4, name: "검수",    statusKey: "review",     colorClass: "bg-orange-500" },
   { stage: 5, name: "승인",    statusKey: "approved",   colorClass: "bg-green-500" },
   { stage: 6, name: "게시",    statusKey: "published",  colorClass: "bg-gray-500" },
@@ -600,7 +600,7 @@ function BulkUploadEmbed({ onRefresh }: { onRefresh: () => void }) {
     try {
       const formData = new FormData()
       formData.append("file", file)
-      const r = await metadataApi.uploadBatch(formData)
+      const r = await metadataApi.uploadBatch(formData, false)
       setResult(r)
       setFile(null)
       onRefresh()
@@ -724,7 +724,7 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
   const fetchWaiting = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "waiting", size: 50 })
+      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "raw", size: 50 })
       setItems(r.items)
     } catch { setItems([]) } finally { setLoading(false) }
   }, [])
@@ -821,7 +821,7 @@ function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
   const fetchProcessing = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "processing", size: 50 })
+      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "enriched", size: 50 })
       setItems(r.items)
     } catch { setItems([]) } finally { setLoading(false) }
   }, [])
@@ -919,7 +919,7 @@ function TestReviewPanel({ onRefresh }: { onRefresh: () => void }) {
   const fetchStaging = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "staging", size: 50 })
+      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "ai", size: 50 })
       setItems(r.items)
       setSelectedIds(new Set())
     } catch { setItems([]) } finally { setLoading(false) }

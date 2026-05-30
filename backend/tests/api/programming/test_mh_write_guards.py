@@ -17,7 +17,7 @@ from api.programming.metadata.service import create_content, update_content
 
 def _content(db, title, ctype=ContentType.movie, year=2023, parent_id=None) -> Content:
     c = Content(title=title, content_type=ctype, production_year=year,
-                status=ContentStatus.waiting, parent_id=parent_id)
+                status=ContentStatus.raw, parent_id=parent_id)
     db.add(c)
     db.flush()
     return c

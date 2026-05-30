@@ -29,9 +29,9 @@ _GATE_MODES: dict[str, str] = {f"GATE_{i}": "manual" for i in range(1, 7)}
 # gate_id → 해당 gate에서 진입 대기 중인 stage 매핑
 _GATE_STAGE: dict[str, str] = {
     "GATE_1": PipelineStage.S1_INTAKE.value,
-    "GATE_2": PipelineStage.S3_LLM_EXTRACT.value,
-    "GATE_3": PipelineStage.S5_GAP_DETECT.value,
-    "GATE_4": PipelineStage.S6_WEBSEARCH_FILL.value,
+    "GATE_2": PipelineStage.S6_LLM_EXTRACT.value,
+    "GATE_3": PipelineStage.S4_GAP_DETECT.value,
+    "GATE_4": PipelineStage.S5_WEBSEARCH_FILL.value,
     "GATE_5": PipelineStage.S7_STAGING.value,
     "GATE_6": PipelineStage.S8_REVIEW.value,
 }
@@ -101,7 +101,7 @@ def _compute_stage_stats(stage: PipelineStage, db: Session, now: datetime) -> di
         for cid, src_map in per_content.items():
             for src, ev in sorted(src_map.items()):
                 if ev.event_type in (StageEventType.COMPLETED, StageEventType.ADVANCED):
-                    if stage == PipelineStage.S4_SOURCE_MATCH:
+                    if stage == PipelineStage.S3_SOURCE_MATCH:
                         result_str = "hit"
                     else:
                         result_str = "ok"
@@ -246,7 +246,7 @@ def get_pipeline_board(db: Session = Depends(get_db)):
     # enrichment_blocked: S3에서 멈춘 콘텐츠 (ENTERED 있고 COMPLETED 없음)
     enrichment_blocked = (
         db.query(func.count())
-        .filter(Content.current_stage == PipelineStage.S3_LLM_EXTRACT, Content.is_deleted.is_(False))
+        .filter(Content.current_stage == PipelineStage.S6_LLM_EXTRACT, Content.is_deleted.is_(False))
         .scalar() or 0
     )
 

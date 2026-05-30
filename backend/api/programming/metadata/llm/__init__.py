@@ -12,7 +12,7 @@ AI_ENGINE 환경변수로 사용 엔진 선택:
 from .base import AbstractLLMProvider
 from .gemini import GeminiProvider
 from .groq import GroqProvider
-from .ollama import OllamaProvider
+from .ollama import OllamaProvider, OllamaTaskProvider
 
 # AI_ENGINE 값 → 프로바이더 클래스 우선순위 목록
 _PROVIDER_ORDER: dict[str, list[type[AbstractLLMProvider]]] = {
@@ -27,10 +27,20 @@ def get_provider_chain(engine: str) -> list[type[AbstractLLMProvider]]:
     return _PROVIDER_ORDER.get(engine.lower(), _PROVIDER_ORDER["gemini"])
 
 
+def get_task_provider_chain() -> list[type[AbstractLLMProvider]]:
+    """
+    AI Task(번역/요약/분류) 전용 프로바이더 체인.
+    로컬 경량 instruct 모델(OllamaTaskProvider) 우선 → 클라우드 폴백.
+    """
+    return [OllamaTaskProvider, GeminiProvider, GroqProvider]
+
+
 __all__ = [
     "AbstractLLMProvider",
     "GeminiProvider",
     "GroqProvider",
     "OllamaProvider",
+    "OllamaTaskProvider",
     "get_provider_chain",
+    "get_task_provider_chain",
 ]

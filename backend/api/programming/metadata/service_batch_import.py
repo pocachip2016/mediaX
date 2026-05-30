@@ -43,8 +43,9 @@ def _process_movie_row(
     job: "ContentBatchJob",
     idx: int,
     errors: list,
+    auto_process: bool = True,
 ) -> str:
-    """단건 movie 행 → Content(waiting) 평면 insert.
+    """단건 movie 행 → Content(raw) 평면 insert.
 
     반환: 'success' | 'skipped' (dedup 중복) | 'failed'
     runtime 컬럼 값이 양의 정수이면 Content.runtime_minutes에 매핑한다.
@@ -120,7 +121,7 @@ def _process_movie_row(
         content = Content(
             title=title,
             content_type=row_content_type,
-            status=ContentStatus.waiting,
+            status=ContentStatus.raw,
             cp_name=cp_name,
             production_year=production_year,
             runtime_minutes=runtime_val,
@@ -152,7 +153,8 @@ def _process_movie_row(
         if row.get("poster_url"):
             add_content_image(db, content.id, "poster", row["poster_url"], source="cp")
 
-        process_content_metadata.delay(content.id)
+        if auto_process:
+            process_content_metadata.delay(content.id)
         return "success"
 
     except Exception as exc:
@@ -165,6 +167,7 @@ def _process_series_rows(
     job: "ContentBatchJob",
     rows: list[dict],
     errors: list,
+    auto_process: bool = True,
 ) -> dict:
     """series 계층 bulk insert.
 
@@ -229,7 +232,7 @@ def _process_series_rows(
                 series = Content(
                     title=series_title,
                     content_type=ContentType.series,
-                    status=ContentStatus.waiting,
+                    status=ContentStatus.raw,
                     cp_name=cp_name,
                     production_year=production_year,
                 )
@@ -244,7 +247,8 @@ def _process_series_rows(
                 ))
                 db.flush()
                 resolve_metadata(db, series.id)
-                process_content_metadata.delay(series.id)
+                if auto_process:
+                    process_content_metadata.delay(series.id)
                 success += 1
             else:
                 skipped_duplicates += 1
@@ -275,7 +279,7 @@ def _process_series_rows(
                         season = Content(
                             title=season_title,
                             content_type=ContentType.season,
-                            status=ContentStatus.waiting,
+                            status=ContentStatus.raw,
                             parent_id=series.id,
                             season_number=season_num,
                             cp_name=cp_name,
@@ -317,7 +321,7 @@ def _process_series_rows(
                         episode = Content(
                             title=ep_title,
                             content_type=ContentType.episode,
-                            status=ContentStatus.waiting,
+                            status=ContentStatus.raw,
                             parent_id=season.id,
                             season_number=season_num,
                             episode_number=ep_num,
@@ -356,6 +360,7 @@ def process_batch_rows(
     db: Session,
     job: ContentBatchJob,
     rows: list[dict],
+    auto_process: bool = True,
 ) -> dict:
     """파싱된 배치 행 → movie/series 경로 분리 후 처리.
 
@@ -380,7 +385,7 @@ def process_batch_rows(
                if is_tv_type(row.get("content_type") or "movie")]
 
     for i, row in movie_rows:
-        result = _process_movie_row(db, row, job, i, errors)
+        result = _process_movie_row(db, row, job, i, errors, auto_process=auto_process)
         if result == "success":
             success += 1
         elif result == "skipped":
@@ -389,7 +394,7 @@ def process_batch_rows(
             failed += 1
 
     if tv_rows:
-        tv_result = _process_series_rows(db, job, tv_rows, errors)
+        tv_result = _process_series_rows(db, job, tv_rows, errors, auto_process=auto_process)
         success += tv_result["success"]
         failed += tv_result["failed"]
         skipped_duplicates += tv_result["skipped_duplicates"]

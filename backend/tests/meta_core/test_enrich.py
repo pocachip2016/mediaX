@@ -27,7 +27,7 @@ from api.programming.metadata.models.taxonomy import ContentGenre
 
 def _content(db, title="기생충", year=2019) -> Content:
     c = Content(title=title, content_type=ContentType.movie,
-                status=ContentStatus.staging, production_year=year)
+                status=ContentStatus.ai, production_year=year)
     db.add(c)
     db.flush()
     return c

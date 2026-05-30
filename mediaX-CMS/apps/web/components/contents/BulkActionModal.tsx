@@ -41,7 +41,7 @@ export function BulkActionModal({
   targets = [
     { id: 1, title: "기생충", cp_name: "CJ ENM", status: "review" },
     { id: 2, title: "부산행", cp_name: "Next Ent", status: "review" },
-    { id: 3, title: "미나리", cp_name: "A24", status: "staging" },
+    { id: 3, title: "미나리", cp_name: "A24", status: "ai" },
   ],
 }: BulkActionModalProps) {
   const [step, setStep] = useState<BulkStep>("confirm")
@@ -180,10 +180,10 @@ export function BulkActionModal({
                       <span
                         className={cn(
                           "px-2 py-0.5 rounded text-xs font-medium",
-                          item.status === "staging" ? "bg-violet-100 text-violet-700" : "bg-amber-100 text-amber-700",
+                          item.status === "ai" ? "bg-violet-100 text-violet-700" : "bg-amber-100 text-amber-700",
                         )}
                       >
-                        {item.status === "staging" ? "자동검토" : "검수"}
+                        {item.status === "ai" ? "AI처리완료" : "검수"}
                       </span>
                     )}
                     <span className="text-xs text-green-700 font-medium">{actionConfig.emoji}</span>
