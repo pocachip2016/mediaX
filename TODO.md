@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] **dev-pipeline-console-controls** — ADR-007 구현 (next: A1 enum 재명명 raw→enriched→ai→review). Phase A(BE 상태머신)~D(verify), 12 step
+- [ ] **dev-pipeline-console-controls** — ADR-007 구현 (A1–C1 완료, next: C2 카드 재배선). Phase C(FE)~D(verify), 5 step 남음
 
 ## Next (이번 마일스톤)
 (작성 중)
@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-pipeline-console-controls A1–C1** — BE 상태머신 분리 + AiTask registry + 5개 Phase1 LLM 태스크(translate/short/genre/mood/keywords) + FE ContentStatus 마이그레이션(raw/enriched/ai) (2026-05-30)
 - [x] **dev-pipeline-console-controls 설계** — ADR-007(회수 우선·AI Task registry·번역 ko↔en) + 12-step plan + IMPROVEMENTS 백로그 (2026-05-29)
 - [x] **fix(pipeline-console)** — 생성 입력 3탭 통합(CreationTabsPanel) + status 기준 카드 정렬 (2026-05-29)
 - [x] **chore(env)** — OLLAMA_MODEL qwen3:4b 전환 (모델명 불일치 LLM 전체 실패 해소) (2026-05-29)
