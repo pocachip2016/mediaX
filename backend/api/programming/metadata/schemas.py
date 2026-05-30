@@ -883,3 +883,19 @@ class PaginatedAiReviewQueue(BaseModel):
     total: int
     page: int
     size: int
+
+
+class ContentAIResultOut(BaseModel):
+    """AI 처리 결과 (content_ai_results)"""
+    id: int
+    content_id: int
+    engine: str
+    task_type: str
+    result_json: Optional[dict[str, Any]] = None
+    quality_score: Optional[float] = None
+    is_final: bool
+    error_message: Optional[str] = None
+    input_hash: Optional[str] = None
+    processed_at: datetime
+
+    model_config = {"from_attributes": True}

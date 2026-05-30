@@ -148,7 +148,7 @@ def seed_pipeline_test(db) -> dict:
 
         c = Content(
             title=title, original_title=orig,
-            content_type=ContentType.movie, status=ContentStatus.staging,
+            content_type=ContentType.movie, status=ContentStatus.ai,
             cp_name=CP, production_year=year, runtime_minutes=runtime, country="KR",
         )
         db.add(c)
@@ -198,7 +198,7 @@ def seed_pipeline_test(db) -> dict:
     for title, year in INCOMPLETE_MOVIES:
         c = Content(
             title=title, content_type=ContentType.movie,
-            status=ContentStatus.waiting, cp_name=CP,
+            status=ContentStatus.raw, cp_name=CP,
             production_year=year, country="KR",
         )
         db.add(c)
@@ -280,7 +280,7 @@ def seed_pipeline_test(db) -> dict:
     for title, year, include_empty_season in INCOMPLETE_SERIES:
         series = Content(
             title=title, content_type=ContentType.series,
-            status=ContentStatus.waiting, cp_name=CP,
+            status=ContentStatus.raw, cp_name=CP,
             production_year=year, country="KR",
         )
         db.add(series)
@@ -296,7 +296,7 @@ def seed_pipeline_test(db) -> dict:
         if include_empty_season:
             season = Content(
                 title=f"{title} 시즌 1", content_type=ContentType.season,
-                status=ContentStatus.waiting, cp_name=CP,
+                status=ContentStatus.raw, cp_name=CP,
                 production_year=year, country="KR",
                 parent_id=series.id, season_number=1,
             )
@@ -316,7 +316,7 @@ def seed_pipeline_test(db) -> dict:
 
         c = Content(
             title=title, content_type=ContentType.movie,
-            status=ContentStatus.staging, cp_name=CP,
+            status=ContentStatus.ai, cp_name=CP,
             production_year=stored_year,   # 오류 연도 의도적 입력
             country="KR",
         )

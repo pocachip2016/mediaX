@@ -203,7 +203,7 @@ async def create_from_sources(
     content = Content(
         title=external_source.title or "",
         cp_name=cp_name,
-        status=ContentStatus.waiting,
+        status=ContentStatus.raw,
     )
     db.add(content)
     db.flush()

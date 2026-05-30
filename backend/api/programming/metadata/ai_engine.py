@@ -326,33 +326,76 @@ async def generate_metadata_ollama(
 
 # ── Celery 태스크용 AI 처리 ───────────────────────────────
 
-async def process_content_ai(content_id: int, db: Session):
+def _get_external_data_from_db(
+    content_id: int, db: Session
+) -> tuple[dict | None, dict | None]:
+    """enrich 단계에서 저장된 KOBIS/TMDB ExternalMetaSource raw_json 조회."""
+    from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
+    kobis = (
+        db.query(ExternalMetaSource)
+        .filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == ExternalSourceType.kobis,
+        )
+        .first()
+    )
+    tmdb = (
+        db.query(ExternalMetaSource)
+        .filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+        )
+        .first()
+    )
+    return (kobis.raw_json if kobis else None, tmdb.raw_json if tmdb else None)
+
+
+async def process_content_ai(
+    content_id: int,
+    db: Session,
+    *,
+    auto_chain: bool = True,
+    score_threshold: int = 90,
+):
     """
-    Celery 태스크에서 호출 — 저장된 콘텐츠 AI 처리 후 DB 업데이트.
-    품질 스코어 기준 status 자동 설정:
-      90+   → approved
-      70~89 → review
-      <70   → review (AI 보강 제안)
+    AI 처리 단계 (ADR-007 ③단계) — enrich 완료 후 호출.
+
+    status 전이:
+      enriched → ai  (항상)
+      auto_chain=True 시 score 기반 추가 전이:
+        score ≥ score_threshold → approved
+        score < score_threshold → review
+
+    외부 메타 조회 없음 — enrich 단계에서 저장된 ExternalMetaSource 활용.
     ContentAIResult에 사용된 엔진 기록.
     """
     from api.programming.metadata.models import (
         Content, ContentMetadata, ContentStatus,
-        ContentAIResult, AITaskType, ExternalSourceType,
+        ContentAIResult, AITaskType,
     )
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+    from api.programming.metadata.stage_events import record_stage_event
 
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise ValueError(f"Content {content_id} not found")
 
-    # status → processing
-    content.status = ContentStatus.processing
-    db.commit()
+    if content.status != ContentStatus.enriched:
+        logger.warning(
+            "[ai] content_id=%d status=%s (expected enriched) — proceeding anyway",
+            content_id, content.status,
+        )
+
+    record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT,
+                       StageEventType.ENTERED, actor="system")
 
     meta = content.metadata_record
     if not meta:
         meta = ContentMetadata(content_id=content_id)
         db.add(meta)
         db.flush()
+
+    kobis_match, tmdb_match = _get_external_data_from_db(content_id, db)
 
     req = AIGenerateRequest(
         title=content.title,
@@ -363,7 +406,7 @@ async def process_content_ai(content_id: int, db: Session):
 
     result, used_engine = await _generate_metadata_with_engine(req, db)
 
-    # ContentMetadata 업데이트
+    # ContentMetadata 업데이트 (외부 데이터는 DB에서 로드한 값 활용)
     meta.ai_synopsis = result.synopsis
     meta.ai_genre_primary = result.genre_primary
     meta.ai_genre_secondary = result.genre_secondary
@@ -371,21 +414,15 @@ async def process_content_ai(content_id: int, db: Session):
     meta.ai_rating_suggestion = result.rating_suggestion
     meta.quality_score = result.quality_score
     meta.score_breakdown = {}
-    meta.tmdb_data = result.tmdb_match
+    meta.tmdb_data = tmdb_match
     meta.ai_processed_at = datetime.utcnow()
 
-    if result.kobis_match and result.kobis_match.get("movieCd"):
-        _upsert_external_source(db, content_id, ExternalSourceType.kobis,
-                                result.kobis_match["movieCd"], result.kobis_match)
-    if result.tmdb_match and result.tmdb_match.get("id"):
-        _upsert_external_source(db, content_id, ExternalSourceType.tmdb,
-                                str(result.tmdb_match["id"]), result.tmdb_match)
+    # enriched → ai
+    content.status = ContentStatus.ai
 
-    # 품질 스코어 기반 status 결정
-    if result.quality_score >= 90:
-        content.status = ContentStatus.approved
-    else:
-        content.status = ContentStatus.review
+    record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT,
+                       StageEventType.COMPLETED, actor="system",
+                       payload={"score": result.quality_score, "engine": used_engine})
 
     # 기존 is_final 레코드 해제
     db.query(ContentAIResult).filter(
@@ -409,6 +446,12 @@ async def process_content_ai(content_id: int, db: Session):
         is_final=True,
         processed_at=datetime.utcnow(),
     ))
+
+    if auto_chain:
+        if result.quality_score >= score_threshold:
+            content.status = ContentStatus.approved
+        else:
+            content.status = ContentStatus.review
 
     db.commit()
     db.refresh(meta)

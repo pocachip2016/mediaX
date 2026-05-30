@@ -22,7 +22,7 @@ def client(db):
 
 @pytest.fixture
 def content(db):
-    obj = Content(title="테스트 콘텐츠", content_type="movie", status="waiting")
+    obj = Content(title="테스트 콘텐츠", content_type="movie", status="raw")
     db.add(obj)
     db.commit()
     db.refresh(obj)

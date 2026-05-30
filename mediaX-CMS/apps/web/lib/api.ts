@@ -25,7 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── 타입 ──────────────────────────────────────────────────
 
-export type ContentStatus = "waiting" | "processing" | "staging" | "review" | "approved" | "rejected"
+export type ContentStatus = "raw" | "enriched" | "ai" | "review" | "approved" | "rejected"
 export type ContentType = "movie" | "series" | "season" | "episode"
 
 export interface ContentOut {
@@ -409,9 +409,11 @@ export const metadataApi = {
     request<PipelineStatus>("/api/programming/metadata/pipeline/status"),
 
   // ── 배치 업로드 ──────────────────────────────────────
-  uploadBatch: (formData: FormData) => {
+  uploadBatch: (formData: FormData, autoProcess?: boolean) => {
     const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-    return fetch(`${BASE_URL}/api/programming/metadata/upload/batch`, {
+    const url = new URL(`${BASE_URL}/api/programming/metadata/upload/batch`)
+    if (autoProcess !== undefined) url.searchParams.set("auto_process", String(autoProcess))
+    return fetch(url.toString(), {
       method: "POST",
       body: formData,
     }).then(async (res) => {
@@ -476,6 +478,12 @@ export const metadataApi = {
       body: JSON.stringify(data),
     }),
 
+  bulkProcessAi: (data: BulkActionConsolidatedRequest) =>
+    request<BulkActionResponse>("/api/programming/metadata/test/pipeline/process-ai", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   bulkDelete: (data: BulkActionConsolidatedRequest) =>
     request<BulkActionResponse>("/api/programming/metadata/bulk", {
       method: "DELETE",
@@ -507,6 +515,11 @@ export const metadataApi = {
       {
         method: "POST",
       }
+    ),
+
+  getAiResults: (contentId: number) =>
+    request<ContentAIResult[]>(
+      `/api/programming/metadata/contents/${contentId}/ai-results`
     ),
 
   partialReprocess: (contentId: number, fields?: string[]) =>
@@ -598,6 +611,17 @@ export const metadataApi = {
 
   getTimelineV2: (id: number) =>
     request<ContentTimelineV2>(`/api/programming/metadata/contents/${id}/timeline`),
+
+  getAiTaskSettings: () =>
+    request<AiTaskSetting[]>("/api/programming/metadata/ai-tasks/settings"),
+
+  patchAiTaskSetting: (taskName: string, enabled: boolean) =>
+    request<AiTaskSetting>(
+      `/api/programming/metadata/ai-tasks/settings/${taskName}?enabled=${enabled}`,
+      {
+        method: "PATCH",
+      }
+    ),
 }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
@@ -1332,6 +1356,25 @@ export interface GateAdvanceResponse {
   events: unknown[]
 }
 
+export interface AiTaskSetting {
+  task_name: string
+  enabled: boolean
+  updated_at?: string
+}
+
+export interface ContentAIResult {
+  id: number
+  content_id: number
+  engine: string
+  task_type: string
+  result_json: Record<string, unknown> | null
+  quality_score: number | null
+  is_final: boolean
+  error_message: string | null
+  input_hash: string | null
+  processed_at: string
+}
+
 export const pipelineApi = {
   getBoard: () =>
     request<PipelineBoardResponse>("/api/pipeline/board"),
@@ -1376,6 +1419,19 @@ function requestTest<T>(path: string, init?: RequestInit): Promise<T> {
   })
 }
 
+export interface PipelineEventLog {
+  id: number
+  content_id: number
+  stage: string
+  event_type: string
+  source: string | null
+  started_at: string
+  ended_at: string | null
+  latency_ms: number | null
+  error_text: string | null
+  actor: string
+}
+
 export const pipelineTestApi = {
   seed: () =>
     requestTest<PipelineTestSeedResult>("/api/test/pipeline/seed", { method: "POST" }),
@@ -1386,6 +1442,12 @@ export const pipelineTestApi = {
     ),
   summary: () =>
     requestTest<PipelineTestStageSummary>("/api/test/pipeline/summary"),
+  events: (content_id?: number, limit = 30) => {
+    const q = new URLSearchParams()
+    if (content_id) q.set("content_id", String(content_id))
+    q.set("limit", String(limit))
+    return requestTest<PipelineEventLog[]>(`/api/test/pipeline/events?${q}`)
+  },
 }
 
 // ── Distribution / Curation ───────────────────────────────

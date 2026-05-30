@@ -63,7 +63,7 @@ from api.programming.metadata.schemas import (
     MappedExternalItem, PaginatedMappedItems,
     BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
     UndoActionRequest, UndoActionOut,
-    PromoteAIResultOut, ApplyExternalFieldsRequest,
+    PromoteAIResultOut, ApplyExternalFieldsRequest, ContentAIResultOut,
     ContentChangelogOut, LockFieldsRequest,
     EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
     PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
@@ -347,9 +347,10 @@ async def batch_upload(
     cp_name: Optional[str] = Form(None),
     created_by: Optional[str] = Form(None),
     dry_run: Optional[bool] = Query(False, description="건강성 검사만 수행 (job 생성 스킵)"),
+    auto_process: Optional[bool] = Query(True, description="False면 AI 처리 큐 등록 스킵 (테스트 콘솔용)"),
     db: Session = Depends(get_db),
 ):
-    """CSV/엑셀 배치 업로드 → 파싱 후 Content(waiting) 생성 + AI 처리 큐 등록"""
+    """CSV/엑셀 배치 업로드 → 파싱 후 Content(raw) 생성. auto_process=True면 AI 처리 큐 등록"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
@@ -487,7 +488,7 @@ async def batch_upload(
     # 비어있는 행 제거
     rows = [r for r in rows if r.get("title")]
 
-    result = service.process_batch_rows(db, job, rows)
+    result = service.process_batch_rows(db, job, rows, auto_process=bool(auto_process))
     db.refresh(job)
     return BatchJobOut.model_validate(job)
 
@@ -1150,14 +1151,16 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
     )
     audit_staging = (
         db.query(ContentAuditLog)
-        .filter(ContentAuditLog.content_id == content_id,
-                ContentAuditLog.new_value.contains("staging"))
+        .filter(
+            ContentAuditLog.content_id == content_id,
+            ContentAuditLog.new_value.in_(["ai", "staging"]),  # staging: pre-migration records
+        )
         .order_by(ContentAuditLog.at)
         .first()
     )
 
     STATUS_ORDER = [
-        ContentStatus.waiting, ContentStatus.processing, ContentStatus.staging,
+        ContentStatus.raw, ContentStatus.enriched, ContentStatus.ai,
         ContentStatus.review, ContentStatus.approved, ContentStatus.rejected,
     ]
     current = c.status
@@ -1171,7 +1174,7 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
         if stage_idx == 0:
             return "done"
         STAGE_STATUSES = {
-            1: [ContentStatus.staging, ContentStatus.review,
+            1: [ContentStatus.ai, ContentStatus.review,
                 ContentStatus.approved, ContentStatus.rejected],
             2: [ContentStatus.review, ContentStatus.approved, ContentStatus.rejected],
             3: [ContentStatus.approved, ContentStatus.rejected],
@@ -1187,9 +1190,9 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
 
     def _current_stage_idx() -> int:
         mapping = {
-            ContentStatus.waiting: 0,
-            ContentStatus.processing: 1,
-            ContentStatus.staging: 3,
+            ContentStatus.raw: 0,
+            ContentStatus.enriched: 1,
+            ContentStatus.ai: 3,
             ContentStatus.review: 3,
             ContentStatus.approved: 4,
             ContentStatus.rejected: 4,
@@ -1255,3 +1258,86 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
         "intake_channel": c.intake_channel.value if c.intake_channel else None,
         "pipeline_stages": [s.model_dump() for s in pipeline_stages],
     }
+
+
+# ── AI Task 설정 (ADR-007 B4) ─────────────────────────────
+
+@router.get("/ai-tasks/settings", summary="AI Task 항목별 on/off 설정 조회")
+def get_ai_task_settings(db: Session = Depends(get_db)):
+    """등록된 모든 AI Task의 enabled 설정을 반환. DB에 없는 task는 기본값 True."""
+    from api.programming.metadata.models.external import AiTaskSetting
+    from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+
+    db_settings = {
+        row.task_name: row.enabled
+        for row in db.query(AiTaskSetting).all()
+    }
+    return [
+        {
+            "task_name": name,
+            "enabled": db_settings.get(name, True),
+        }
+        for name in AI_TASK_REGISTRY
+    ]
+
+
+@router.patch("/ai-tasks/settings/{task_name}", summary="AI Task on/off 토글")
+def patch_ai_task_setting(task_name: str, enabled: bool, db: Session = Depends(get_db)):
+    """특정 AI Task의 enabled 설정을 변경. DB에 없으면 신규 생성."""
+    from api.programming.metadata.models.external import AiTaskSetting
+    from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+
+    if task_name not in AI_TASK_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"AI Task '{task_name}' not found")
+
+    setting = db.query(AiTaskSetting).filter(AiTaskSetting.task_name == task_name).first()
+    if setting:
+        setting.enabled = enabled
+    else:
+        setting = AiTaskSetting(task_name=task_name, enabled=enabled)
+        db.add(setting)
+    db.commit()
+    return {"task_name": task_name, "enabled": enabled}
+
+
+# ── AI 처리 결과 조회 ─────────────────────────────────────────────────
+
+@router.get("/contents/{content_id}/ai-results", response_model=list[ContentAIResultOut], summary="AI 처리 결과 조회")
+def get_ai_results(content_id: int, db: Session = Depends(get_db)):
+    """특정 콘텐츠의 AI 처리 결과 목록 (최신순)"""
+    from api.programming.metadata.models.external import ContentAIResult
+
+    results = db.query(ContentAIResult).filter(
+        ContentAIResult.content_id == content_id
+    ).order_by(ContentAIResult.processed_at.desc()).all()
+    return results
+
+
+@router.post("/test/pipeline/process-ai", response_model=BulkActionResponse, summary="AI 처리 일괄 트리거")
+def trigger_process_ai(req: BulkActionConsolidatedRequest, db: Session = Depends(get_db)):
+    """TEST_PIPELINE enriched 상태 콘텐츠 AI 처리 (Celery)"""
+    from api.programming.metadata.models import Content
+    from workers.tasks.ai_processing import process_content_ai_task
+
+    if not req.ids:
+        return BulkActionResponse(job_id="", ids_accepted=0, ids_rejected=0)
+
+    contents = db.query(Content).filter(Content.id.in_(req.ids)).all()
+    if not contents:
+        raise HTTPException(status_code=404, detail="No contents found")
+
+    job_id = f"bulk_ai_{len(req.ids)}_{int(datetime.utcnow().timestamp())}"
+    accepted, rejected = 0, 0
+
+    for content in contents:
+        if content.status.value == "enriched":
+            process_content_ai_task.delay(content.id)
+            accepted += 1
+        else:
+            rejected += 1
+
+    return BulkActionResponse(
+        job_id=job_id,
+        ids_accepted=accepted,
+        ids_rejected=rejected,
+    )

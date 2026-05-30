@@ -31,7 +31,7 @@ def test_timeline_v2_empty_content(test_db, client):
     content = Content(
         title="빈 콘텐츠",
         content_type=ContentType.movie,
-        status=ContentStatus.waiting,
+        status=ContentStatus.raw,
     )
     test_db.add(content)
     test_db.commit()
@@ -52,7 +52,7 @@ def test_timeline_v2_s1_to_s7_flow(test_db, client):
     content = Content(
         title="흐름 테스트",
         content_type=ContentType.movie,
-        status=ContentStatus.processing,
+        status=ContentStatus.enriched,
     )
     test_db.add(content)
     test_db.flush()
@@ -77,14 +77,14 @@ def test_timeline_v2_s1_to_s7_flow(test_db, client):
     # S3 완료
     ev_s3_entered = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S3_LLM_EXTRACT,
+        stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.ENTERED,
         source="ollama",
         actor="system",
     )
     ev_s3_completed = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S3_LLM_EXTRACT,
+        stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.COMPLETED,
         source="ollama",
         actor="system",
@@ -94,14 +94,14 @@ def test_timeline_v2_s1_to_s7_flow(test_db, client):
     # S4 완료
     ev_s4_entered = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S4_SOURCE_MATCH,
+        stage=PipelineStage.S3_SOURCE_MATCH,
         event_type=StageEventType.ENTERED,
         source="tmdb",
         actor="system",
     )
     ev_s4_completed = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S4_SOURCE_MATCH,
+        stage=PipelineStage.S3_SOURCE_MATCH,
         event_type=StageEventType.COMPLETED,
         source="tmdb",
         actor="system",
@@ -128,7 +128,7 @@ def test_timeline_v2_s4_sources(test_db, client):
     content = Content(
         title="S4 소스 테스트",
         content_type=ContentType.movie,
-        status=ContentStatus.processing,
+        status=ContentStatus.enriched,
     )
     test_db.add(content)
     test_db.flush()
@@ -136,7 +136,7 @@ def test_timeline_v2_s4_sources(test_db, client):
     # S4 tmdb
     ev_s4_tmdb = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S4_SOURCE_MATCH,
+        stage=PipelineStage.S3_SOURCE_MATCH,
         event_type=StageEventType.COMPLETED,
         source="tmdb",
         latency_ms=412,
@@ -146,7 +146,7 @@ def test_timeline_v2_s4_sources(test_db, client):
     # S4 kobis
     ev_s4_kobis = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S4_SOURCE_MATCH,
+        stage=PipelineStage.S3_SOURCE_MATCH,
         event_type=StageEventType.SKIPPED,
         source="kobis",
         latency_ms=201,
@@ -174,21 +174,21 @@ def test_timeline_v2_failed_stage(test_db, client):
     content = Content(
         title="FAILED 테스트",
         content_type=ContentType.movie,
-        status=ContentStatus.processing,
+        status=ContentStatus.enriched,
     )
     test_db.add(content)
     test_db.flush()
 
     ev_s3_entered = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S3_LLM_EXTRACT,
+        stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.ENTERED,
         source="ollama",
         actor="system",
     )
     ev_s3_failed = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S3_LLM_EXTRACT,
+        stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.FAILED,
         source="ollama",
         error_text="model timeout",
@@ -237,7 +237,7 @@ def test_timeline_v2_intake_channel(test_db, client):
     content = Content(
         title="intake_channel 테스트",
         content_type=ContentType.movie,
-        status=ContentStatus.waiting,
+        status=ContentStatus.raw,
         intake_channel=IntakeChannel.EMAIL_POLL,
     )
     test_db.add(content)

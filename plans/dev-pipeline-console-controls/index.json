@@ -1,0 +1,36 @@
+{
+  "project": "mediaX",
+  "phase": "dev-pipeline-console-controls",
+  "description": "Pipeline Test Console ② AI처리 패널을 제어판으로 재설계 — 수동/자동 on/off, 자동 진행 조건(품질점수 임계값), 실시간 진행 로그, 외부 메타·평가값 표시, 단계 건수/목록 통합. 전제: BE 상태머신 분리(단일 전이). 보류 상태 — 수동 단계 검증 후 진행.",
+  "status": "active",
+  "decisions": {
+    "trigger": "사용자: CSV 대량 업로드가 콘텐츠를 자동으로 review까지 진행시켜 수동 단계 검증 불가. 원인 추적 결과 _process_movie_row(service_batch_import.py:155)가 process_content_metadata.delay() 자동 dispatch → process_content_ai(ai_engine.py:329)가 waiting→processing→review/approved 한 번에 처리(staging 건너뜀).",
+    "root_cause": "process_content_ai가 단일 태스크에서 다단계 전이를 수행하고 staging(enrich)을 건너뜀. 점수 임계값(90)이 ai_engine.py:385에 하드코딩.",
+    "be_state_machine": "단일 전이로 분리 제안 — ②AI처리: waiting→processing 정지 / ③Enrich: processing→staging / ④검수: staging→review/approved/rejected. process_content_ai(content_id, *, auto_chain: bool, score_threshold: int) 파라미터화.",
+    "adr_007_pipeline_redefine": "ADR-007(docs/dev/dev-pipeline-console-controls/adr-007-ai-processing-vs-enrich.md): 회수 우선 원칙. 단계 순서 재정의 — 생성 → 회수(Enrich+WebSearch 통합, 외부조회 단일화) → AI 처리(회수 데이터 정제·확장: 긴 줄거리 축약/확장 메타 생성, 검수 직전) → 검수. ②AI처리↔③Enrich 순서 교체. LLM은 회수 사실 변환·정제·확장만, 무에서 창작은 폴백+미검증 플래그. process_content_ai의 _fetch_external_meta 제거→enrich 이관. status enum 재정렬(remap vs rename)은 미해결.",
+    "upload_auto_guard": "A안 — /upload/batch에 auto_process: bool=True 파라미터 추가, Test Console 대량 탭만 false로 호출. 줄 155를 if auto_process로 가드. 프로덕션 기본 동작 보존.",
+    "adr_007_decisions": "ADR-007 Accepted (2026-05-29). (1) status enum 재명명 raw→enriched→ai→review→approved/rejected (마이그레이션 필요). (2) AI 메타 항목 Phase1: translate_synopsis(ko↔en 로컬LLM 번역)·short_synopsis(요약)·genre_normalized(분류)·mood_tags(분류)·keywords(추출), Phase2: tagline(생성)·rating(분류) — 모두 grounding. (3) 항목별 on/off 토글 + 기존 LLM/WebSearch provider 체인 확장점 재사용 + QuotaManager 경유 + 입력해시 캐시.",
+    "ai_task_framework": "AI 처리를 AiTask 플러그인 registry로 표준화 — 신규 AI 기능은 AiTask(build_input/run/apply) 구현 + AI_TASK_REGISTRY 등록만으로 추가. Runner가 활성 task 순회 → input_hash 캐시 → provider체인+quota → apply + content_ai_results + stage_event. 첫 task=translate_synopsis(ko↔en). 저장: content_metadata.synopsis_ko/synopsis_en/short_synopsis/tagline + content_ai_results.input_hash.",
+    "open_questions": [
+      "AI 확장 메타 저장 스키마 — content_metadata 컬럼 vs content_ai_results JSON vs 신규 테이블",
+      "항목별 캐시 키 정의 (content_id + item + input_hash)",
+      "진행 로그 소스 — 신규 stage_event 조회 엔드포인트 vs content status 폴링"
+    ],
+    "fe_data_surface": "listContents({status,cp_name}) ✓ / bulkProcess({ids}) → {auto_chain,score_threshold,sources} 확장 필요 / getContent(id)→quality_score·score_breakdown·external_sources ✓ / pipelineTestApi.summary() ✓ / stage_event 테이블·LiveEventLog 존재"
+  },
+  "steps": [
+    { "step": 0, "name": "design", "status": "completed", "summary": "ADR-007 + step0 설계 (회수 우선·단계 재정의·AI Task 구조·번역)", "completed_at": "2026-05-29T22:30:00+09:00" },
+    { "step": "A1", "name": "be-enum-rename", "status": "completed", "summary": "ContentStatus(waiting→raw/processing→enriched/staging→ai) + PipelineStage S3↔S6 실행순서 재번호 + alembic 0027 + BE/테스트 전파 + pytest 38 pass", "completed_at": "2026-05-30T00:00:00+09:00" },
+    { "step": "A2", "name": "be-state-machine-split", "status": "completed", "summary": "process_content_ai 분리: _fetch_external_meta 제거 + DB 캐시 활용 + auto_chain/score_threshold + enriched→ai stage_event S6", "completed_at": "2026-05-30T00:30:00+09:00" },
+    { "step": "A3", "name": "be-bugfix-bulk-upload", "status": "completed", "summary": "process_content_metadata auto_chain 파라미터 추가 + bulk_process auto_chain=False 디스패치 + bulk_reprocess/enrich/recall response_model 통일 (BulkActionResponse) + FE uploadBatch autoProcess 파라미터 추가 + 테스트 콘솔 auto_process=false 전달", "completed_at": "2026-05-30T16:15:00+09:00" },
+    { "step": "B1", "name": "ai-task-framework", "status": "completed", "summary": "AiTask 추상클래스(build_input/run/apply) + AI_TASK_REGISTRY dict 기반 플러그인 + Runner(input_hash 캐시/provider체인/QuotaManager/stage_event). alembic 0028: synopsis_ko/en/short_synopsis/tagline + input_hash + AITaskType 5개 항목(translate_synopsis/short_synopsis/genre_normalized/mood_tags/keywords)", "completed_at": "2026-05-30T16:40:00+09:00" },
+    { "step": "B2", "name": "task-translate-synopsis", "status": "completed", "summary": "TranslateSynopsisTask(언어감지→반대언어 번역) 구현 + OllamaTaskProvider(qwen2.5:3b) 추가 + get_task_provider_chain() 분리 + qwen2.5:3b 도커 pull. 실제 LLM 양방향 번역 검증(ko↔en) 통과. verify: 호스트 구조 테스트 15 + 도커 실제 LLM 2", "completed_at": "2026-05-30T17:10:00+09:00" },
+    { "step": "B3", "name": "tasks-phase1-rest", "status": "completed", "summary": "ShortSynopsisTask(2~3문장 요약) + GenreNormalizedTask(표준 장르 분류) + MoodTagsTask(감성 태그) + KeywordsTask(키워드 추출). _utils.py(extract_json/call_with_chain) 유틸 + alembic 0029(ai_keywords). 4개 task 레지스트리 등록 + 실제 LLM 검증 통과(docker qwen2.5:3b)", "completed_at": "2026-05-30T17:35:00+09:00" },
+    { "step": "B4", "name": "ai-task-settings", "status": "completed", "summary": "AiTaskSetting 모델(ai_task_settings 테이블) + alembic 0030 + GET/PATCH /ai-tasks/settings API + Runner DB 설정 오버라이드. SQLite 통합 테스트 통과", "completed_at": "2026-05-30T18:00:00+09:00" },
+    { "step": "C1", "name": "fe-status-rename", "status": "completed", "summary": "9파일 ContentStatus 마이그레이션", "completed_at": "2026-05-30T18:45:00+09:00" },
+    { "step": "C2", "name": "fe-card-reorder", "status": "completed", "summary": "STAGE_DEFS 순서 확인 + 패널 배선 교체(stage2→BatchRecallTrigger/stage3→BatchAiProcessTrigger) + STATUS_LABEL/COLOR new enum(raw/enriched/ai) 추가 + TIMELINE_STAGES 순서 수정(회수→AI처리) + 검수패널 텍스트 구 명칭 정리", "completed_at": "2026-05-30T19:30:00+09:00" },
+    { "step": "C3", "name": "fe-ai-process-panel", "status": "completed", "summary": "AiProcessPanel — AI Task on/off 토글(GET/PATCH /ai-tasks/settings) + 선택 콘텐츠 AI 결과 diff(GET /contents/{id}/ai-results) + enriched 벌크 실행(POST /test/pipeline/process-ai). BE 2 엔드포인트 + FE 타입 + Panel 컴포넌트 완성", "completed_at": "2026-05-30T20:00:00+09:00" },
+    { "step": "C4", "name": "fe-progress-log", "status": "completed", "summary": "ProgressLog — GET /test/pipeline/events(content_id, limit) 폴링(10초) 컴포넌트. BE StageEvent 쿼리 + FE 실시간 로그 표시(stage/event_type/시각). 우측 패널 하단 배치", "completed_at": "2026-05-30T20:15:00+09:00" },
+    { "step": "D1", "name": "verify-e2e", "status": "completed", "summary": "E2E 5케이스 + verify.sh D1 케이스 등록", "completed_at": "2026-05-30T20:45:00+09:00" }
+  ]
+}

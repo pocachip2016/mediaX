@@ -35,7 +35,7 @@ def test_create_content(db):
 
     assert content.id is not None
     assert content.title == "신작 영화"
-    assert content.status == ContentStatus.waiting
+    assert content.status == ContentStatus.raw
 
     meta = db.query(ContentMetadata).filter_by(content_id=content.id).first()
     assert meta is not None

@@ -77,18 +77,18 @@ def test_timeline_404(client):
 
 
 def test_timeline_returns_6_stages(client, test_db):
-    c = _make_content(test_db, ContentStatus.waiting)
+    c = _make_content(test_db, ContentStatus.raw)
     test_db.commit()
     res = client.get(f"/api/programming/metadata/contents/{c.id}/timeline")
     assert res.status_code == 200
     data = res.json()
     assert len(data["stages"]) == 6
     assert data["content_id"] == c.id
-    assert data["current_status"] == "waiting"
+    assert data["current_status"] == "raw"
 
 
 def test_timeline_waiting_stage1_done(client, test_db):
-    c = _make_content(test_db, ContentStatus.waiting)
+    c = _make_content(test_db, ContentStatus.raw)
     test_db.commit()
     res = client.get(f"/api/programming/metadata/contents/{c.id}/timeline")
     stages = res.json()["stages"]
@@ -102,7 +102,7 @@ def test_timeline_waiting_stage1_done(client, test_db):
 
 
 def test_timeline_with_ai_result(client, test_db):
-    c = _make_content(test_db, ContentStatus.staging)
+    c = _make_content(test_db, ContentStatus.ai)
     test_db.add(ContentAIResult(
         content_id=c.id, engine="llama3.2:3b",
         task_type=AITaskType.synopsis,

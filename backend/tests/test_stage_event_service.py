@@ -19,7 +19,7 @@ from api.programming.metadata.stage_events import (
 # ── 1. payload 4KB 캡 ───────────────────────────────────────────────────────
 
 def test_record_stage_event_payload_truncation(db):
-    content = Content(title="테스트", content_type=ContentType.movie, status=ContentStatus.waiting)
+    content = Content(title="테스트", content_type=ContentType.movie, status=ContentStatus.raw)
     db.add(content)
     db.flush()
 
@@ -41,13 +41,13 @@ def test_record_stage_event_payload_truncation(db):
 
 def test_derive_status_from_stage_all_9():
     mapping = {
-        PipelineStage.S1_INTAKE:         ContentStatus.waiting,
-        PipelineStage.S2_NORMALIZE:      ContentStatus.processing,
-        PipelineStage.S3_LLM_EXTRACT:    ContentStatus.processing,
-        PipelineStage.S4_SOURCE_MATCH:   ContentStatus.processing,
-        PipelineStage.S5_GAP_DETECT:     ContentStatus.processing,
-        PipelineStage.S6_WEBSEARCH_FILL: ContentStatus.processing,
-        PipelineStage.S7_STAGING:        ContentStatus.staging,
+        PipelineStage.S1_INTAKE:         ContentStatus.raw,
+        PipelineStage.S2_NORMALIZE:      ContentStatus.enriched,
+        PipelineStage.S3_SOURCE_MATCH:   ContentStatus.enriched,
+        PipelineStage.S4_GAP_DETECT:     ContentStatus.enriched,
+        PipelineStage.S5_WEBSEARCH_FILL: ContentStatus.enriched,
+        PipelineStage.S6_LLM_EXTRACT:    ContentStatus.ai,    # ADR-007: S6 이후 실행
+        PipelineStage.S7_STAGING:        ContentStatus.ai,
         PipelineStage.S8_REVIEW:         ContentStatus.review,
         PipelineStage.S9_PUBLISH:        ContentStatus.approved,
     }
@@ -67,14 +67,14 @@ def test_advance_gate_simulate(db):
 
 
 def test_advance_gate_real(db):
-    c1 = Content(title="영화A", content_type=ContentType.movie, status=ContentStatus.waiting)
-    c2 = Content(title="영화B", content_type=ContentType.movie, status=ContentStatus.waiting)
+    c1 = Content(title="영화A", content_type=ContentType.movie, status=ContentStatus.raw)
+    c2 = Content(title="영화B", content_type=ContentType.movie, status=ContentStatus.raw)
     db.add_all([c1, c2])
     db.flush()
 
     result = advance_gate(db, "GATE_2", [c1.id, c2.id], actor="admin")
     assert result["advanced"] == 2
-    assert result["next_stage"] == PipelineStage.S4_SOURCE_MATCH.value
+    assert result["next_stage"] == PipelineStage.S3_SOURCE_MATCH.value
 
     events = db.query(StageEvent).filter(StageEvent.content_id == c1.id).all()
     event_types = {e.event_type for e in events}
@@ -89,7 +89,7 @@ def test_entry_point_email_hook(db):
     content = Content(
         title="이메일 테스트",
         content_type=ContentType.movie,
-        status=ContentStatus.waiting,
+        status=ContentStatus.raw,
         intake_channel=IntakeChannel.EMAIL_POLL,
     )
     db.add(content)
@@ -111,20 +111,20 @@ def test_entry_point_email_hook(db):
 
 def test_entry_point_enrich_hooks(db):
     """enrich_content_metadata → S3 ENTERED/COMPLETED/FAILED 발화."""
-    content = Content(title="보강 테스트", content_type=ContentType.movie, status=ContentStatus.processing)
+    content = Content(title="보강 테스트", content_type=ContentType.movie, status=ContentStatus.enriched)
     db.add(content)
     db.flush()
 
-    record_stage_event(db, content.id, PipelineStage.S3_LLM_EXTRACT, StageEventType.ENTERED,
+    record_stage_event(db, content.id, PipelineStage.S6_LLM_EXTRACT, StageEventType.ENTERED,
                        source="ollama", actor="system")
-    record_stage_event(db, content.id, PipelineStage.S3_LLM_EXTRACT, StageEventType.COMPLETED,
+    record_stage_event(db, content.id, PipelineStage.S6_LLM_EXTRACT, StageEventType.COMPLETED,
                        source="ollama", actor="system")
     db.flush()
 
     events = (
         db.query(StageEvent)
         .filter(StageEvent.content_id == content.id,
-                StageEvent.stage == PipelineStage.S3_LLM_EXTRACT)
+                StageEvent.stage == PipelineStage.S6_LLM_EXTRACT)
         .all()
     )
     event_types = [e.event_type for e in events]
@@ -134,20 +134,20 @@ def test_entry_point_enrich_hooks(db):
 
 def test_entry_point_source_match_hooks(db):
     """_async_enrich_content → S4 per-source (tmdb/kobis) 이벤트."""
-    content = Content(title="소스매칭 테스트", content_type=ContentType.movie, status=ContentStatus.processing)
+    content = Content(title="소스매칭 테스트", content_type=ContentType.movie, status=ContentStatus.enriched)
     db.add(content)
     db.flush()
 
     for src in ("tmdb", "kobis"):
-        record_stage_event(db, content.id, PipelineStage.S4_SOURCE_MATCH, StageEventType.ENTERED,
+        record_stage_event(db, content.id, PipelineStage.S3_SOURCE_MATCH, StageEventType.ENTERED,
                            source=src, actor="system")
-        record_stage_event(db, content.id, PipelineStage.S4_SOURCE_MATCH, StageEventType.COMPLETED,
+        record_stage_event(db, content.id, PipelineStage.S3_SOURCE_MATCH, StageEventType.COMPLETED,
                            source=src, actor="system")
     db.flush()
 
     sources = {e.source for e in db.query(StageEvent).filter(
         StageEvent.content_id == content.id,
-        StageEvent.stage == PipelineStage.S4_SOURCE_MATCH,
+        StageEvent.stage == PipelineStage.S3_SOURCE_MATCH,
     ).all()}
     assert "tmdb" in sources
     assert "kobis" in sources
