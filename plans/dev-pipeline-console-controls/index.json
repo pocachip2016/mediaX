@@ -28,7 +28,7 @@
     { "step": "B3", "name": "tasks-phase1-rest", "status": "completed", "summary": "ShortSynopsisTask(2~3문장 요약) + GenreNormalizedTask(표준 장르 분류) + MoodTagsTask(감성 태그) + KeywordsTask(키워드 추출). _utils.py(extract_json/call_with_chain) 유틸 + alembic 0029(ai_keywords). 4개 task 레지스트리 등록 + 실제 LLM 검증 통과(docker qwen2.5:3b)", "completed_at": "2026-05-30T17:35:00+09:00" },
     { "step": "B4", "name": "ai-task-settings", "status": "completed", "summary": "AiTaskSetting 모델(ai_task_settings 테이블) + alembic 0030 + GET/PATCH /ai-tasks/settings API + Runner DB 설정 오버라이드. SQLite 통합 테스트 통과", "completed_at": "2026-05-30T18:00:00+09:00" },
     { "step": "C1", "name": "fe-status-rename", "status": "completed", "summary": "9파일 ContentStatus 마이그레이션", "completed_at": "2026-05-30T18:45:00+09:00" },
-    { "step": "C2", "name": "fe-card-reorder", "status": "pending", "summary": "콘솔 카드 순서·패널 재배선 — ②회수(Enrich+WebSearch) ③AI처리" },
+    { "step": "C2", "name": "fe-card-reorder", "status": "completed", "summary": "STAGE_DEFS 순서 확인 + 패널 배선 교체(stage2→BatchRecallTrigger/stage3→BatchAiProcessTrigger) + STATUS_LABEL/COLOR new enum(raw/enriched/ai) 추가 + TIMELINE_STAGES 순서 수정(회수→AI처리) + 검수패널 텍스트 구 명칭 정리", "completed_at": "2026-05-30T19:30:00+09:00" },
     { "step": "C3", "name": "fe-ai-process-panel", "status": "pending", "summary": "AiProcessPanel — AI Task 목록 on/off 설정 + 입력→출력 diff + 평가값(번역 ko/en 비교 포함)" },
     { "step": "C4", "name": "fe-progress-log", "status": "pending", "summary": "ProgressLog — GET /test/pipeline/events?content_id= 폴링 엔드포인트 + 표시" },
     { "step": "D1", "name": "verify-e2e", "status": "pending", "summary": "단계별 수동 진행 E2E + verify.sh step 등록" }

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef } from "react"
-import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Play, Zap, Square, CheckSquare } from "lucide-react"
+import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Zap, Square, CheckSquare } from "lucide-react"
 import {
   metadataApi,
   pipelineTestApi,
@@ -311,12 +311,13 @@ function SampleSeedPanel({
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  waiting: "대기", processing: "처리중", staging: "검토", review: "검수", approved: "승인", rejected: "반려", published: "게시",
+  raw: "생성완료", enriched: "회수완료", ai: "AI처리완료",
+  review: "검수", approved: "승인", rejected: "반려", published: "게시",
 }
 const STATUS_COLOR: Record<string, string> = {
-  waiting: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-  processing: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  staging: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
+  raw: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+  enriched: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  ai: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
   review: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   approved: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
@@ -378,7 +379,7 @@ function TestContentList({
   )
 }
 
-const TIMELINE_STAGES = ["생성", "AI처리", "Enrich", "검수", "승인", "게시"] as const
+const TIMELINE_STAGES = ["생성", "회수", "AI처리", "검수", "승인", "게시"] as const
 
 function ContentPipelineTimeline({
   timeline,
@@ -714,14 +715,14 @@ function CreationTabsPanel({
   )
 }
 
-function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
+function BatchRecallTrigger({ onRefresh }: { onRefresh: () => void }) {
   const [items, setItems] = useState<ContentOut[]>([])
   const [loading, setLoading] = useState(false)
   const [triggering, setTriggering] = useState(false)
   const [result, setResult] = useState<BulkActionResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchWaiting = useCallback(async () => {
+  const fetchRaw = useCallback(async () => {
     setLoading(true)
     try {
       const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "raw", size: 50 })
@@ -729,7 +730,7 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
     } catch { setItems([]) } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchWaiting() }, [fetchWaiting])
+  useEffect(() => { fetchRaw() }, [fetchRaw])
 
   const handleTrigger = async () => {
     if (!items.length) return
@@ -740,7 +741,7 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
       const r = await metadataApi.bulkProcess({ ids: items.map((c) => c.id) })
       setResult(r)
       onRefresh()
-      fetchWaiting()
+      fetchRaw()
     } catch (e) { setError(e instanceof Error ? e.message : "처리 실패") }
     finally { setTriggering(false) }
   }
@@ -748,8 +749,8 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">S3 — 일괄 AI 처리 트리거</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 대기 항목 → AI process 일괄 큐잉 · /bulk/process</p>
+        <h3 className="text-sm font-semibold">② 회수 — 외부 소스 회수 (Enrich + WebSearch)</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 생성완료(raw) 항목 → TMDB/KOBIS/WebSearch 회수 큐잉 · /bulk/process</p>
       </div>
 
       {loading ? (
@@ -758,12 +759,12 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-          대기(waiting) 상태 TEST_PIPELINE 항목 없음
+          생성완료(raw) 상태 TEST_PIPELINE 항목 없음
         </div>
       ) : (
         <div className="rounded-lg border border-border bg-background overflow-hidden">
           <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">대기 항목</span>
+            <span className="text-xs font-semibold text-muted-foreground">생성완료 항목</span>
             <span className="text-xs text-muted-foreground">{items.length}건</span>
           </div>
           <div className="divide-y divide-border max-h-48 overflow-y-auto">
@@ -783,7 +784,7 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
       )}
       {result && (
         <div className="rounded-lg border border-blue-200 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/10 px-3 py-2.5">
-          <div className="text-sm font-medium text-blue-700 dark:text-blue-400">✓ AI 처리 큐잉 완료</div>
+          <div className="text-sm font-medium text-blue-700 dark:text-blue-400">✓ 회수 큐잉 완료</div>
           <div className="text-xs text-blue-600 dark:text-blue-500 mt-1">
             수락 {result.ids_accepted}건 · 거부 {result.ids_rejected}건 · job: {result.job_id}
           </div>
@@ -796,11 +797,11 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
           disabled={triggering || !items.length}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
         >
-          {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          AI 처리 트리거 ({items.length}건)
+          {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+          회수 트리거 ({items.length}건)
         </button>
         <button
-          onClick={fetchWaiting}
+          onClick={fetchRaw}
           disabled={loading}
           className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
         >
@@ -811,14 +812,14 @@ function BatchAiTrigger({ onRefresh }: { onRefresh: () => void }) {
   )
 }
 
-function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
+function BatchAiProcessTrigger({ onRefresh }: { onRefresh: () => void }) {
   const [items, setItems] = useState<ContentOut[]>([])
   const [loading, setLoading] = useState(false)
   const [triggering, setTriggering] = useState(false)
   const [result, setResult] = useState<BulkActionResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchProcessing = useCallback(async () => {
+  const fetchEnriched = useCallback(async () => {
     setLoading(true)
     try {
       const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "enriched", size: 50 })
@@ -826,7 +827,7 @@ function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
     } catch { setItems([]) } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchProcessing() }, [fetchProcessing])
+  useEffect(() => { fetchEnriched() }, [fetchEnriched])
 
   const handleTrigger = async () => {
     if (!items.length) return
@@ -837,7 +838,7 @@ function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
       const r = await metadataApi.bulkEnrich({ ids: items.map((c) => c.id) })
       setResult(r)
       onRefresh()
-      fetchProcessing()
+      fetchEnriched()
     } catch (e) { setError(e instanceof Error ? e.message : "처리 실패") }
     finally { setTriggering(false) }
   }
@@ -845,8 +846,8 @@ function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">S4 — 일괄 Enrich 트리거</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 처리중 항목 → 외부 소스 enrich 일괄 큐잉 · /bulk/enrich</p>
+        <h3 className="text-sm font-semibold">③ AI처리 — LLM 메타 정제</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 회수완료(enriched) 항목 → LLM 번역·요약·분류·태깅 큐잉 · /bulk/enrich</p>
       </div>
 
       {loading ? (
@@ -855,12 +856,12 @@ function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-          처리중(processing) 상태 TEST_PIPELINE 항목 없음
+          회수완료(enriched) 상태 TEST_PIPELINE 항목 없음
         </div>
       ) : (
         <div className="rounded-lg border border-border bg-background overflow-hidden">
           <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">처리중 항목</span>
+            <span className="text-xs font-semibold text-muted-foreground">회수완료 항목</span>
             <span className="text-xs text-muted-foreground">{items.length}건</span>
           </div>
           <div className="divide-y divide-border max-h-48 overflow-y-auto">
@@ -880,7 +881,7 @@ function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
       )}
       {result && (
         <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50 dark:bg-violet-900/10 px-3 py-2.5">
-          <div className="text-sm font-medium text-violet-700 dark:text-violet-400">✓ Enrich 큐잉 완료</div>
+          <div className="text-sm font-medium text-violet-700 dark:text-violet-400">✓ AI처리 큐잉 완료</div>
           <div className="text-xs text-violet-600 dark:text-violet-500 mt-1">
             수락 {result.ids_accepted}건 · 거부 {result.ids_rejected}건 · job: {result.job_id}
           </div>
@@ -894,10 +895,10 @@ function BatchEnrichTrigger({ onRefresh }: { onRefresh: () => void }) {
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
         >
           {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-          Enrich 트리거 ({items.length}건)
+          AI처리 트리거 ({items.length}건)
         </button>
         <button
-          onClick={fetchProcessing}
+          onClick={fetchEnriched}
           disabled={loading}
           className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
         >
@@ -970,8 +971,8 @@ function TestReviewPanel({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">S5 — 검수 큐 (TEST_PIPELINE)</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">검토대기(staging) 항목 선택 후 일괄 승인/반려</p>
+        <h3 className="text-sm font-semibold">④ 검수 큐 (TEST_PIPELINE)</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">AI처리완료(ai) 항목 선택 후 일괄 승인/반려</p>
       </div>
 
       {loading ? (
@@ -1447,9 +1448,9 @@ export default function PipelineMonitoringPage() {
                     {activeStage === 1 ? (
                       <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} />
                     ) : activeStage === 2 ? (
-                      <BatchAiTrigger onRefresh={refreshTestSummary} />
+                      <BatchRecallTrigger onRefresh={refreshTestSummary} />
                     ) : activeStage === 3 ? (
-                      <BatchEnrichTrigger onRefresh={refreshTestSummary} />
+                      <BatchAiProcessTrigger onRefresh={refreshTestSummary} />
                     ) : activeStage === 4 ? (
                       <TestReviewPanel onRefresh={refreshTestSummary} />
                     ) : activeStage === 5 || activeStage === 6 ? (
