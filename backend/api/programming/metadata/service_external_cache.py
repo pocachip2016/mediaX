@@ -115,7 +115,7 @@ def list_tmdb_cache_recent(db, kind: str, limit: int) -> list:
 
     results = []
     if kind in ("movie", "both"):
-        for r in db.query(TmdbMovieCache).order_by(TmdbMovieCache.last_fetched_at.desc()).limit(limit).all():
+        for r in db.query(TmdbMovieCache).order_by(TmdbMovieCache.last_fetched_at.desc(), TmdbMovieCache.id.asc()).limit(limit).all():
             results.append({
                 "id": r.id, "title": r.title, "original_title": r.original_title,
                 "release_date": r.release_date, "first_air_date": None,
@@ -124,7 +124,7 @@ def list_tmdb_cache_recent(db, kind: str, limit: int) -> list:
                 "kind": "movie", "fetched_at": r.last_fetched_at,
             })
     if kind in ("tv", "both"):
-        for r in db.query(TmdbTvCache).order_by(TmdbTvCache.last_fetched_at.desc()).limit(limit).all():
+        for r in db.query(TmdbTvCache).order_by(TmdbTvCache.last_fetched_at.desc(), TmdbTvCache.id.asc()).limit(limit).all():
             results.append({
                 "id": r.id, "title": r.name, "original_title": r.original_name,
                 "release_date": None, "first_air_date": r.first_air_date,
@@ -274,11 +274,12 @@ def search_tmdb_cache(
 
     total = q.count()
 
+    # id를 최종 tiebreaker로 둬, 동점·NULL·daily sync 값 변동에도 순서를 결정적으로 고정.
     if sort == "recent":
-        order = Model.last_fetched_at.desc()
+        order = (Model.last_fetched_at.desc(), Model.id.asc())
     else:
-        order = Model.popularity.desc().nullslast()
-    rows = q.order_by(order).offset((page - 1) * size).limit(size).all()
+        order = (Model.popularity.desc().nullslast(), Model.id.asc())
+    rows = q.order_by(*order).offset((page - 1) * size).limit(size).all()
 
     if kind == "tv":
         items = [{

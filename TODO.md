@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **fix(tmdb-cache)** — TMDB 캐시 목록 정렬 불안정 해소 (id tiebreaker 추가 — popularity/last_fetched_at 비유일 정렬 + daily sync 값 변동으로 새로고침마다 행 섞임) (2026-05-30)
 - [x] **fix(tmdb-cache)** — search API poster 필터 + popularity 정렬 추가 (2026-05-29)
 - [x] **dev-curation-workbench Step 11** — FE 완성 (usedMock 배지, 에러 알림, Suspense fallback, 반응형) (2026-05-29)
 - [x] **dev-curation-workbench Steps 7-10** — wizard-12 + external-curation-backfill + wizard-34 + external-import (2026-05-29)
