@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] **dev-pipeline-console-controls** — ADR-007 구현 (A1–C1 완료, next: C2 카드 재배선). Phase C(FE)~D(verify), 5 step 남음
+- [ ] **dev-pipeline-console-controls** — ADR-007 구현 (A1–C4 완료, next: D1 E2E 검증). Phase C(FE)~D(verify), 2 step 남음
 
 ## Next (이번 마일스톤)
 (작성 중)
@@ -16,6 +16,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-pipeline-console-controls C4** — ProgressLog(10초 폴링) + BE GET /test/pipeline/events(content_id, limit) + FE PipelineEventLog 타입 + 우측 패널 하단 배치 (2026-05-30)
+- [x] **dev-pipeline-console-controls C3** — AiProcessPanel(Task on/off + AI 결과 diff + 벌크 실행) + BE 2 엔드포인트(GET /contents/{id}/ai-results, POST /test/pipeline/process-ai) + FE 타입/함수 (2026-05-30)
 - [x] **dev-pipeline-console-controls A1–C1** — BE 상태머신 분리 + AiTask registry + 5개 Phase1 LLM 태스크(translate/short/genre/mood/keywords) + FE ContentStatus 마이그레이션(raw/enriched/ai) (2026-05-30)
 - [x] **dev-pipeline-console-controls 설계** — ADR-007(회수 우선·AI Task registry·번역 ko↔en) + 12-step plan + IMPROVEMENTS 백로그 (2026-05-29)
 - [x] **fix(pipeline-console)** — 생성 입력 3탭 통합(CreationTabsPanel) + status 기준 카드 정렬 (2026-05-29)

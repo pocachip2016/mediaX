@@ -63,7 +63,7 @@ from api.programming.metadata.schemas import (
     MappedExternalItem, PaginatedMappedItems,
     BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
     UndoActionRequest, UndoActionOut,
-    PromoteAIResultOut, ApplyExternalFieldsRequest,
+    PromoteAIResultOut, ApplyExternalFieldsRequest, ContentAIResultOut,
     ContentChangelogOut, LockFieldsRequest,
     EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
     PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
@@ -1298,3 +1298,46 @@ def patch_ai_task_setting(task_name: str, enabled: bool, db: Session = Depends(g
         db.add(setting)
     db.commit()
     return {"task_name": task_name, "enabled": enabled}
+
+
+# ── AI 처리 결과 조회 ─────────────────────────────────────────────────
+
+@router.get("/contents/{content_id}/ai-results", response_model=list[ContentAIResultOut], summary="AI 처리 결과 조회")
+def get_ai_results(content_id: int, db: Session = Depends(get_db)):
+    """특정 콘텐츠의 AI 처리 결과 목록 (최신순)"""
+    from api.programming.metadata.models.external import ContentAIResult
+
+    results = db.query(ContentAIResult).filter(
+        ContentAIResult.content_id == content_id
+    ).order_by(ContentAIResult.processed_at.desc()).all()
+    return results
+
+
+@router.post("/test/pipeline/process-ai", response_model=BulkActionResponse, summary="AI 처리 일괄 트리거")
+def trigger_process_ai(req: BulkActionConsolidatedRequest, db: Session = Depends(get_db)):
+    """TEST_PIPELINE enriched 상태 콘텐츠 AI 처리 (Celery)"""
+    from api.programming.metadata.models import Content
+    from workers.tasks.ai_processing import process_content_ai_task
+
+    if not req.ids:
+        return BulkActionResponse(job_id="", ids_accepted=0, ids_rejected=0)
+
+    contents = db.query(Content).filter(Content.id.in_(req.ids)).all()
+    if not contents:
+        raise HTTPException(status_code=404, detail="No contents found")
+
+    job_id = f"bulk_ai_{len(req.ids)}_{int(datetime.utcnow().timestamp())}"
+    accepted, rejected = 0, 0
+
+    for content in contents:
+        if content.status.value == "enriched":
+            process_content_ai_task.delay(content.id)
+            accepted += 1
+        else:
+            rejected += 1
+
+    return BulkActionResponse(
+        job_id=job_id,
+        ids_accepted=accepted,
+        ids_rejected=rejected,
+    )

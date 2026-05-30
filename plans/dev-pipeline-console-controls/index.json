@@ -29,8 +29,8 @@
     { "step": "B4", "name": "ai-task-settings", "status": "completed", "summary": "AiTaskSetting 모델(ai_task_settings 테이블) + alembic 0030 + GET/PATCH /ai-tasks/settings API + Runner DB 설정 오버라이드. SQLite 통합 테스트 통과", "completed_at": "2026-05-30T18:00:00+09:00" },
     { "step": "C1", "name": "fe-status-rename", "status": "completed", "summary": "9파일 ContentStatus 마이그레이션", "completed_at": "2026-05-30T18:45:00+09:00" },
     { "step": "C2", "name": "fe-card-reorder", "status": "completed", "summary": "STAGE_DEFS 순서 확인 + 패널 배선 교체(stage2→BatchRecallTrigger/stage3→BatchAiProcessTrigger) + STATUS_LABEL/COLOR new enum(raw/enriched/ai) 추가 + TIMELINE_STAGES 순서 수정(회수→AI처리) + 검수패널 텍스트 구 명칭 정리", "completed_at": "2026-05-30T19:30:00+09:00" },
-    { "step": "C3", "name": "fe-ai-process-panel", "status": "pending", "summary": "AiProcessPanel — AI Task 목록 on/off 설정 + 입력→출력 diff + 평가값(번역 ko/en 비교 포함)" },
-    { "step": "C4", "name": "fe-progress-log", "status": "pending", "summary": "ProgressLog — GET /test/pipeline/events?content_id= 폴링 엔드포인트 + 표시" },
+    { "step": "C3", "name": "fe-ai-process-panel", "status": "completed", "summary": "AiProcessPanel — AI Task on/off 토글(GET/PATCH /ai-tasks/settings) + 선택 콘텐츠 AI 결과 diff(GET /contents/{id}/ai-results) + enriched 벌크 실행(POST /test/pipeline/process-ai). BE 2 엔드포인트 + FE 타입 + Panel 컴포넌트 완성", "completed_at": "2026-05-30T20:00:00+09:00" },
+    { "step": "C4", "name": "fe-progress-log", "status": "completed", "summary": "ProgressLog — GET /test/pipeline/events(content_id, limit) 폴링(10초) 컴포넌트. BE StageEvent 쿼리 + FE 실시간 로그 표시(stage/event_type/시각). 우측 패널 하단 배치", "completed_at": "2026-05-30T20:15:00+09:00" },
     { "step": "D1", "name": "verify-e2e", "status": "pending", "summary": "단계별 수동 진행 E2E + verify.sh step 등록" }
   ]
 }

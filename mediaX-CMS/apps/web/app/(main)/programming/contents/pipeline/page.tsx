@@ -14,6 +14,9 @@ import {
   type ContentType,
   type BatchJobOut,
   type BulkActionResponse,
+  type AiTaskSetting,
+  type ContentAIResult,
+  type PipelineEventLog,
 } from "@/lib/api"
 import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
 
@@ -812,12 +815,17 @@ function BatchRecallTrigger({ onRefresh }: { onRefresh: () => void }) {
   )
 }
 
-function BatchAiProcessTrigger({ onRefresh }: { onRefresh: () => void }) {
+function AiProcessPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
   const [items, setItems] = useState<ContentOut[]>([])
   const [loading, setLoading] = useState(false)
   const [triggering, setTriggering] = useState(false)
   const [result, setResult] = useState<BulkActionResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const [settings, setSettings] = useState<AiTaskSetting[]>([])
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const [aiResults, setAiResults] = useState<ContentAIResult[]>([])
+  const [resultsLoading, setResultsLoading] = useState(false)
 
   const fetchEnriched = useCallback(async () => {
     setLoading(true)
@@ -827,7 +835,32 @@ function BatchAiProcessTrigger({ onRefresh }: { onRefresh: () => void }) {
     } catch { setItems([]) } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchEnriched() }, [fetchEnriched])
+  const fetchSettings = useCallback(async () => {
+    setSettingsLoading(true)
+    try {
+      const s = await metadataApi.getAiTaskSettings()
+      setSettings(s)
+    } catch { setSettings([]) } finally { setSettingsLoading(false) }
+  }, [])
+
+  const fetchAiResults = useCallback(async () => {
+    if (!selectedContentId) { setAiResults([]); return }
+    setResultsLoading(true)
+    try {
+      const r = await metadataApi.getAiResults(selectedContentId)
+      setAiResults(r)
+    } catch { setAiResults([]) } finally { setResultsLoading(false) }
+  }, [selectedContentId])
+
+  useEffect(() => { fetchEnriched(); fetchSettings() }, [fetchEnriched, fetchSettings])
+  useEffect(() => { fetchAiResults() }, [fetchAiResults])
+
+  const handleToggleSetting = async (taskName: string, enabled: boolean) => {
+    try {
+      await metadataApi.patchAiTaskSetting(taskName, !enabled)
+      await fetchSettings()
+    } catch (e) { console.error(e) }
+  }
 
   const handleTrigger = async () => {
     if (!items.length) return
@@ -835,7 +868,7 @@ function BatchAiProcessTrigger({ onRefresh }: { onRefresh: () => void }) {
     setResult(null)
     setError(null)
     try {
-      const r = await metadataApi.bulkEnrich({ ids: items.map((c) => c.id) })
+      const r = await metadataApi.bulkProcessAi({ ids: items.map((c) => c.id) })
       setResult(r)
       onRefresh()
       fetchEnriched()
@@ -843,13 +876,85 @@ function BatchAiProcessTrigger({ onRefresh }: { onRefresh: () => void }) {
     finally { setTriggering(false) }
   }
 
+  const formatResultValue = (value: unknown): string => {
+    if (value === null || value === undefined) return "—"
+    if (typeof value === "string") return value.slice(0, 60)
+    if (typeof value === "number") return value.toFixed(2)
+    if (Array.isArray(value)) return `[${value.slice(0, 3).join(", ")}${value.length > 3 ? ", ..." : ""}]`
+    return "—"
+  }
+
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">③ AI처리 — LLM 메타 정제</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 회수완료(enriched) 항목 → LLM 번역·요약·분류·태깅 큐잉 · /bulk/enrich</p>
+        <h3 className="text-sm font-semibold">③ AI처리 — Task 설정 & 처리</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">enriched → ai (LLM 번역·요약·분류·태깅) + 처리 결과 확인</p>
       </div>
 
+      {/* AI Task 토글 */}
+      {settingsLoading ? (
+        <div className="text-center py-2 text-xs text-muted-foreground">
+          <RefreshCw className="h-3 w-3 mx-auto animate-spin opacity-50 inline mr-1" />로딩 중…
+        </div>
+      ) : settings.length > 0 ? (
+        <div className="rounded-lg border border-border bg-background p-3 space-y-2">
+          <div className="text-xs font-semibold text-muted-foreground mb-2">AI Task 활성화</div>
+          <div className="flex flex-wrap gap-2">
+            {settings.map((s) => (
+              <button
+                key={s.task_name}
+                onClick={() => handleToggleSetting(s.task_name, s.enabled)}
+                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                  s.enabled
+                    ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-900/50"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {s.task_name === "translate_synopsis" ? "번역" : s.task_name === "short_synopsis" ? "요약" : s.task_name === "genre_normalized" ? "장르" : s.task_name === "mood_tags" ? "무드" : "키워드"}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 선택 콘텐츠 AI 결과 */}
+      {selectedContentId && (
+        <div className="rounded-lg border border-border bg-background p-3">
+          <div className="text-xs font-semibold text-muted-foreground mb-2">AI 처리 결과 (선택 콘텐츠 #{selectedContentId})</div>
+          {resultsLoading ? (
+            <div className="text-center py-2 text-xs text-muted-foreground">
+              <RefreshCw className="h-3 w-3 mx-auto animate-spin opacity-50 inline mr-1" />로딩 중…
+            </div>
+          ) : aiResults.length === 0 ? (
+            <div className="text-xs text-muted-foreground text-center py-2">처리 결과 없음</div>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {aiResults.map((r) => (
+                <div key={r.id} className="text-xs border-t border-border pt-2">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-medium text-foreground">{r.task_type}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${r.is_final ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"}`}>
+                      {r.is_final ? "최종" : "임시"}
+                    </span>
+                  </div>
+                  <div className="text-muted-foreground mt-1 grid grid-cols-2 gap-2">
+                    {r.result_json && Object.entries(r.result_json).slice(0, 4).map(([k, v]) => (
+                      <div key={k} className="text-[10px]">
+                        <span className="font-medium">{k}:</span> {formatResultValue(v)}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-muted-foreground mt-1 text-[10px]">
+                    {r.engine} · {new Date(r.processed_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* enriched 콘텐츠 목록 */}
       {loading ? (
         <div className="text-center py-4 text-xs text-muted-foreground">
           <RefreshCw className="h-4 w-4 mx-auto mb-1 animate-spin opacity-50" />로딩 중…
@@ -905,6 +1010,64 @@ function BatchAiProcessTrigger({ onRefresh }: { onRefresh: () => void }) {
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
+    </div>
+  )
+}
+
+function ProgressLog({ contentId }: { contentId: number | null }) {
+  const [events, setEvents] = useState<PipelineEventLog[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const fetchEvents = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await pipelineTestApi.events(contentId ?? undefined, 20)
+      setEvents(r)
+    } catch { setEvents([]) } finally { setLoading(false) }
+  }, [contentId])
+
+  useEffect(() => {
+    fetchEvents()
+    const id = setInterval(fetchEvents, 10000)
+    return () => clearInterval(id)
+  }, [fetchEvents])
+
+  const eventColor = (type: string) => {
+    if (type === "completed" || type === "advanced") return "text-green-600 dark:text-green-400"
+    if (type === "failed") return "text-red-600 dark:text-red-400"
+    if (type === "entered") return "text-blue-600 dark:text-blue-400"
+    return "text-muted-foreground"
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-background overflow-hidden">
+      <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground">
+          진행 이벤트 로그{contentId ? ` (#${contentId})` : " (전체)"}
+        </span>
+        <button onClick={fetchEvents} disabled={loading} className="p-1 rounded hover:bg-accent transition-colors">
+          <RefreshCw className={`h-3 w-3 text-muted-foreground ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+      {events.length === 0 ? (
+        <div className="px-3 py-4 text-center text-xs text-muted-foreground">이벤트 없음</div>
+      ) : (
+        <div className="divide-y divide-border max-h-52 overflow-y-auto">
+          {events.map((e) => (
+            <div key={e.id} className="px-3 py-2 flex items-start gap-2">
+              <div className="shrink-0 text-[10px] text-muted-foreground w-10 pt-0.5">{e.stage.replace("stage_", "S")}</div>
+              <div className="flex-1 min-w-0">
+                <span className={`text-xs font-medium ${eventColor(e.event_type)}`}>{e.event_type}</span>
+                {e.source && <span className="text-[10px] text-muted-foreground ml-1.5">{e.source}</span>}
+                {e.error_text && <div className="text-[10px] text-red-500 truncate">{e.error_text}</div>}
+              </div>
+              <div className="shrink-0 text-[10px] text-muted-foreground">
+                {new Date(e.started_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1450,7 +1613,7 @@ export default function PipelineMonitoringPage() {
                     ) : activeStage === 2 ? (
                       <BatchRecallTrigger onRefresh={refreshTestSummary} />
                     ) : activeStage === 3 ? (
-                      <BatchAiProcessTrigger onRefresh={refreshTestSummary} />
+                      <AiProcessPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
                     ) : activeStage === 4 ? (
                       <TestReviewPanel onRefresh={refreshTestSummary} />
                     ) : activeStage === 5 || activeStage === 6 ? (
@@ -1466,8 +1629,8 @@ export default function PipelineMonitoringPage() {
                 )}
               </div>
 
-              {/* 우측 — TestContentList + Timeline */}
-              <div className="col-span-2">
+              {/* 우측 — TestContentList + Timeline + ProgressLog */}
+              <div className="col-span-2 space-y-3">
                 <TestContentList
                   contents={testContents}
                   loading={testContentsLoading}
@@ -1478,6 +1641,7 @@ export default function PipelineMonitoringPage() {
                   timeline={contentTimeline}
                   loading={timelineLoading}
                 />
+                <ProgressLog contentId={selectedContentId} />
               </div>
             </div>
           </div>
