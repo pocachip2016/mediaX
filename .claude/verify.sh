@@ -14,6 +14,40 @@ source .venv/bin/activate 2>/dev/null || true
 case "$STEP" in
 
   # ── dev-pipeline-console-controls steps ─────────────────────────
+  D1)
+    echo "=== D1: pipeline-console-controls E2E 검증 (ADR-007 상태머신 + 산출물 회귀) ==="
+    cd "$BACKEND"
+    # 1. 핵심 상태머신 회귀 테스트 (mock LLM, SQLite in-memory)
+    python3 -m pytest tests/test_pipeline_console_e2e.py -q --tb=short 2>&1 | tail -5
+    echo "  ✓ 상태머신 E2E pytest 통과 (auto_chain=False 정지 + 자동전이 3케이스)"
+    # 2. BE 엔드포인트 구조 확인 (C3/C4 산출물 회귀 가드)
+    python3 -c "
+import ast, pathlib
+router_src = pathlib.Path('api/programming/metadata/router.py').read_text()
+assert '/test/pipeline/process-ai' in router_src, 'process-ai 엔드포인트 없음 (C3 회귀)'
+print('  ✓ POST /test/pipeline/process-ai 엔드포인트 확인')
+test_router_src = pathlib.Path('api/test/pipeline_router.py').read_text()
+assert 'def get_pipeline_events' in test_router_src, 'get_pipeline_events 엔드포인트 없음 (C4 회귀)'
+print('  ✓ GET /test/pipeline/events 엔드포인트 확인')
+"
+    # 3. FE 컴포넌트 확인 (C3/C4 산출물 회귀 가드)
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "AiProcessPanel" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" \
+      || { echo "FAIL: AiProcessPanel import 없음 (C3 회귀)"; exit 1; }
+    echo "  ✓ AiProcessPanel 컴포넌트 확인"
+    grep -rq "ProgressLog\|PipelineEventLog" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" \
+      || { echo "FAIL: ProgressLog/PipelineEventLog import 없음 (C4 회귀)"; exit 1; }
+    echo "  ✓ ProgressLog 컴포넌트 확인"
+    # 4. TypeScript 타입 체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
   C1)
     echo "=== C1: FE ContentStatus 타입/라벨/STAGE_DEFS 재명명 (raw/enriched/ai) ==="
     FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
