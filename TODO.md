@@ -7,7 +7,11 @@
 (없음)
 
 ## Next (이번 마일스톤)
-(작성 중)
+- [ ] **dev-rag-field-extract** — Wikidata/Wikipedia/DDG RAG 기반 빈 필드 보강 (Step 2~6 진행 중)
+  - Step 1 완료: wikidata_client + wikipedia_client
+  - Step 2: ExternalSourceType enum + alembic migration
+  - Step 3: reference_extract 로직 + /test/pipeline/reference-extract 엔드포인트
+  - Step 4~6: FE 연결 + E2E 검증
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
