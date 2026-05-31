@@ -49,8 +49,16 @@ def process_content_metadata(self, content_id: int, auto_chain: bool = True):
     db = SessionLocal()
     try:
         from api.programming.metadata.ai_engine import process_content_ai
-        asyncio.run(process_content_ai(content_id, db, auto_chain=auto_chain))
-        logger.info(f"[metadata] content_id={content_id} AI 처리 완료")
+        from api.programming.metadata.service_bulk import get_stage_auto_policy
+        policy = get_stage_auto_policy(db)
+        # advance-out: AI(s3)→검수, 검수(s4)→승인 게이트
+        asyncio.run(process_content_ai(
+            content_id, db,
+            auto_chain=auto_chain,
+            advance_to_review=policy["s3_auto"],
+            auto_approve=policy["s4_auto"],
+        ))
+        logger.info(f"[metadata] content_id={content_id} AI 처리 완료 (chain={auto_chain} s3={policy['s3_auto']} s4={policy['s4_auto']})")
     except Exception as exc:
         logger.error(f"[metadata] content_id={content_id} 처리 실패: {exc}")
         raise self.retry(exc=exc)
@@ -491,33 +499,38 @@ def reeval_quality_scores():
 
 @celery_app.task(bind=True, name="workers.tasks.metadata.enrich_content_metadata",
                  max_retries=3, default_retry_delay=120)
-def enrich_content_metadata(self, content_id: int):
+def enrich_content_metadata(self, content_id: int, use_cache_db: bool = True, use_websearch: bool = False):
     """
     에이전틱 멀티소스 검색 태스크 — meta_core.enrich 위임.
-    candidate/suggestion 흐름으로 외부 소스 호출.
-    ContentMetadata 직접 쓰기 없음 (Aggregator step7 책임).
+    use_cache_db=False 시 TMDB/KMDB 캐시 조회 skip.
+    보완(s2) 자동 ON일 때만 enriched→AI 체인.
     """
     from api.meta_core.enrich import enrich_content as _enrich_content
     from api.programming.metadata.models.content import PipelineStage, StageEventType
     from api.programming.metadata.stage_events import record_stage_event
     db = SessionLocal()
     try:
-        record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT, StageEventType.ENTERED,
-                           source="ollama", actor="system")
-        result = _enrich_content(content_id, db)
+        # 보완은 S3_SOURCE_MATCH 단계 → status=enriched 매핑 (S6 오기록 버그 수정)
+        record_stage_event(db, content_id, PipelineStage.S3_SOURCE_MATCH, StageEventType.ENTERED,
+                           source="cache_db", actor="system")
+        result = _enrich_content(content_id, db, use_cache_db=use_cache_db)
         db.commit()
-        record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT, StageEventType.COMPLETED,
-                           source="ollama", actor="system")
+        record_stage_event(db, content_id, PipelineStage.S3_SOURCE_MATCH, StageEventType.COMPLETED,
+                           source="cache_db", actor="system")
         logger.info(
             "[enrich] content_id=%d candidates=%d edges=%d suggestions=%d skipped=%s",
             content_id, result.candidates_upserted, result.match_edges_created,
             result.suggestions_created, result.sources_skipped,
         )
+        # 보완(s2) 자동 ON일 때만 enriched→AI 체인
+        from api.programming.metadata.service_bulk import get_stage_auto_policy
+        if get_stage_auto_policy(db)["s2_auto"]:
+            process_content_metadata.delay(content_id, True)
     except Exception as exc:
         logger.error(f"[enrich] content_id={content_id} 실패: {exc}")
         try:
-            record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT, StageEventType.FAILED,
-                               source="ollama", error=str(exc)[:500], actor="system")
+            record_stage_event(db, content_id, PipelineStage.S3_SOURCE_MATCH, StageEventType.FAILED,
+                               source="cache_db", error=str(exc)[:500], actor="system")
             db.commit()
         except Exception:
             pass

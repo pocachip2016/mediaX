@@ -618,11 +618,28 @@ export const metadataApi = {
   patchAiTaskSetting: (taskName: string, enabled: boolean) =>
     request<AiTaskSetting>(
       `/api/programming/metadata/ai-tasks/settings/${taskName}?enabled=${enabled}`,
-      {
-        method: "PATCH",
-      }
+      { method: "PATCH" }
     ),
+
+  getEnrichPolicy: () =>
+    request<EnrichPolicy>("/api/programming/metadata/ai-tasks/enrich-policy"),
+  patchEnrichPolicy: (body: Partial<EnrichPolicy>) =>
+    request<EnrichPolicy>("/api/programming/metadata/ai-tasks/enrich-policy", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+  getStageAutoPolicy: () =>
+    request<StageAutoPolicy>("/api/programming/metadata/ai-tasks/stage-auto-policy"),
+  patchStageAutoPolicy: (body: Partial<StageAutoPolicy>) =>
+    request<StageAutoPolicy>("/api/programming/metadata/ai-tasks/stage-auto-policy", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+  websearchQuery: (query: string, num = 6) =>
+    request<WebSearchResultItem[]>("/api/programming/metadata/ai-tasks/websearch-query", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, num }),
+    }),
 }
+
+export interface WebSearchResultItem { title: string; url: string; domain: string; snippet: string; provider: string }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
 
@@ -1432,6 +1449,13 @@ export interface PipelineEventLog {
   actor: string
 }
 
+// ADR-009 response types
+export interface AdvanceResponse { advanced: number; skipped: number; results: Record<number, string> }
+export interface EnrichSourceResponse { content_id: number; source: string; candidates_upserted: number; suggestions_created: number; sources_hit: string[]; sources_skipped: string[]; status_unchanged: string }
+export interface AiTaskResponse { content_id: number; task_name: string; status: string; engine: string | null; result_preview: string | null; status_unchanged: string }
+export interface EnrichPolicy { use_cache_db: boolean; confidence_threshold: number; use_websearch: boolean }
+export interface StageAutoPolicy { s1_auto: boolean; s2_auto: boolean; s3_auto: boolean; s4_auto: boolean; s5_auto: boolean; s6_auto: boolean }
+
 export const pipelineTestApi = {
   seed: () =>
     requestTest<PipelineTestSeedResult>("/api/test/pipeline/seed", { method: "POST" }),
@@ -1448,6 +1472,20 @@ export const pipelineTestApi = {
     q.set("limit", String(limit))
     return requestTest<PipelineEventLog[]>(`/api/test/pipeline/events?${q}`)
   },
+  advance: (ids: number[]) =>
+    requestTest<AdvanceResponse>("/api/test/pipeline/advance", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  enrichSource: (content_id: number, source: "tmdb" | "kmdb") =>
+    requestTest<EnrichSourceResponse>("/api/test/pipeline/enrich-source", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id, source }),
+    }),
+  runAiTask: (content_id: number, task_name: string) =>
+    requestTest<AiTaskResponse>("/api/test/pipeline/run-ai-task", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id, task_name }),
+    }),
+  listAiTasks: () =>
+    requestTest<{ tasks: string[] }>("/api/test/pipeline/ai-tasks"),
 }
 
 // ── Distribution / Curation ───────────────────────────────

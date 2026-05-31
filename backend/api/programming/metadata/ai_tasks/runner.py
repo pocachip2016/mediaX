@@ -136,3 +136,52 @@ async def run_ai_tasks(content_id: int, db: "Session") -> dict[str, str]:
 
     db.commit()
     return results
+
+
+async def run_single_ai_task(content_id: int, task_name: str, db: "Session") -> dict:
+    """단일 AiTask 실행 — status 불변. 수동 sub-step 테스트용 (ADR-009)."""
+    from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+    from api.programming.metadata.models import Content, ContentMetadata
+    from api.programming.metadata.llm import get_task_provider_chain
+    from shared.quota_manager import QuotaManager
+
+    if task_name not in AI_TASK_REGISTRY:
+        return {"task_name": task_name, "status": "unknown_task", "engine": None, "result_preview": None}
+
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        raise ValueError(f"Content {content_id} not found")
+
+    meta = content.metadata_record
+    if meta is None:
+        meta = ContentMetadata(content_id=content_id)
+        db.add(meta)
+        db.flush()
+
+    task = AI_TASK_REGISTRY[task_name]
+    provider_chain = get_task_provider_chain()
+    quota = QuotaManager()
+
+    task_input = task.build_input(meta)
+    if task_input is None:
+        return {"task_name": task_name, "status": "skip", "engine": None, "result_preview": None}
+
+    input_hash = _compute_input_hash(content_id, task_name, task_input.payload)
+
+    if _is_cached(db, content_id, task_name, input_hash):
+        return {"task_name": task_name, "status": "cached", "engine": None, "result_preview": None}
+
+    if not quota.is_allowed("llm_task", daily_limit=500):
+        return {"task_name": task_name, "status": "quota_exceeded", "engine": None, "result_preview": None}
+
+    try:
+        output = await task.run(task_input, provider_chain)
+        task.apply(meta, output)
+        _save_result(db, content_id, task_name, output.engine, output.result, input_hash)
+        db.commit()
+        preview = str(output.result)[:120] if output.result else None
+        logger.info("[ai_runner:single] content_id=%d task=%s engine=%s ok", content_id, task_name, output.engine)
+        return {"task_name": task_name, "status": "ok", "engine": output.engine, "result_preview": preview}
+    except Exception as exc:
+        logger.error("[ai_runner:single] content_id=%d task=%s error: %s", content_id, task_name, exc)
+        return {"task_name": task_name, "status": "error", "engine": None, "result_preview": str(exc)[:120]}

@@ -507,3 +507,25 @@ async def apply_external_fields(
         "source_id": source_id,
         "source_type": external.source_type.value if hasattr(external.source_type, "value") else str(external.source_type),
     }
+
+
+def get_enrich_policy(db):
+    """현재 EnrichPolicy 반환. 없으면 기본값 dict."""
+    from api.programming.metadata.models.external import EnrichPolicy
+    row = db.query(EnrichPolicy).filter(EnrichPolicy.id == 1).first()
+    if not row:
+        return {"use_cache_db": False, "confidence_threshold": 0.90, "use_websearch": False}
+    return {
+        "use_cache_db": row.use_cache_db,
+        "confidence_threshold": row.confidence_threshold,
+        "use_websearch": row.use_websearch,
+    }
+
+
+def get_stage_auto_policy(db) -> dict:
+    """현재 StageAutoPolicy 반환. 없으면 전부 False dict (자동 전이 없음)."""
+    from api.programming.metadata.models.external import StageAutoPolicy
+    row = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not row:
+        return {f"s{i}_auto": False for i in range(1, 7)}
+    return {f"s{i}_auto": getattr(row, f"s{i}_auto") for i in range(1, 7)}

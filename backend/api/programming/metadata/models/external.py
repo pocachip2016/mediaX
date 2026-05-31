@@ -95,3 +95,37 @@ class AiTaskSetting(Base):
     task_name = Column(String(100), primary_key=True)
     enabled = Column(Boolean, nullable=False, default=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class EnrichPolicy(Base):
+    """
+    보완 단계 전역 정책 — ADR-008 (0032 마이그레이션에서 컬럼 rename)
+    단일 행(id=1).
+    use_cache_db  : 보완 시 내부 캐시 DB(TMDB/KMDB) 조회 여부
+    use_websearch : WebSearch 사용 여부
+    """
+    __tablename__ = "enrich_policy"
+
+    id = Column(Integer, primary_key=True, default=1)
+    use_cache_db = Column(Boolean, nullable=False, default=False)
+    confidence_threshold = Column(Float, nullable=False, default=0.90)
+    use_websearch = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StageAutoPolicy(Base):
+    """
+    단계별 자동 실행 정책 — ADR-009. 단일 행(id=1).
+    advance-out 정렬: s1=생성→보완, s2=보완→AI, s3=AI→검수, s4=검수→승인, s5=승인→게시.
+    전부 기본 False → 자동 전이 없음(단계별 수동 테스트 안전).
+    """
+    __tablename__ = "stage_auto_policy"
+
+    id = Column(Integer, primary_key=True, default=1)
+    s1_auto = Column(Boolean, nullable=False, default=False)
+    s2_auto = Column(Boolean, nullable=False, default=False)
+    s3_auto = Column(Boolean, nullable=False, default=False)
+    s4_auto = Column(Boolean, nullable=False, default=False)
+    s5_auto = Column(Boolean, nullable=False, default=False)
+    s6_auto = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -143,3 +143,157 @@ def get_pipeline_events(
             q = q.filter(StageEvent.content_id.in_(test_ids))
     events = q.order_by(StageEvent.started_at.desc()).limit(limit).all()
     return events
+
+
+# ── ADR-009: 내부처리/다음단계 분리 엔드포인트 ───────────────────────────────
+
+_ADVANCE_NEXT = {
+    ContentStatus.raw:      ContentStatus.enriched,
+    ContentStatus.enriched: ContentStatus.ai,
+    ContentStatus.ai:       ContentStatus.review,
+    ContentStatus.review:   ContentStatus.approved,
+}
+
+_STATUS_STAGE_MAP = {
+    ContentStatus.enriched: "s2_normalize",
+    ContentStatus.ai:       "s6_llm_extract",
+    ContentStatus.review:   "s8_review",
+    ContentStatus.approved: "s9_publish",
+}
+
+
+class AdvanceRequest(BaseModel):
+    ids: list[int]
+
+
+class AdvanceResponse(BaseModel):
+    advanced: int
+    skipped: int
+    results: dict[int, str]
+
+
+class EnrichSourceRequest(BaseModel):
+    content_id: int
+    source: str
+
+
+class EnrichSourceResponse(BaseModel):
+    content_id: int
+    source: str
+    candidates_upserted: int
+    suggestions_created: int
+    sources_hit: list[str]
+    sources_skipped: list[str]
+    status_unchanged: str
+
+
+class AiTaskRequest(BaseModel):
+    content_id: int
+    task_name: str
+
+
+class AiTaskResponse(BaseModel):
+    content_id: int
+    task_name: str
+    status: str
+    engine: Optional[str]
+    result_preview: Optional[str]
+    status_unchanged: str
+
+
+@router.post("/advance", response_model=AdvanceResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
+    """[다음단계로] — 내부처리 없이 status 1칸 진행 + StageEvent(ADVANCED) 기록."""
+    from api.programming.metadata.models.content import StageEventType
+    from api.programming.metadata.models.stage_event import StageEvent as SE
+    from api.programming.metadata.stage_events import record_stage_event
+    from api.programming.metadata.models.content import PipelineStage
+
+    _STATUS_STAGE = {
+        ContentStatus.enriched: PipelineStage.S2_NORMALIZE,
+        ContentStatus.ai:       PipelineStage.S6_LLM_EXTRACT,
+        ContentStatus.review:   PipelineStage.S8_REVIEW,
+        ContentStatus.approved: PipelineStage.S9_PUBLISH,
+    }
+
+    results: dict[int, str] = {}
+    advanced = 0
+    for cid in req.ids:
+        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
+        if not c:
+            results[cid] = "not_found"
+            continue
+        nxt = _ADVANCE_NEXT.get(c.status)
+        if nxt is None:
+            results[cid] = "terminal"
+            continue
+        record_stage_event(db, cid, _STATUS_STAGE[nxt], StageEventType.ADVANCED, actor="user")
+        results[cid] = nxt.value
+        advanced += 1
+
+    db.commit()
+    return AdvanceResponse(advanced=advanced, skipped=len(req.ids) - advanced, results=results)
+
+
+@router.post("/enrich-source", response_model=EnrichSourceResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def enrich_single_source(req: EnrichSourceRequest, db: Session = Depends(get_db)):
+    """보완 내부처리 sub-step — TMDB/KMDB 단일 소스 회수. status 불변."""
+    from api.meta_core.enrich import enrich_content
+
+    source = req.source.lower().strip()
+    if source not in ("tmdb", "kmdb"):
+        raise HTTPException(status_code=422, detail="source must be 'tmdb' or 'kmdb'")
+
+    c = db.query(Content).filter(Content.id == req.content_id, Content.is_deleted.is_(False)).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="content not found")
+
+    before_status = c.status.value if c.status else ""
+    result = enrich_content(req.content_id, db, only_sources={source})
+    db.commit()
+    db.refresh(c)
+    return EnrichSourceResponse(
+        content_id=req.content_id,
+        source=source,
+        candidates_upserted=result.candidates_upserted,
+        suggestions_created=result.suggestions_created,
+        sources_hit=result.sources_hit,
+        sources_skipped=result.sources_skipped,
+        status_unchanged=c.status.value if c.status else before_status,
+    )
+
+
+@router.post("/run-ai-task", response_model=AiTaskResponse,
+             dependencies=[Depends(require_pipeline_test)])
+async def run_single_ai_task_endpoint(req: AiTaskRequest, db: Session = Depends(get_db)):
+    """AI 내부처리 sub-step — registry 단일 태스크 실행. status 불변."""
+    from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+    from api.programming.metadata.ai_tasks.runner import run_single_ai_task
+
+    valid = list(AI_TASK_REGISTRY.keys())
+    if req.task_name not in valid:
+        raise HTTPException(status_code=422, detail=f"unknown task_name. valid: {valid}")
+
+    c = db.query(Content).filter(Content.id == req.content_id, Content.is_deleted.is_(False)).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="content not found")
+
+    result = await run_single_ai_task(req.content_id, req.task_name, db)
+    db.refresh(c)
+    return AiTaskResponse(
+        content_id=req.content_id,
+        task_name=result["task_name"],
+        status=result["status"],
+        engine=result["engine"],
+        result_preview=result["result_preview"],
+        status_unchanged=c.status.value if c.status else "",
+    )
+
+
+@router.get("/ai-tasks", dependencies=[Depends(require_pipeline_test)])
+def list_ai_tasks():
+    """사용 가능한 AI task 목록."""
+    from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+    return {"tasks": list(AI_TASK_REGISTRY.keys())}
