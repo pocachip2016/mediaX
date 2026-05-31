@@ -65,6 +65,8 @@ export interface MetadataOut {
   score_breakdown: Record<string, number> | null
   ai_processed_at: string | null
   reviewed_at: string | null
+  synopsis_ko: string | null
+  synopsis_en: string | null
 }
 
 export interface PersonOut {

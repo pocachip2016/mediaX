@@ -123,6 +123,8 @@ class MetadataOut(BaseModel):
     score_breakdown: Optional[dict[str, Any]]
     ai_processed_at: Optional[datetime]
     reviewed_at: Optional[datetime]
+    synopsis_ko: Optional[str] = None   # 번역 결과 (한국어)
+    synopsis_en: Optional[str] = None   # 번역 결과 (영어)
 
     model_config = {"from_attributes": True}
 

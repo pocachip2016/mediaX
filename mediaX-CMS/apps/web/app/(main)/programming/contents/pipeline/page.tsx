@@ -16,6 +16,7 @@ import {
   type BatchJobOut,
   type BulkActionResponse,
   type AiTaskSetting,
+  type AiTaskResponse,
   type ContentAIResult,
   type PipelineEventLog,
   type StageAutoPolicy,
@@ -374,7 +375,7 @@ function TestContentList({
   return (
     <div className="rounded-lg border border-border bg-background overflow-hidden">
       <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground">TEST_PIPELINE 목록</span>
+        <span className="text-xs font-semibold text-muted-foreground">콘텐츠 목록</span>
         <span className="text-xs text-muted-foreground">{contents.length}건</span>
       </div>
       <div className="divide-y divide-border max-h-64 overflow-y-auto">
@@ -583,12 +584,11 @@ const ENRICH_FIELD_LABELS: Record<string, string> = {
   external_id: "외부ID", production_year: "제작연도",
 }
 
-// enrich 필드 → ContentUpdate(PUT) 키. 매핑 있는 필드만 수동 값 입력/적용 가능.
-const FIELD_TO_UPDATE_KEY: Record<string, string> = {
-  synopsis: "synopsis", cast: "cast", director: "directors",
-  genres: "genres", primary_genre: "genres", country: "country",
-  runtime: "runtime", production_year: "production_year", poster: "poster_url",
-}
+
+// STEP A에 항상 표시할 필드 고정 목록 (순서 = 중요도)
+const ALL_ENRICH_FIELDS = [
+  "genres", "cast", "director", "runtime", "country", "production_year", "synopsis",
+]
 
 // 선택 콘텐츠(ContentDetail)에서 필드별 현재값을 문자열로 추출 — 적용 후 재조회 시 갱신됨
 function currentFieldValue(c: ContentDetail | null, field: string): string | null {
@@ -625,37 +625,14 @@ function EnrichFieldRow({ field, rec, contentId, currentValue, applied, onApplie
 }) {
   const label = ENRICH_FIELD_LABELS[field] ?? field
   const best = rec?.recommendations?.[0] ?? null
-  const updateKey = FIELD_TO_UPDATE_KEY[field]   // 수동 입력 가능 필드만 매핑됨
+  const alreadyCurrent = !!(best && currentValue && best.value.trim() === currentValue.trim())
   const [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState("")
 
-  const startEdit = () => {
-    if (!updateKey) return
-    setDraft(best?.value ?? "")
-    setEditing(true)
-  }
-
-  // 외부 소스 추천값 원클릭 적용 (캐시 DB)
-  const handleApplyExternal = async () => {
+  const handleApply = async () => {
     if (!best) return
     setBusy(true)
     try { await metadataApi.applyExternalFields(contentId, best.source_id, [field]); onApplied(field) }
     catch (e) { console.error("apply field failed", e) }
-    finally { setBusy(false) }
-  }
-
-  // 수동 입력값 적용 (WebSearch 결과 등) — manual source 머지
-  const handleApplyManual = async () => {
-    const v = draft.trim()
-    if (!v || !updateKey) return
-    setBusy(true)
-    try {
-      const payload: Record<string, string | number> =
-        field === "runtime" || field === "production_year" ? { [updateKey]: Number(v) } : { [updateKey]: v }
-      await metadataApi.updateContent(contentId, payload)
-      setEditing(false); onApplied(field)
-    } catch (e) { console.error("manual apply failed", e) }
     finally { setBusy(false) }
   }
 
@@ -665,42 +642,22 @@ function EnrichFieldRow({ field, rec, contentId, currentValue, applied, onApplie
       <div className={`px-2 py-2 border-l border-border ${currentValue ? "text-foreground" : "text-muted-foreground/70"}`}>
         {currentValue ? <span className="line-clamp-2">{currentValue}</span> : "(없음)"}
       </div>
-      {/* 보완값(후) — 클릭 시 편집 textbox (WebSearch 결과 직접 입력) */}
+      {/* 보완값 — 외부 소스에 있는 경우에만 표시 */}
       <div className="px-2 py-2 border-l border-border">
-        {editing ? (
-          <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void handleApplyManual(); if (e.key === "Escape") setEditing(false) }}
-            placeholder="값 입력 (WebSearch 결과 등)"
-            className="w-full text-xs px-1.5 py-1 rounded border border-violet-300 dark:border-violet-700 bg-background focus:outline-none focus:ring-1 focus:ring-violet-400" />
-        ) : best ? (
-          <button onClick={startEdit} className="text-left w-full hover:bg-accent/50 rounded" title="클릭하여 수정/입력">
+        {best ? (
+          <div>
             <span className="text-foreground line-clamp-2">{best.value}</span>
             <span className="ml-1 text-[10px] text-blue-500 uppercase">{best.source_type}</span>
-          </button>
-        ) : updateKey ? (
-          <button onClick={startEdit} className="text-left w-full text-violet-600 dark:text-violet-400 hover:underline" title="클릭하여 입력">
-            + 값 입력 (WebSearch 결과)
-          </button>
+          </div>
         ) : (
-          <span className="text-red-500 dark:text-red-400">✗ 여전히 필요 → WebSearch</span>
+          <span className="text-muted-foreground/50">—</span>
         )}
       </div>
-      {/* 적용 — 편집 중 draft 있으면 manual 적용, 아니면 외부 원클릭 적용 */}
-      <div className="flex items-center justify-center gap-1 border-l border-border">
-        {editing ? (
-          <>
-            {draft.trim() && (
-              <button onClick={() => void handleApplyManual()} disabled={busy}
-                className="text-[10px] px-1.5 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white font-medium disabled:opacity-50">
-                {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : "적용"}
-              </button>
-            )}
-            <button onClick={() => setEditing(false)} className="text-[10px] text-muted-foreground hover:text-foreground" title="취소">✕</button>
-          </>
-        ) : applied ? (
+      <div className="flex items-center justify-center border-l border-border">
+        {applied || alreadyCurrent ? (
           <span className="text-[10px] text-emerald-600 font-medium">✓</span>
         ) : best ? (
-          <button onClick={() => void handleApplyExternal()} disabled={busy}
+          <button onClick={() => void handleApply()} disabled={busy}
             className="text-[10px] px-1.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50">
             {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : "적용"}
           </button>
@@ -949,17 +906,6 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
   const [subBusy, setSubBusy] = useState<Record<string, boolean>>({})
   const [lastRun, setLastRun] = useState<string | null>(null)
   const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
-  const [showWebSearch, setShowWebSearch] = useState(false)
-  const [useWebsearch, setUseWebsearch] = useState(false)
-  const [policyBusy, setPolicyBusy] = useState(false)
-
-  useEffect(() => { metadataApi.getEnrichPolicy().then((p) => setUseWebsearch(p.use_websearch)).catch(() => {}) }, [])
-
-  const toggleWebsearch = async () => {
-    setPolicyBusy(true)
-    try { const p = await metadataApi.patchEnrichPolicy({ use_websearch: !useWebsearch }); setUseWebsearch(p.use_websearch) }
-    catch { /* ignore */ } finally { setPolicyBusy(false) }
-  }
 
   const fetchRecs = useCallback(async () => {
     if (!selectedContentId) { setRecs(null); setTitle(""); setContent(null); return }
@@ -970,7 +916,7 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
     } catch { setRecs(null); setContent(null) } finally { setLoading(false) }
   }, [selectedContentId])
 
-  useEffect(() => { setShowWebSearch(false); setLastRun(null); setAppliedFields(new Set()); fetchRecs() }, [fetchRecs])
+  useEffect(() => { setLastRun(null); setAppliedFields(new Set()); fetchRecs() }, [fetchRecs])
 
   const runSource = async (source: "tmdb" | "kmdb") => {
     if (!selectedContentId) return
@@ -987,8 +933,9 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
     if (!recs) return null
     return [...recs.auto_fill, ...recs.conflicts].find((x) => x.field === f) ?? null
   }
-  const allFields = recs ? Array.from(new Set([...recs.missing_fields, ...recs.auto_fill.map((r) => r.field), ...recs.conflicts.map((r) => r.field)])) : []
-  const remaining = recs ? recs.missing_fields.filter((f) => !recByField(f)) : []
+  // 추천/missing 여부와 무관하게 항상 전체 필드 표시
+  const allFields = ALL_ENRICH_FIELDS
+
 
   if (!selectedContentId) {
     return (
@@ -1028,15 +975,14 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
           ))}
           {lastRun && <span className="text-[10px] text-blue-600 self-center">{lastRun}</span>}
         </div>
-        {allFields.length > 0 && (
-          <div className="rounded border border-border bg-background overflow-hidden">
+        <div className="rounded border border-border bg-background overflow-hidden">
             <div className="grid grid-cols-[4.5rem_1fr_1fr_3.5rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
               <div className="px-2 py-1">필드</div>
               <div className="px-2 py-1 border-l border-border">현재(전)</div>
               <div className="px-2 py-1 border-l border-border">보완값(후)</div>
               <div className="px-2 py-1 border-l border-border text-center">적용</div>
             </div>
-            <div className="max-h-56 overflow-y-auto">
+            <div>
               {allFields.map((f) => (
                 <EnrichFieldRow key={f} field={f} rec={recByField(f)} contentId={selectedContentId}
                   currentValue={currentFieldValue(content, f)}
@@ -1045,149 +991,158 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
               ))}
             </div>
           </div>
-        )}
-      </div>
-      {/* STEP B — WebSearch */}
-      <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50/40 dark:bg-violet-900/10 p-3 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide">STEP B — WebSearch (A 이후 남은 필드)</p>
-          <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-            <span className="text-[10px] text-muted-foreground">WebSearch 정책</span>
-            <button onClick={() => void toggleWebsearch()} disabled={policyBusy}
-              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${useWebsearch ? "bg-violet-600" : "bg-slate-300 dark:bg-slate-600"}`}>
-              <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${useWebsearch ? "translate-x-3.5" : "translate-x-0.5"}`} />
-            </button>
-            <span className={`text-[10px] font-medium ${useWebsearch ? "text-violet-600" : "text-muted-foreground"}`}>{useWebsearch ? "ON" : "OFF"}</span>
-          </label>
-        </div>
-        {remaining.length === 0 ? <p className="text-xs text-muted-foreground">캐시 보완으로 충분 — 남은 필드 없음</p>
-          : !useWebsearch ? <p className="text-xs text-muted-foreground">WebSearch 정책이 OFF — 위 토글로 활성화 후 검색하세요.</p>
-          : <>
-            <p className="text-xs text-muted-foreground">남은 보완 필요: {remaining.map((f) => ENRICH_FIELD_LABELS[f] ?? f).join(", ")}</p>
-            <button onClick={() => setShowWebSearch((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${showWebSearch ? "bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/30 dark:border-violet-600 dark:text-violet-400" : "border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 hover:bg-violet-100"}`}>
-              <Search className="h-3 w-3" /> WebSearch {showWebSearch ? "닫기" : "열기"}
-            </button>
-            {showWebSearch && (
-              <InlineWebSearch defaultQuery={title ? `${title} ${remaining.map((f) => ENRICH_FIELD_LABELS[f] ?? f).join(" ")}` : ""} />
-            )}
-          </>
-        }
       </div>
       <StageAdvanceBar ids={[selectedContentId]} fromStatus="생성" toStatus="Enrich" onDone={() => { onRefresh(); fetchRecs() }} />
     </div>
   )
 }
 
-const TASK_LABELS: Record<string, string> = { translate_synopsis: "번역", short_synopsis: "짧은요약", genre_normalized: "장르", mood_tags: "무드", keywords: "키워드" }
-const TASK_NAMES = ["translate_synopsis", "short_synopsis", "genre_normalized", "mood_tags", "keywords"]
+// STEP 1 AI 추천 필드 (장르/무드/키워드)
+const AI_FIELD_TASKS: { task: string; label: string; currentKey: (c: ContentDetail) => string | null }[] = [
+  { task: "genre_normalized",  label: "장르",    currentKey: (c) => c.genres.map((g) => g.genre.name_ko).join(", ") || null },
+  { task: "mood_tags",         label: "무드",    currentKey: (c) => c.metadata_record?.ai_mood_tags?.join(", ") || null },
+  { task: "short_synopsis",   label: "짧은요약", currentKey: (c) => c.metadata_record?.ai_synopsis || null },
+]
 
 function AiProcessPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
   const [items, setItems] = useState<ContentOut[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loadingList, setLoadingList] = useState(false)
   const [taskBusy, setTaskBusy] = useState<Record<string, boolean>>({})
-  const [taskResults, setTaskResults] = useState<Record<string, import("@/lib/api").AiTaskResponse>>({})
-  const [bulkResult, setBulkResult] = useState<BulkActionResponse | null>(null)
-  const [settings, setSettings] = useState<AiTaskSetting[]>([])
+  const [taskResults, setTaskResults] = useState<Record<string, AiTaskResponse>>({})
+  const [detail, setDetail] = useState<ContentDetail | null>(null)
+  const [translateBusy, setTranslateBusy] = useState(false)
+  const [translateResult, setTranslateResult] = useState<{ ko: string | null; en: string | null } | null>(null)
 
-  const fetchEnriched = useCallback(async () => {
-    setLoading(true)
+  const fetchItems = useCallback(async () => {
+    setLoadingList(true)
     try {
-      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "enriched", size: 50 })
-      setItems(r.items)
-    } catch { setItems([]) } finally { setLoading(false) }
+      const r = await metadataApi.listContents({ size: 100 })
+      setItems(r.items.filter((c) => stageBucket(c) === 3))
+    } catch { setItems([]) } finally { setLoadingList(false) }
   }, [])
 
-  useEffect(() => {
-    fetchEnriched()
-    metadataApi.getAiTaskSettings().then(setSettings).catch(() => {})
-  }, [fetchEnriched])
+  const fetchDetail = useCallback(async () => {
+    if (!selectedContentId) { setDetail(null); return }
+    try { setDetail(await metadataApi.getContent(selectedContentId)) } catch { setDetail(null) }
+  }, [selectedContentId])
 
-  useEffect(() => { setTaskResults({}) }, [selectedContentId])
+  useEffect(() => { fetchItems() }, [fetchItems])
+  useEffect(() => { setTaskResults({}); setTranslateResult(null); fetchDetail() }, [fetchDetail])
 
   const runTask = async (taskName: string) => {
     if (!selectedContentId) return
     setTaskBusy((b) => ({ ...b, [taskName]: true }))
-    try { const r = await pipelineTestApi.runAiTask(selectedContentId, taskName); setTaskResults((prev) => ({ ...prev, [taskName]: r })) }
-    catch (e) { console.error(e) }
+    try {
+      const r = await pipelineTestApi.runAiTask(selectedContentId, taskName)
+      setTaskResults((prev) => ({ ...prev, [taskName]: r }))
+      await fetchDetail()
+    } catch (e) { console.error(e) }
     finally { setTaskBusy((b) => ({ ...b, [taskName]: false })) }
   }
 
-  const handleBulkAi = async () => {
-    if (!items.length) return
-    try { const r = await metadataApi.bulkProcessAi({ ids: items.map((c) => c.id) }); setBulkResult(r); onRefresh() }
-    catch { /* ignore */ }
-  }
-
-  const handleToggleSetting = async (taskName: string, enabled: boolean) => {
-    try { await metadataApi.patchAiTaskSetting(taskName, !enabled); const s = await metadataApi.getAiTaskSettings(); setSettings(s) } catch { /* ignore */ }
+  const runTranslate = async () => {
+    if (!selectedContentId) return
+    setTranslateBusy(true)
+    try {
+      const r = await pipelineTestApi.runAiTask(selectedContentId, "translate_synopsis")
+      const d = await metadataApi.getContent(selectedContentId)
+      setTranslateResult({ ko: d.metadata_record?.synopsis_ko ?? null, en: d.metadata_record?.synopsis_en ?? null })
+      setTaskResults((prev) => ({ ...prev, translate_synopsis: r }))
+      setDetail(d)
+    } catch (e) { console.error(e) }
+    finally { setTranslateBusy(false) }
   }
 
   return (
     <div className="space-y-4">
       <div>
         <h3 className="text-sm font-semibold">③ AI처리 — LLM 태스크</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">내부처리: registry 5태스크 단건 실행 (status 불변) · 벌크 AI 처리</p>
+        <p className="text-xs text-muted-foreground mt-0.5">빈 필드 AI 추천 + 줄거리 번역</p>
       </div>
+
+      {/* STEP 1 — AI 필드 추천 */}
       <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50/40 dark:bg-violet-900/10 p-3 space-y-2">
-        <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide">내부처리 (status 불변)</p>
-        {settings.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {settings.map((s) => (
-              <button key={s.task_name} onClick={() => handleToggleSetting(s.task_name, s.enabled)}
-                className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${s.enabled ? "bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/30 dark:border-violet-600 dark:text-violet-400" : "bg-muted border-border text-muted-foreground"}`}>
-                {TASK_LABELS[s.task_name] ?? s.task_name} {s.enabled ? "ON" : "OFF"}
-              </button>
-            ))}
+        <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide">STEP 1 — AI 필드 추천</p>
+        {!selectedContentId ? (
+          <p className="text-xs text-muted-foreground">좌측 목록에서 콘텐츠를 선택하세요</p>
+        ) : (
+          <div className="rounded border border-border bg-background overflow-hidden">
+            <div className="grid grid-cols-[4rem_1fr_1fr_3.5rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
+              <div className="px-2 py-1">필드</div>
+              <div className="px-2 py-1 border-l border-border">현재값</div>
+              <div className="px-2 py-1 border-l border-border">AI 추천</div>
+              <div className="px-2 py-1 border-l border-border text-center">실행</div>
+            </div>
+            {AI_FIELD_TASKS.map(({ task, label, currentKey }) => {
+              const cur = detail ? currentKey(detail) : null
+              const r = taskResults[task]
+              return (
+                <div key={task} className="grid grid-cols-[4rem_1fr_1fr_3.5rem] items-stretch border-b border-border last:border-0 text-xs">
+                  <div className="flex items-center px-2 py-2 text-muted-foreground">{label}</div>
+                  <div className={`px-2 py-2 border-l border-border ${cur ? "text-foreground" : "text-muted-foreground/50"}`}>
+                    {cur ? <span className="line-clamp-2">{cur}</span> : "(없음)"}
+                  </div>
+                  <div className="px-2 py-2 border-l border-border">
+                    {r?.status === "ok" && r.result_preview ? (
+                      <span className="text-foreground line-clamp-2">{r.result_preview}</span>
+                    ) : r?.status === "skip" ? (
+                      <span className="text-muted-foreground/50">이미 채워짐</span>
+                    ) : r?.status ? (
+                      <span className="text-amber-600 text-[10px]">{r.status}</span>
+                    ) : (
+                      <span className="text-muted-foreground/50">—</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-center border-l border-border">
+                    <button onClick={() => void runTask(task)} disabled={taskBusy[task] || !selectedContentId}
+                      className="flex items-center gap-0.5 text-[10px] px-1.5 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white font-medium disabled:opacity-50">
+                      {taskBusy[task] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
-        {!selectedContentId
-          ? <p className="text-xs text-muted-foreground">좌측 목록에서 콘텐츠를 선택하면 태스크 단건 실행 가능</p>
-          : <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">선택: #{selectedContentId}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {TASK_NAMES.map((t) => (
-                  <button key={t} onClick={() => void runTask(t)} disabled={taskBusy[t]}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
-                    {taskBusy[t] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-                    {TASK_LABELS[t] ?? t}
-                  </button>
-                ))}
-              </div>
-              {Object.entries(taskResults).map(([t, r]) => (
-                <div key={t} className={`text-[10px] px-2 py-1 rounded border ${r.status === "ok" ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800/40 dark:text-green-400" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
-                  <span className="font-semibold">{r.status}</span>{r.engine && <span className="ml-1 opacity-70">· {r.engine}</span>}
-                  {r.result_preview && <div className="mt-0.5 opacity-80 line-clamp-2">{r.result_preview}</div>}
-                </div>
-              ))}
-            </div>
-        }
-        <div className="pt-1 flex items-center gap-2 border-t border-violet-200/50 dark:border-violet-800/30">
-          <button onClick={handleBulkAi} disabled={!items.length}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 text-xs font-medium hover:bg-violet-100 dark:hover:bg-violet-900/30 disabled:opacity-50 transition-colors">
-            <Zap className="h-3 w-3" /> 벌크 AI 처리 ({items.length}건)
-          </button>
-          <button onClick={fetchEnriched} disabled={loading} className="p-1.5 rounded border border-border hover:bg-accent">
-            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-          </button>
-          {bulkResult && <span className="text-xs text-violet-600">✓ {bulkResult.ids_accepted}건 큐잉</span>}
-        </div>
       </div>
-      {!loading && items.length > 0 && (
-        <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <div className="px-3 py-1.5 bg-muted/40 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">보완완료(enriched) 항목</span>
-            <span className="text-xs text-muted-foreground">{items.length}건</span>
+
+      {/* STEP 2 — 줄거리 번역 */}
+      <div className="rounded-lg border border-blue-200 dark:border-blue-800/40 bg-blue-50/40 dark:bg-blue-900/10 p-3 space-y-2">
+        <p className="text-[11px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">STEP 2 — 줄거리 번역 (한↔영)</p>
+        {!selectedContentId ? (
+          <p className="text-xs text-muted-foreground">좌측 목록에서 콘텐츠를 선택하세요</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="rounded border border-border bg-background overflow-hidden text-xs divide-y divide-border">
+              <div className="grid grid-cols-[3rem_1fr] items-start">
+                <span className="px-2 py-2 text-muted-foreground shrink-0">한국어</span>
+                <span className={`px-2 py-2 border-l border-border ${(translateResult?.ko ?? detail?.metadata_record?.synopsis_ko) ? "text-foreground" : "text-muted-foreground/50"}`}>
+                  {translateResult?.ko ?? detail?.metadata_record?.synopsis_ko ?? "(없음)"}
+                </span>
+              </div>
+              <div className="grid grid-cols-[3rem_1fr] items-start">
+                <span className="px-2 py-2 text-muted-foreground shrink-0">영어</span>
+                <span className={`px-2 py-2 border-l border-border ${(translateResult?.en ?? detail?.metadata_record?.synopsis_en) ? "text-foreground" : "text-muted-foreground/50"}`}>
+                  {translateResult?.en ?? detail?.metadata_record?.synopsis_en ?? "(없음)"}
+                </span>
+              </div>
+            </div>
+            <button onClick={() => void runTranslate()} disabled={translateBusy}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
+              {translateBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+              번역 실행
+            </button>
+            {taskResults["translate_synopsis"] && (
+              <p className={`text-[10px] ${taskResults["translate_synopsis"].status === "ok" ? "text-blue-600" : "text-amber-600"}`}>
+                {taskResults["translate_synopsis"].status === "ok" ? "✓ 번역 완료" : taskResults["translate_synopsis"].status}
+                {taskResults["translate_synopsis"].engine && ` · ${taskResults["translate_synopsis"].engine}`}
+              </p>
+            )}
           </div>
-          <div className="divide-y divide-border max-h-32 overflow-y-auto">
-            {items.map((c) => <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
-              <span className="text-xs font-medium truncate flex-1">{c.title}</span>
-              <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
-            </div>)}
-          </div>
-        </div>
-      )}
-      <StageAdvanceBar ids={items.map((c) => c.id)} fromStatus="Enrich" toStatus="AI처리" onDone={() => { onRefresh(); fetchEnriched() }} />
+        )}
+      </div>
+
+      <StageAdvanceBar ids={items.map((c) => c.id)} fromStatus="Enrich" toStatus="AI처리" onDone={() => { onRefresh(); fetchItems() }} />
     </div>
   )
 }
@@ -1250,13 +1205,29 @@ function ProgressLog({ contentId }: { contentId: number | null }) {
   )
 }
 
-function TestReviewPanel({ onRefresh, selectedContentId: _sel }: { onRefresh: () => void; selectedContentId: number | null }) {
+function TestReviewPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
   const [items, setItems] = useState<ContentOut[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [acting, setActing] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showWebSearch, setShowWebSearch] = useState(false)
+  const [useWebsearch, setUseWebsearch] = useState(false)
+  const [policyBusy, setPolicyBusy] = useState(false)
+  const [reviewTitle, setReviewTitle] = useState("")
+
+  useEffect(() => { metadataApi.getEnrichPolicy().then((p) => setUseWebsearch(p.use_websearch)).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!selectedContentId) { setReviewTitle(""); return }
+    metadataApi.getContent(selectedContentId).then((c) => setReviewTitle(c.title)).catch(() => {})
+  }, [selectedContentId])
+
+  const toggleWebsearch = async () => {
+    setPolicyBusy(true)
+    try { const p = await metadataApi.patchEnrichPolicy({ use_websearch: !useWebsearch }); setUseWebsearch(p.use_websearch) }
+    catch { /* ignore */ } finally { setPolicyBusy(false) }
+  }
 
   const fetchStaging = useCallback(async () => {
     setLoading(true)
@@ -1389,6 +1360,30 @@ function TestReviewPanel({ onRefresh, selectedContentId: _sel }: { onRefresh: ()
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
+      {/* WebSearch — 검수 단계에서 추가 보완 검색 */}
+      <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50/40 dark:bg-violet-900/10 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide">WebSearch — 추가 보완 검색</p>
+          <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+            <span className="text-[10px] text-muted-foreground">WebSearch 정책</span>
+            <button onClick={() => void toggleWebsearch()} disabled={policyBusy}
+              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${useWebsearch ? "bg-violet-600" : "bg-slate-300 dark:bg-slate-600"}`}>
+              <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${useWebsearch ? "translate-x-3.5" : "translate-x-0.5"}`} />
+            </button>
+            <span className={`text-[10px] font-medium ${useWebsearch ? "text-violet-600" : "text-muted-foreground"}`}>{useWebsearch ? "ON" : "OFF"}</span>
+          </label>
+        </div>
+        {!useWebsearch
+          ? <p className="text-xs text-muted-foreground">WebSearch 정책이 OFF — 위 토글로 활성화 후 검색하세요.</p>
+          : <>
+            <button onClick={() => setShowWebSearch((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${showWebSearch ? "bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/30 dark:border-violet-600 dark:text-violet-400" : "border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 hover:bg-violet-100"}`}>
+              <Search className="h-3 w-3" /> WebSearch {showWebSearch ? "닫기" : "열기"}
+            </button>
+            {showWebSearch && <InlineWebSearch defaultQuery={reviewTitle} />}
+          </>
+        }
+      </div>
       <StageAdvanceBar ids={[...selectedIds]} fromStatus="AI처리" toStatus="검수" onDone={() => { onRefresh(); fetchStaging() }} />
     </div>
   )
@@ -1496,14 +1491,18 @@ export default function PipelineMonitoringPage() {
     if (!ENABLE_TEST) return
     setTestContentsLoading(true)
     try {
-      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", size: 50 })
-      setTestContents(r.items)
+      // CP 무관 전체 조회. 단계 선택 시 해당 bucket 필터, 미선택 시 전체 표시.
+      const r = await metadataApi.listContents({ size: 100 })
+      const filtered = activeStage !== null
+        ? r.items.filter((c) => stageBucket(c) === activeStage)
+        : r.items
+      setTestContents(filtered)
     } catch {
       setTestContents([])
     } finally {
       setTestContentsLoading(false)
     }
-  }, [])
+  }, [activeStage])
 
   const fetchTimeline = useCallback(async (id: number) => {
     setTimelineLoading(true)
@@ -1759,14 +1758,14 @@ export default function PipelineMonitoringPage() {
           <div className="px-5 py-4 border-b border-amber-200 dark:border-amber-800/40 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FlaskConical className="h-4 w-4 text-amber-600" />
-              <h2 className="font-semibold text-amber-800 dark:text-amber-300">Pipeline Test Console</h2>
+              <h2 className="font-semibold text-amber-800 dark:text-amber-300">Pipeline Console</h2>
               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800/40 text-amber-700 dark:text-amber-400 font-medium">
-                DEV ONLY
+                dev
               </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-amber-600 dark:text-amber-500">
-                {testSummary ? `TEST_PIPELINE 총 ${testSummary.total}건` : "데이터 없음 (시드 필요)"}
+                {testSummary && testSummary.total > 0 ? `시드 ${testSummary.total}건` : "시드 없음"}
               </span>
               <button
                 onClick={refreshTestSummary}

@@ -166,6 +166,7 @@ export default function ContentsPage() {
     setLoading(true)
     try {
       const res = await metadataApi.listContents({
+        status: "approved",
         title: f.title || undefined,
         content_type: (f.content_type || undefined) as ContentType | undefined,
         cp_name: f.cp_name || undefined,
