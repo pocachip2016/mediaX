@@ -44,6 +44,13 @@ def create_content(db: Session, data: ContentCreate) -> Content:
     db.add(meta)
     db.commit()
     db.refresh(content)
+
+    # 생성(s1) 자동 ON 시 raw→보완 진행. 생성 자체는 결정적 — AUTO는 다음 단계 진행 기능.
+    from api.programming.metadata.service_bulk import get_stage_auto_policy, get_enrich_policy
+    if get_stage_auto_policy(db)["s1_auto"]:
+        from workers.tasks.metadata import enrich_content_metadata
+        ep = get_enrich_policy(db)
+        enrich_content_metadata.delay(content.id, ep["use_cache_db"], ep["use_websearch"])
     return content
 
 

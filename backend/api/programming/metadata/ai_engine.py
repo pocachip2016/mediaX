@@ -355,6 +355,8 @@ async def process_content_ai(
     db: Session,
     *,
     auto_chain: bool = True,
+    advance_to_review: bool = True,
+    auto_approve: bool = True,
     score_threshold: int = 90,
 ):
     """
@@ -362,12 +364,13 @@ async def process_content_ai(
 
     status 전이:
       enriched → ai  (항상)
-      auto_chain=True 시 score 기반 추가 전이:
-        score ≥ score_threshold → approved
-        score < score_threshold → review
+      auto_chain=True 일 때만 ai 이후 자동 전이 (단계별 게이트, ADR-009):
+        advance_to_review(검수 s3) False → ai 에 머무름
+        advance_to_review True:
+          auto_approve(승인 s4) True & score ≥ threshold → approved
+          그 외 → review
 
     외부 메타 조회 없음 — enrich 단계에서 저장된 ExternalMetaSource 활용.
-    ContentAIResult에 사용된 엔진 기록.
     """
     from api.programming.metadata.models import (
         Content, ContentMetadata, ContentStatus,
@@ -447,8 +450,9 @@ async def process_content_ai(
         processed_at=datetime.utcnow(),
     ))
 
-    if auto_chain:
-        if result.quality_score >= score_threshold:
+    # ai 이후 자동 전이 — 단계별 게이트(advance_to_review=검수 s3, auto_approve=승인 s4)
+    if auto_chain and advance_to_review:
+        if auto_approve and result.quality_score >= score_threshold:
             content.status = ContentStatus.approved
         else:
             content.status = ContentStatus.review

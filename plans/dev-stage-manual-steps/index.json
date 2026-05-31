@@ -1,0 +1,22 @@
+{
+  "project": "mediaX",
+  "phase": "dev-stage-manual-steps",
+  "description": "단계별 수동 테스트 강화 — 각 카드에서 '내부처리'(stage work, 상태 불변)와 '다음단계로'(상태만 1칸 진행)를 분리. 멀티스텝 내부처리(S2 보완=TMDB/KMDB/WebSearch 3소스, S3 AI=registry 5태스크)를 sub-step 단건 실행으로 분해해 각각 테스트 가능. AUTO(advance-out)와 공존. ADR-009.",
+  "status": "in-progress",
+  "decisions": {
+    "decouple": "내부처리(work)와 다음단계 진행(status bump)을 분리. [내부처리 sub-step]은 결과만 기록하고 status 불변, [다음단계로]는 work 없이 status 1칸 진행.",
+    "advance_only": "POST /test/pipeline/advance {ids} — raw→enriched→ai→review→approved→published 순으로 status 1칸 + StageEvent 기록. work 없음.",
+    "enrich_substep": "POST /test/pipeline/enrich-source {content_id, source} — tmdb|kmdb|websearch 단일 소스만 회수. enrich_content를 source 필터 받도록 리팩터. status 불변.",
+    "ai_substep": "POST /test/pipeline/run-ai-task {content_id, task_name} — AI_TASK_REGISTRY 단일 task 실행(translate/short/genre/mood/keywords). 미배선 run_ai_tasks를 단건 실행으로 노출. status 불변. + quality_score 재계산 sub-step.",
+    "ai_engine_switch": "S3 AI처리를 monolithic _generate_metadata_with_engine 대신 AI_TASK_REGISTRY 5태스크로 전환(사용자 결정).",
+    "fe": "각 카드 패널 = [내부처리] 영역(sub-step 버튼들 + 결과 diff) + [다음단계로 →] 버튼. S2 3소스, S3 5태스크. AUTO ON 시 자동 실행 배지."
+  },
+  "steps": [
+    { "step": 0, "name": "adr-009-design", "status": "completed", "summary": "ADR-009 + plan — 내부처리/진행 분리, sub-step 카탈로그(S2 3소스·S3 5태스크), advance-only/enrich-source/run-ai-task 엔드포인트 설계" },
+    { "step": 1, "name": "be-advance-only", "status": "completed", "summary": "POST /test/pipeline/advance — work 없이 status 1칸 진행 + StageEvent(ADVANCED) 기록. raw→enriched→ai→review→approved 체인.", "completed_at": "2026-05-31" },
+    { "step": 2, "name": "be-enrich-source-substep", "status": "completed", "summary": "POST /test/pipeline/enrich-source — TMDB/KMDB 단일 소스 회수, status 불변. enrich_content에 only_sources 파라미터 추가.", "completed_at": "2026-05-31" },
+    { "step": 3, "name": "be-run-ai-task-substep", "status": "completed", "summary": "POST /test/pipeline/run-ai-task + GET /test/pipeline/ai-tasks — registry 단일 AiTask 실행, status 불변. run_single_ai_task runner 함수 추가.", "completed_at": "2026-05-31" },
+    { "step": 4, "name": "fe-stage-panels", "status": "completed", "summary": "StageAdvanceBar(다음단계로) 공유 컴포넌트 + SubStepResultBadge. S1 advance bar, S2 TMDB/KMDB/WebSearch sub-step + advance, S3 5태스크 sub-step + advance, S4 advance. WebSearchHelper S2 통합.", "completed_at": "2026-05-31" },
+    { "step": 5, "name": "verify-e2e", "status": "completed", "summary": "test_stage_manual_steps.py 10 pytest 통과(advance/enrich-source/run-ai-task/only_sources/terminal). verify.sh dev-stage-manual-steps PASS.", "completed_at": "2026-05-31" }
+  ]
+}

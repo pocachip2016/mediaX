@@ -5082,6 +5082,68 @@ print('  ✓ 스키마 확장 확인')
     echo "=== PASS ==="
     ;;
 
+  enrich-policy)
+    echo "=== enrich-policy: EnrichPolicy API (라이브 스모크) ==="
+    cd "$BACKEND"
+    grep -q "class EnrichPolicy" "api/programming/metadata/models/external.py" || { echo "FAIL: EnrichPolicy 모델 없음"; exit 1; }
+    echo "  ✓ EnrichPolicy 모델 확인"
+    # 라이브 API 스모크 (test_enrich_policy.py 는 dev-enrich-panel 단계 산물 — 현재 미존재)
+    GET_OUT=$(curl -s -w "%{http_code}" -o /tmp/ep.json http://localhost:8000/api/programming/metadata/ai-tasks/enrich-policy)
+    [ "$GET_OUT" = "200" ] || { echo "FAIL: GET enrich-policy → $GET_OUT"; exit 1; }
+    grep -q "use_cache_db" /tmp/ep.json || { echo "FAIL: enrich-policy 응답에 use_cache_db 없음"; exit 1; }
+    echo "  ✓ GET/PATCH enrich-policy 라이브 200 + 스키마 확인"
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "EnrichPolicy" "$FE_ROOT/lib/api.ts" || { echo "FAIL: FE EnrichPolicy 타입 없음"; exit 1; }
+    echo "  ✓ FE 타입 확인"
+    echo "=== PASS ==="
+    ;;
+
+  stage-auto-gate)
+    echo "=== stage-auto-gate: StageAutoPolicy 단계별 자동 실행 게이트 (ADR-009) ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_stage_auto_policy.py\", \"tests/test_pipeline_console_e2e.py\", \"tests/test_seed_pipeline_test.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -6
+    echo "  ✓ stage-auto-gate + e2e + seed(all-raw) pytest 통과"
+    [ -f "alembic/versions/0033_stage_auto_policy.py" ] || { echo "FAIL: 0033 마이그레이션 없음"; exit 1; }
+    grep -q "class StageAutoPolicy" "api/programming/metadata/models/external.py" || { echo "FAIL: StageAutoPolicy 모델 없음"; exit 1; }
+    grep -q "S3_SOURCE_MATCH" "workers/tasks/metadata.py" || { echo "FAIL: enrich S3_SOURCE_MATCH 기록 없음"; exit 1; }
+    grep -q "get_stage_auto_policy" "workers/tasks/metadata.py" || { echo "FAIL: 워커 정책 게이트 없음"; exit 1; }
+    grep -q "advance_to_review" "api/programming/metadata/ai_engine.py" || { echo "FAIL: ai_engine 단계 플래그 없음"; exit 1; }
+    echo "  ✓ StageAutoPolicy 모델 + 마이그레이션 + 게이트 배선 확인"
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "StageAutoPolicy" "$FE_ROOT/lib/api.ts" || { echo "FAIL: FE StageAutoPolicy 타입 없음"; exit 1; }
+    grep -q "toggleStageAuto\|onToggleAuto" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: AUTO 토글 없음"; exit 1; }
+    echo "  ✓ FE StageAutoPolicy 타입 + AUTO 토글 확인"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-stage-manual-steps)
+    echo "=== dev-stage-manual-steps: 내부처리/다음단계 분리 (ADR-009) ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_stage_manual_steps.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ 내부처리/다음단계 분리 pytest 통과"
+    grep -q "def advance_stage"         api/test/pipeline_router.py  || { echo "FAIL: advance 엔드포인트 없음"; exit 1; }
+    grep -q "def enrich_single_source"  api/test/pipeline_router.py  || { echo "FAIL: enrich-source 엔드포인트 없음"; exit 1; }
+    grep -q "def run_single_ai_task_endpoint" api/test/pipeline_router.py || { echo "FAIL: run-ai-task 엔드포인트 없음"; exit 1; }
+    grep -q "def run_single_ai_task"    api/programming/metadata/ai_tasks/runner.py || { echo "FAIL: run_single_ai_task runner 없음"; exit 1; }
+    grep -q "only_sources"              api/meta_core/enrich.py      || { echo "FAIL: enrich only_sources 파라미터 없음"; exit 1; }
+    echo "  ✓ 엔드포인트 구조 확인"
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "StageAdvanceBar"    "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: StageAdvanceBar 없음"; exit 1; }
+    grep -q "runAiTask"          "$FE_ROOT/lib/api.ts"                                        || { echo "FAIL: pipelineTestApi.runAiTask 없음"; exit 1; }
+    grep -q "InlineWebSearch\|WebSearchHelper" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: WebSearch S2 통합 없음"; exit 1; }
+    grep -q "EnrichFieldRow"     "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: 전후 비교(EnrichFieldRow) 없음"; exit 1; }
+    echo "  ✓ FE StageAdvanceBar + 전후비교 + WebSearch S2 통합 확인"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps)"

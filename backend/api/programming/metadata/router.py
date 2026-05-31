@@ -41,6 +41,7 @@ import csv
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from shared.database import get_db
@@ -1341,3 +1342,135 @@ def trigger_process_ai(req: BulkActionConsolidatedRequest, db: Session = Depends
         ids_accepted=accepted,
         ids_rejected=rejected,
     )
+
+
+# ── EnrichPolicy (보완 전역 정책) ─────────────────────────────────────────────
+
+class EnrichPolicyOut(BaseModel):
+    use_cache_db: bool
+    confidence_threshold: float
+    use_websearch: bool
+    model_config = {"from_attributes": True}
+
+
+class EnrichPolicyPatch(BaseModel):
+    use_cache_db: Optional[bool] = None
+    confidence_threshold: Optional[float] = None
+    use_websearch: Optional[bool] = None
+
+
+@router.get("/ai-tasks/enrich-policy", response_model=EnrichPolicyOut, summary="보완 전역 정책 조회")
+def get_enrich_policy_route(db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import EnrichPolicy
+    row = db.query(EnrichPolicy).filter(EnrichPolicy.id == 1).first()
+    if not row:
+        return EnrichPolicyOut(use_cache_db=False, confidence_threshold=0.90, use_websearch=False)
+    return row
+
+
+@router.patch("/ai-tasks/enrich-policy", response_model=EnrichPolicyOut, summary="보완 전역 정책 수정")
+def patch_enrich_policy_route(body: EnrichPolicyPatch, db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import EnrichPolicy
+    row = db.query(EnrichPolicy).filter(EnrichPolicy.id == 1).first()
+    if not row:
+        row = EnrichPolicy(id=1)
+        db.add(row)
+    if body.use_cache_db is not None:
+        row.use_cache_db = body.use_cache_db
+    if body.confidence_threshold is not None:
+        if not (0.0 <= body.confidence_threshold <= 1.0):
+            raise HTTPException(status_code=422, detail="confidence_threshold must be 0.0~1.0")
+        row.confidence_threshold = body.confidence_threshold
+    if body.use_websearch is not None:
+        row.use_websearch = body.use_websearch
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ── StageAutoPolicy (단계별 자동 실행 정책) ───────────────────────────────────
+
+class StageAutoPolicyOut(BaseModel):
+    s1_auto: bool; s2_auto: bool; s3_auto: bool
+    s4_auto: bool; s5_auto: bool; s6_auto: bool
+    model_config = {"from_attributes": True}
+
+
+class StageAutoPolicyPatch(BaseModel):
+    s1_auto: Optional[bool] = None; s2_auto: Optional[bool] = None
+    s3_auto: Optional[bool] = None; s4_auto: Optional[bool] = None
+    s5_auto: Optional[bool] = None; s6_auto: Optional[bool] = None
+
+
+@router.get("/ai-tasks/stage-auto-policy", response_model=StageAutoPolicyOut, summary="단계별 자동 실행 정책 조회")
+def get_stage_auto_policy_route(db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import StageAutoPolicy
+    row = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not row:
+        return StageAutoPolicyOut(s1_auto=False, s2_auto=False, s3_auto=False,
+                                  s4_auto=False, s5_auto=False, s6_auto=False)
+    return row
+
+
+@router.patch("/ai-tasks/stage-auto-policy", response_model=StageAutoPolicyOut, summary="단계별 자동 실행 정책 수정")
+def patch_stage_auto_policy_route(body: StageAutoPolicyPatch, db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import StageAutoPolicy
+    row = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not row:
+        row = StageAutoPolicy(id=1)
+        db.add(row)
+    for field in ("s1_auto", "s2_auto", "s3_auto", "s4_auto", "s5_auto", "s6_auto"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(row, field, val)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ── WebSearch 수동 검색 헬퍼 ──────────────────────────────────────────────────
+
+class WebSearchQueryRequest(BaseModel):
+    query: str
+    num: int = 6
+
+
+class WebSearchResultItem(BaseModel):
+    title: str
+    url: str
+    domain: str
+    snippet: str
+    provider: str
+
+
+@router.post("/ai-tasks/websearch-query", response_model=list[WebSearchResultItem],
+             summary="보완 수동 웹검색 헬퍼")
+async def post_websearch_query(body: WebSearchQueryRequest, db: Session = Depends(get_db)):
+    from api.meta_core.web_search import search_with_fallback
+    from api.meta_core.web_search.errors import BulkQuotaError, QuotaExhaustedError
+    from api.programming.metadata.service_bulk import get_enrich_policy
+    import urllib.parse
+
+    policy = get_enrich_policy(db)
+    if not policy["use_websearch"]:
+        raise HTTPException(status_code=403, detail="websearch-disabled: use_websearch 정책이 off 상태입니다")
+
+    query = body.query.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="query is required")
+
+    try:
+        results, provider = await search_with_fallback(query, db, num=body.num)
+    except (BulkQuotaError, QuotaExhaustedError) as e:
+        raise HTTPException(status_code=429, detail=f"quota-exhausted: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"websearch failed: {e}")
+
+    items = []
+    for r in results:
+        domain = getattr(r, "source_domain", None) or urllib.parse.urlparse(r.url).netloc or r.url
+        items.append(WebSearchResultItem(
+            title=r.title or "", url=r.url or "", domain=domain,
+            snippet=r.snippet or "", provider=provider,
+        ))
+    return items

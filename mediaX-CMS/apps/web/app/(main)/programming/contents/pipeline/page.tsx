@@ -10,6 +10,7 @@ import {
   type PipelineTestSeedResult,
   type PipelineTestCleanup,
   type ContentOut,
+  type ContentDetail,
   type ContentTimeline,
   type ContentType,
   type BatchJobOut,
@@ -17,6 +18,10 @@ import {
   type AiTaskSetting,
   type ContentAIResult,
   type PipelineEventLog,
+  type StageAutoPolicy,
+  type RecommendationsOut,
+  type FieldRecommendation,
+  type EnrichPolicy,
 } from "@/lib/api"
 import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
 
@@ -481,6 +486,127 @@ function ContentPipelineTimeline({
   )
 }
 
+// ── 공유 컴포넌트 ────────────────────────────────────────────────────────────
+
+function InlineWebSearch({ defaultQuery = "" }: { defaultQuery?: string }) {
+  const [query, setQuery] = useState(defaultQuery)
+  const [results, setResults] = useState<{ title: string; url: string; domain: string; snippet: string }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const handleSearch = async () => {
+    if (!query.trim()) return
+    setLoading(true); setError(null)
+    try {
+      const data = await metadataApi.websearchQuery(query.trim())
+      setResults(data)
+    } catch (e) { setError(e instanceof Error ? e.message : "검색 실패"); setResults([]) }
+    finally { setLoading(false) }
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-1.5">
+        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void handleSearch() }}
+          placeholder="검색어 입력" className="flex-1 text-xs px-2.5 py-1.5 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
+        <button onClick={() => void handleSearch()} disabled={loading || !query.trim()}
+          className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0">
+          {loading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />} 검색
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {results.length > 0 && (
+        <div className="border border-border rounded-lg overflow-hidden divide-y divide-border">
+          {results.map((r, i) => (
+            <a key={i} href={r.url} target="_blank" rel="noopener noreferrer"
+              className="flex items-start gap-2 px-3 py-2 hover:bg-accent transition-colors group">
+              <div className="flex-1 min-w-0 space-y-0.5">
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-medium text-primary truncate">{r.title}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground line-clamp-2">{r.snippet}</p>
+                <p className="text-[10px] text-slate-400">{r.domain}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+      <p className="text-[10px] text-muted-foreground">결과 클릭 시 새 탭에서 원문 확인 후 수동 입력.</p>
+    </div>
+  )
+}
+
+function StageAdvanceBar({ ids, fromStatus, toStatus, onDone, disabled }: {
+  ids: number[]; fromStatus: string; toStatus: string; onDone: () => void; disabled?: boolean
+}) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+  const handleAdvance = async () => {
+    if (!ids.length) return
+    setBusy(true); setResult(null)
+    try {
+      const r = await pipelineTestApi.advance(ids)
+      setResult(`✓ ${r.advanced}건 ${fromStatus}→${toStatus}`)
+      onDone()
+    } catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "advance 실패"}`) }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="mt-4 pt-4 border-t border-border space-y-1.5">
+      <div className="flex items-center gap-2">
+        <button onClick={handleAdvance} disabled={busy || disabled || !ids.length}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium disabled:opacity-50 transition-colors">
+          {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <span>→</span>}
+          다음단계로 ({ids.length}건) · {fromStatus} → {toStatus}
+        </button>
+        {result && <span className={`text-xs ${result.startsWith("✓") ? "text-emerald-600" : "text-red-600"}`}>{result}</span>}
+      </div>
+      <p className="text-[10px] text-muted-foreground">내부처리 없이 status만 1칸 진행.</p>
+    </div>
+  )
+}
+
+const ENRICH_FIELD_LABELS: Record<string, string> = {
+  synopsis: "줄거리", poster: "포스터", cast: "출연", director: "감독",
+  primary_genre: "장르", genres: "장르", runtime: "러닝타임", country: "국가",
+  external_id: "외부ID", production_year: "제작연도",
+}
+
+function EnrichFieldRow({ field, rec, contentId, applied, onApplied }: {
+  field: string; rec: FieldRecommendation | null; contentId: number; applied: boolean; onApplied: (field: string) => void
+}) {
+  const label = ENRICH_FIELD_LABELS[field] ?? field
+  const best = rec?.recommendations?.[0] ?? null
+  const [busy, setBusy] = useState(false)
+  const handleApply = async () => {
+    if (!best) return
+    setBusy(true)
+    try { await metadataApi.applyExternalFields(contentId, best.source_id, [field]); onApplied(field) }
+    catch (e) { console.error("apply field failed", e) }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="grid grid-cols-[4.5rem_1fr_1fr_3.5rem] items-stretch border-b border-border last:border-0 text-xs">
+      <div className="flex items-center px-2 py-2 text-muted-foreground">{label}</div>
+      <div className="px-2 py-2 text-muted-foreground/70 border-l border-border">(없음)</div>
+      <div className="px-2 py-2 border-l border-border">
+        {best ? (
+          <div><span className="text-foreground line-clamp-2">{best.value}</span>
+          <span className="ml-1 text-[10px] text-blue-500 uppercase">{best.source_type}</span></div>
+        ) : <span className="text-red-500 dark:text-red-400">✗ 여전히 필요 → WebSearch</span>}
+      </div>
+      <div className="flex items-center justify-center border-l border-border">
+        {best && (applied
+          ? <span className="text-[10px] text-emerald-600 font-medium">✓</span>
+          : <button onClick={() => void handleApply()} disabled={busy}
+              className="text-[10px] px-1.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50">
+              {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : "적용"}
+            </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AddContentInlinePanel({ onRefresh }: { onRefresh: () => void }) {
   const [form, setForm] = useState({ title: "", content_type: "movie" as ContentType, production_year: "" })
   const [submitting, setSubmitting] = useState(false)
@@ -679,153 +805,183 @@ const CREATION_TABS = [
   { key: "bulk", label: "📤 대량(CSV)" },
 ] as const
 
-function CreationTabsPanel({
-  summary,
-  onRefresh,
-}: {
-  summary: PipelineTestStageSummary | null
-  onRefresh: () => void
+function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel }: {
+  summary: PipelineTestStageSummary | null; onRefresh: () => void; selectedContentId: number | null
 }) {
   const [activeTab, setActiveTab] = useState<"seed" | "single" | "bulk">("seed")
+  const [rawIds, setRawIds] = useState<number[]>([])
+  useEffect(() => {
+    metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "raw", size: 100 })
+      .then((r) => setRawIds(r.items.map((c) => c.id))).catch(() => {})
+  }, [summary])
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">① 생성 — waiting로 투입</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">시드 · 건별 · 대량(CSV) 입력으로 waiting 상태 콘텐츠 생성</p>
+        <h3 className="text-sm font-semibold">① 생성 — raw 콘텐츠 투입</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">시드·건별·CSV → raw 상태. 내부처리 없음(결정적).</p>
       </div>
-      {/* 탭 바 */}
       <div className="flex gap-4 border-b border-amber-200 dark:border-amber-800/40">
         {CREATION_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === tab.key
-                ? "border-amber-500 text-amber-600 dark:text-amber-400"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
+          <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)}
+            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${activeTab === tab.key ? "border-amber-500 text-amber-600 dark:text-amber-400" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             {tab.label}
           </button>
         ))}
       </div>
-      {/* 탭 본문 */}
       {activeTab === "seed" && <SampleSeedPanel summary={summary} onRefresh={onRefresh} />}
       {activeTab === "single" && <AddContentInlinePanel onRefresh={onRefresh} />}
       {activeTab === "bulk" && <BulkUploadEmbed onRefresh={onRefresh} />}
+      <StageAdvanceBar ids={rawIds} fromStatus="raw" toStatus="enriched" onDone={onRefresh} />
     </div>
   )
 }
 
-function BatchRecallTrigger({ onRefresh }: { onRefresh: () => void }) {
-  const [items, setItems] = useState<ContentOut[]>([])
+function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
+  const [title, setTitle] = useState("")
+  const [recs, setRecs] = useState<RecommendationsOut | null>(null)
   const [loading, setLoading] = useState(false)
-  const [triggering, setTriggering] = useState(false)
-  const [result, setResult] = useState<BulkActionResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [subBusy, setSubBusy] = useState<Record<string, boolean>>({})
+  const [lastRun, setLastRun] = useState<string | null>(null)
+  const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
+  const [showWebSearch, setShowWebSearch] = useState(false)
+  const [useWebsearch, setUseWebsearch] = useState(false)
+  const [policyBusy, setPolicyBusy] = useState(false)
 
-  const fetchRaw = useCallback(async () => {
+  useEffect(() => { metadataApi.getEnrichPolicy().then((p) => setUseWebsearch(p.use_websearch)).catch(() => {}) }, [])
+
+  const toggleWebsearch = async () => {
+    setPolicyBusy(true)
+    try { const p = await metadataApi.patchEnrichPolicy({ use_websearch: !useWebsearch }); setUseWebsearch(p.use_websearch) }
+    catch { /* ignore */ } finally { setPolicyBusy(false) }
+  }
+
+  const fetchRecs = useCallback(async () => {
+    if (!selectedContentId) { setRecs(null); setTitle(""); return }
     setLoading(true)
     try {
-      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "raw", size: 50 })
-      setItems(r.items)
-    } catch { setItems([]) } finally { setLoading(false) }
-  }, [])
+      const [c, r] = await Promise.all([metadataApi.getContent(selectedContentId), metadataApi.getRecommendations(selectedContentId)])
+      setTitle(c.title); setRecs(r)
+    } catch { setRecs(null) } finally { setLoading(false) }
+  }, [selectedContentId])
 
-  useEffect(() => { fetchRaw() }, [fetchRaw])
+  useEffect(() => { setShowWebSearch(false); setLastRun(null); setAppliedFields(new Set()); fetchRecs() }, [fetchRecs])
 
-  const handleTrigger = async () => {
-    if (!items.length) return
-    setTriggering(true)
-    setResult(null)
-    setError(null)
+  const runSource = async (source: "tmdb" | "kmdb") => {
+    if (!selectedContentId) return
+    setSubBusy((b) => ({ ...b, [source]: true }))
     try {
-      const r = await metadataApi.bulkProcess({ ids: items.map((c) => c.id) })
-      setResult(r)
-      onRefresh()
-      fetchRaw()
-    } catch (e) { setError(e instanceof Error ? e.message : "처리 실패") }
-    finally { setTriggering(false) }
+      const r = await pipelineTestApi.enrichSource(selectedContentId, source)
+      setLastRun(`${source.toUpperCase()}: candidates ${r.candidates_upserted}`)
+      await fetchRecs()
+    } catch (e) { setLastRun(`${source}: ${e instanceof Error ? e.message : "오류"}`) }
+    finally { setSubBusy((b) => ({ ...b, [source]: false })) }
+  }
+
+  const recByField = (f: string): FieldRecommendation | null => {
+    if (!recs) return null
+    return [...recs.auto_fill, ...recs.conflicts].find((x) => x.field === f) ?? null
+  }
+  const allFields = recs ? Array.from(new Set([...recs.missing_fields, ...recs.auto_fill.map((r) => r.field), ...recs.conflicts.map((r) => r.field)])) : []
+  const remaining = recs ? recs.missing_fields.filter((f) => !recByField(f)) : []
+
+  if (!selectedContentId) {
+    return (
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold">② 보완 — 외부 소스 보완</h3>
+        <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+          좌측 목록에서 콘텐츠를 선택하면 보완 필요 필드와 단계별 보완을 진행할 수 있습니다.
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">② 회수 — 외부 소스 회수 (Enrich + WebSearch)</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">TEST_PIPELINE 생성완료(raw) 항목 → TMDB/KOBIS/WebSearch 회수 큐잉 · /bulk/process</p>
+        <h3 className="text-sm font-semibold">② 보완 — 외부 소스 보완</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">선택: <span className="font-medium text-foreground">#{selectedContentId} {title}</span>{loading && <RefreshCw className="inline h-3 w-3 ml-1 animate-spin opacity-50" />}</p>
       </div>
-
-      {loading ? (
-        <div className="text-center py-4 text-xs text-muted-foreground">
-          <RefreshCw className="h-4 w-4 mx-auto mb-1 animate-spin opacity-50" />로딩 중…
-        </div>
-      ) : items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-          생성완료(raw) 상태 TEST_PIPELINE 항목 없음
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">생성완료 항목</span>
-            <span className="text-xs text-muted-foreground">{items.length}건</span>
-          </div>
-          <div className="divide-y divide-border max-h-48 overflow-y-auto">
-            {items.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 px-3 py-2">
-                <span className="text-xs text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
-                <span className="text-xs font-medium truncate flex-1">{c.title}</span>
-                <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
-      )}
-      {result && (
-        <div className="rounded-lg border border-blue-200 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/10 px-3 py-2.5">
-          <div className="text-sm font-medium text-blue-700 dark:text-blue-400">✓ 회수 큐잉 완료</div>
-          <div className="text-xs text-blue-600 dark:text-blue-500 mt-1">
-            수락 {result.ids_accepted}건 · 거부 {result.ids_rejected}건 · job: {result.job_id}
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleTrigger}
-          disabled={triggering || !items.length}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
-        >
-          {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
-          회수 트리거 ({items.length}건)
-        </button>
-        <button
-          onClick={fetchRaw}
-          disabled={loading}
-          className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-        </button>
+      {/* 보완 필요 필드 */}
+      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">보완 필요 필드</p>
+        {recs && recs.missing_fields.length === 0
+          ? <p className="text-xs text-emerald-600">✓ 보완 필요 필드 없음</p>
+          : <div className="flex flex-wrap gap-1.5">{recs?.missing_fields.map((f) => { const done = !!recByField(f); return <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${done ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>{ENRICH_FIELD_LABELS[f] ?? f} {done ? "✓" : ""}</span> })}</div>
+        }
       </div>
+      {/* STEP A — 캐시 DB */}
+      <div className="rounded-lg border border-blue-200 dark:border-blue-800/40 bg-blue-50/40 dark:bg-blue-900/10 p-3 space-y-2">
+        <p className="text-[11px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">STEP A — 캐시 DB 보완 (status 불변)</p>
+        <div className="flex gap-2 flex-wrap">
+          {(["tmdb", "kmdb"] as const).map((src) => (
+            <button key={src} onClick={() => void runSource(src)} disabled={subBusy[src]}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
+              {subBusy[src] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Database className="h-3 w-3" />}
+              {src.toUpperCase()} 보완
+            </button>
+          ))}
+          {lastRun && <span className="text-[10px] text-blue-600 self-center">{lastRun}</span>}
+        </div>
+        {allFields.length > 0 && (
+          <div className="rounded border border-border bg-background overflow-hidden">
+            <div className="grid grid-cols-[4.5rem_1fr_1fr_3.5rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
+              <div className="px-2 py-1">필드</div>
+              <div className="px-2 py-1 border-l border-border">현재(전)</div>
+              <div className="px-2 py-1 border-l border-border">보완값(후)</div>
+              <div className="px-2 py-1 border-l border-border text-center">적용</div>
+            </div>
+            <div className="max-h-56 overflow-y-auto">
+              {allFields.map((f) => (
+                <EnrichFieldRow key={f} field={f} rec={recByField(f)} contentId={selectedContentId}
+                  applied={appliedFields.has(f)}
+                  onApplied={(field) => { setAppliedFields((s) => new Set(s).add(field)); void fetchRecs() }} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {/* STEP B — WebSearch */}
+      <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50/40 dark:bg-violet-900/10 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide">STEP B — WebSearch (A 이후 남은 필드)</p>
+          <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+            <span className="text-[10px] text-muted-foreground">WebSearch 정책</span>
+            <button onClick={() => void toggleWebsearch()} disabled={policyBusy}
+              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${useWebsearch ? "bg-violet-600" : "bg-slate-300 dark:bg-slate-600"}`}>
+              <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${useWebsearch ? "translate-x-3.5" : "translate-x-0.5"}`} />
+            </button>
+            <span className={`text-[10px] font-medium ${useWebsearch ? "text-violet-600" : "text-muted-foreground"}`}>{useWebsearch ? "ON" : "OFF"}</span>
+          </label>
+        </div>
+        {remaining.length === 0 ? <p className="text-xs text-muted-foreground">캐시 보완으로 충분 — 남은 필드 없음</p>
+          : !useWebsearch ? <p className="text-xs text-muted-foreground">WebSearch 정책이 OFF — 위 토글로 활성화 후 검색하세요.</p>
+          : <>
+            <p className="text-xs text-muted-foreground">남은 보완 필요: {remaining.map((f) => ENRICH_FIELD_LABELS[f] ?? f).join(", ")}</p>
+            <button onClick={() => setShowWebSearch((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${showWebSearch ? "bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/30 dark:border-violet-600 dark:text-violet-400" : "border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 hover:bg-violet-100"}`}>
+              <Search className="h-3 w-3" /> WebSearch {showWebSearch ? "닫기" : "열기"}
+            </button>
+            {showWebSearch && (
+              <InlineWebSearch defaultQuery={title ? `${title} ${remaining.map((f) => ENRICH_FIELD_LABELS[f] ?? f).join(" ")}` : ""} />
+            )}
+          </>
+        }
+      </div>
+      <StageAdvanceBar ids={[selectedContentId]} fromStatus="raw" toStatus="enriched" onDone={() => { onRefresh(); fetchRecs() }} />
     </div>
   )
 }
 
+const TASK_LABELS: Record<string, string> = { translate_synopsis: "번역", short_synopsis: "짧은요약", genre_normalized: "장르", mood_tags: "무드", keywords: "키워드" }
+const TASK_NAMES = ["translate_synopsis", "short_synopsis", "genre_normalized", "mood_tags", "keywords"]
+
 function AiProcessPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
   const [items, setItems] = useState<ContentOut[]>([])
   const [loading, setLoading] = useState(false)
-  const [triggering, setTriggering] = useState(false)
-  const [result, setResult] = useState<BulkActionResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
+  const [taskBusy, setTaskBusy] = useState<Record<string, boolean>>({})
+  const [taskResults, setTaskResults] = useState<Record<string, import("@/lib/api").AiTaskResponse>>({})
+  const [bulkResult, setBulkResult] = useState<BulkActionResponse | null>(null)
   const [settings, setSettings] = useState<AiTaskSetting[]>([])
-  const [settingsLoading, setSettingsLoading] = useState(false)
-  const [aiResults, setAiResults] = useState<ContentAIResult[]>([])
-  const [resultsLoading, setResultsLoading] = useState(false)
 
   const fetchEnriched = useCallback(async () => {
     setLoading(true)
@@ -835,181 +991,96 @@ function AiProcessPanel({ onRefresh, selectedContentId }: { onRefresh: () => voi
     } catch { setItems([]) } finally { setLoading(false) }
   }, [])
 
-  const fetchSettings = useCallback(async () => {
-    setSettingsLoading(true)
-    try {
-      const s = await metadataApi.getAiTaskSettings()
-      setSettings(s)
-    } catch { setSettings([]) } finally { setSettingsLoading(false) }
-  }, [])
+  useEffect(() => {
+    fetchEnriched()
+    metadataApi.getAiTaskSettings().then(setSettings).catch(() => {})
+  }, [fetchEnriched])
 
-  const fetchAiResults = useCallback(async () => {
-    if (!selectedContentId) { setAiResults([]); return }
-    setResultsLoading(true)
-    try {
-      const r = await metadataApi.getAiResults(selectedContentId)
-      setAiResults(r)
-    } catch { setAiResults([]) } finally { setResultsLoading(false) }
-  }, [selectedContentId])
+  useEffect(() => { setTaskResults({}) }, [selectedContentId])
 
-  useEffect(() => { fetchEnriched(); fetchSettings() }, [fetchEnriched, fetchSettings])
-  useEffect(() => { fetchAiResults() }, [fetchAiResults])
+  const runTask = async (taskName: string) => {
+    if (!selectedContentId) return
+    setTaskBusy((b) => ({ ...b, [taskName]: true }))
+    try { const r = await pipelineTestApi.runAiTask(selectedContentId, taskName); setTaskResults((prev) => ({ ...prev, [taskName]: r })) }
+    catch (e) { console.error(e) }
+    finally { setTaskBusy((b) => ({ ...b, [taskName]: false })) }
+  }
+
+  const handleBulkAi = async () => {
+    if (!items.length) return
+    try { const r = await metadataApi.bulkProcessAi({ ids: items.map((c) => c.id) }); setBulkResult(r); onRefresh() }
+    catch { /* ignore */ }
+  }
 
   const handleToggleSetting = async (taskName: string, enabled: boolean) => {
-    try {
-      await metadataApi.patchAiTaskSetting(taskName, !enabled)
-      await fetchSettings()
-    } catch (e) { console.error(e) }
-  }
-
-  const handleTrigger = async () => {
-    if (!items.length) return
-    setTriggering(true)
-    setResult(null)
-    setError(null)
-    try {
-      const r = await metadataApi.bulkProcessAi({ ids: items.map((c) => c.id) })
-      setResult(r)
-      onRefresh()
-      fetchEnriched()
-    } catch (e) { setError(e instanceof Error ? e.message : "처리 실패") }
-    finally { setTriggering(false) }
-  }
-
-  const formatResultValue = (value: unknown): string => {
-    if (value === null || value === undefined) return "—"
-    if (typeof value === "string") return value.slice(0, 60)
-    if (typeof value === "number") return value.toFixed(2)
-    if (Array.isArray(value)) return `[${value.slice(0, 3).join(", ")}${value.length > 3 ? ", ..." : ""}]`
-    return "—"
+    try { await metadataApi.patchAiTaskSetting(taskName, !enabled); const s = await metadataApi.getAiTaskSettings(); setSettings(s) } catch { /* ignore */ }
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">③ AI처리 — Task 설정 & 처리</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">enriched → ai (LLM 번역·요약·분류·태깅) + 처리 결과 확인</p>
+        <h3 className="text-sm font-semibold">③ AI처리 — LLM 태스크</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">내부처리: registry 5태스크 단건 실행 (status 불변) · 벌크 AI 처리</p>
       </div>
-
-      {/* AI Task 토글 */}
-      {settingsLoading ? (
-        <div className="text-center py-2 text-xs text-muted-foreground">
-          <RefreshCw className="h-3 w-3 mx-auto animate-spin opacity-50 inline mr-1" />로딩 중…
-        </div>
-      ) : settings.length > 0 ? (
-        <div className="rounded-lg border border-border bg-background p-3 space-y-2">
-          <div className="text-xs font-semibold text-muted-foreground mb-2">AI Task 활성화</div>
-          <div className="flex flex-wrap gap-2">
+      <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50/40 dark:bg-violet-900/10 p-3 space-y-2">
+        <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide">내부처리 (status 불변)</p>
+        {settings.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
             {settings.map((s) => (
-              <button
-                key={s.task_name}
-                onClick={() => handleToggleSetting(s.task_name, s.enabled)}
-                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                  s.enabled
-                    ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-900/50"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                {s.task_name === "translate_synopsis" ? "번역" : s.task_name === "short_synopsis" ? "요약" : s.task_name === "genre_normalized" ? "장르" : s.task_name === "mood_tags" ? "무드" : "키워드"}
+              <button key={s.task_name} onClick={() => handleToggleSetting(s.task_name, s.enabled)}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${s.enabled ? "bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/30 dark:border-violet-600 dark:text-violet-400" : "bg-muted border-border text-muted-foreground"}`}>
+                {TASK_LABELS[s.task_name] ?? s.task_name} {s.enabled ? "ON" : "OFF"}
               </button>
             ))}
           </div>
-        </div>
-      ) : null}
-
-      {/* 선택 콘텐츠 AI 결과 */}
-      {selectedContentId && (
-        <div className="rounded-lg border border-border bg-background p-3">
-          <div className="text-xs font-semibold text-muted-foreground mb-2">AI 처리 결과 (선택 콘텐츠 #{selectedContentId})</div>
-          {resultsLoading ? (
-            <div className="text-center py-2 text-xs text-muted-foreground">
-              <RefreshCw className="h-3 w-3 mx-auto animate-spin opacity-50 inline mr-1" />로딩 중…
-            </div>
-          ) : aiResults.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center py-2">처리 결과 없음</div>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {aiResults.map((r) => (
-                <div key={r.id} className="text-xs border-t border-border pt-2">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="font-medium text-foreground">{r.task_type}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${r.is_final ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"}`}>
-                      {r.is_final ? "최종" : "임시"}
-                    </span>
-                  </div>
-                  <div className="text-muted-foreground mt-1 grid grid-cols-2 gap-2">
-                    {r.result_json && Object.entries(r.result_json).slice(0, 4).map(([k, v]) => (
-                      <div key={k} className="text-[10px]">
-                        <span className="font-medium">{k}:</span> {formatResultValue(v)}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="text-muted-foreground mt-1 text-[10px]">
-                    {r.engine} · {new Date(r.processed_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
-                  </div>
+        )}
+        {!selectedContentId
+          ? <p className="text-xs text-muted-foreground">좌측 목록에서 콘텐츠를 선택하면 태스크 단건 실행 가능</p>
+          : <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">선택: #{selectedContentId}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {TASK_NAMES.map((t) => (
+                  <button key={t} onClick={() => void runTask(t)} disabled={taskBusy[t]}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
+                    {taskBusy[t] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                    {TASK_LABELS[t] ?? t}
+                  </button>
+                ))}
+              </div>
+              {Object.entries(taskResults).map(([t, r]) => (
+                <div key={t} className={`text-[10px] px-2 py-1 rounded border ${r.status === "ok" ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800/40 dark:text-green-400" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
+                  <span className="font-semibold">{r.status}</span>{r.engine && <span className="ml-1 opacity-70">· {r.engine}</span>}
+                  {r.result_preview && <div className="mt-0.5 opacity-80 line-clamp-2">{r.result_preview}</div>}
                 </div>
               ))}
             </div>
-          )}
+        }
+        <div className="pt-1 flex items-center gap-2 border-t border-violet-200/50 dark:border-violet-800/30">
+          <button onClick={handleBulkAi} disabled={!items.length}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-400 text-xs font-medium hover:bg-violet-100 dark:hover:bg-violet-900/30 disabled:opacity-50 transition-colors">
+            <Zap className="h-3 w-3" /> 벌크 AI 처리 ({items.length}건)
+          </button>
+          <button onClick={fetchEnriched} disabled={loading} className="p-1.5 rounded border border-border hover:bg-accent">
+            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+          </button>
+          {bulkResult && <span className="text-xs text-violet-600">✓ {bulkResult.ids_accepted}건 큐잉</span>}
         </div>
-      )}
-
-      {/* enriched 콘텐츠 목록 */}
-      {loading ? (
-        <div className="text-center py-4 text-xs text-muted-foreground">
-          <RefreshCw className="h-4 w-4 mx-auto mb-1 animate-spin opacity-50" />로딩 중…
-        </div>
-      ) : items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-          회수완료(enriched) 상태 TEST_PIPELINE 항목 없음
-        </div>
-      ) : (
+      </div>
+      {!loading && items.length > 0 && (
         <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">회수완료 항목</span>
+          <div className="px-3 py-1.5 bg-muted/40 flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">보완완료(enriched) 항목</span>
             <span className="text-xs text-muted-foreground">{items.length}건</span>
           </div>
-          <div className="divide-y divide-border max-h-48 overflow-y-auto">
-            {items.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 px-3 py-2">
-                <span className="text-xs text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
-                <span className="text-xs font-medium truncate flex-1">{c.title}</span>
-                <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
-              </div>
-            ))}
+          <div className="divide-y divide-border max-h-32 overflow-y-auto">
+            {items.map((c) => <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
+              <span className="text-xs font-medium truncate flex-1">{c.title}</span>
+              <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
+            </div>)}
           </div>
         </div>
       )}
-
-      {error && (
-        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
-      )}
-      {result && (
-        <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50 dark:bg-violet-900/10 px-3 py-2.5">
-          <div className="text-sm font-medium text-violet-700 dark:text-violet-400">✓ AI처리 큐잉 완료</div>
-          <div className="text-xs text-violet-600 dark:text-violet-500 mt-1">
-            수락 {result.ids_accepted}건 · 거부 {result.ids_rejected}건 · job: {result.job_id}
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleTrigger}
-          disabled={triggering || !items.length}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
-        >
-          {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-          AI처리 트리거 ({items.length}건)
-        </button>
-        <button
-          onClick={fetchEnriched}
-          disabled={loading}
-          className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-        </button>
-      </div>
+      <StageAdvanceBar ids={items.map((c) => c.id)} fromStatus="enriched" toStatus="ai" onDone={() => { onRefresh(); fetchEnriched() }} />
     </div>
   )
 }
@@ -1072,7 +1143,7 @@ function ProgressLog({ contentId }: { contentId: number | null }) {
   )
 }
 
-function TestReviewPanel({ onRefresh }: { onRefresh: () => void }) {
+function TestReviewPanel({ onRefresh, selectedContentId: _sel }: { onRefresh: () => void; selectedContentId: number | null }) {
   const [items, setItems] = useState<ContentOut[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -1211,6 +1282,7 @@ function TestReviewPanel({ onRefresh }: { onRefresh: () => void }) {
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
+      <StageAdvanceBar ids={[...selectedIds]} fromStatus="ai" toStatus="review" onDone={() => { onRefresh(); fetchStaging() }} />
     </div>
   )
 }
@@ -1224,23 +1296,24 @@ function StatusDot({ status }: { status: "ok" | "warning" | "error" }) {
 }
 
 function PipelineStageCard({
-  stage, name, count, colorClass, active, onClick,
+  stage, name, count, colorClass, active, onClick, autoOn, onToggleAuto, autoBusy,
 }: {
   stage: number; name: string; count: number; colorClass: string; active: boolean; onClick: () => void
+  autoOn: boolean; onToggleAuto: () => void; autoBusy: boolean
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`flex-1 min-w-[80px] rounded-xl border-2 p-3 text-center transition-all ${
-        active ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-accent"
-      }`}
-    >
-      <div className={`text-xs font-bold text-white ${colorClass} rounded px-1.5 py-0.5 inline-block mb-1.5`}>
-        S{stage}
-      </div>
+    <div onClick={onClick} role="button" tabIndex={0}
+      className={`flex-1 min-w-[88px] cursor-pointer rounded-xl border-2 p-3 text-center transition-all ${active ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-accent"}`}>
+      <div className={`text-xs font-bold text-white ${colorClass} rounded px-1.5 py-0.5 inline-block mb-1.5`}>S{stage}</div>
       <div className="text-xs font-medium text-foreground">{name}</div>
       <div className="text-xl font-bold mt-0.5">{count}</div>
-    </button>
+      <span role="switch" aria-checked={autoOn}
+        onClick={(e) => { e.stopPropagation(); if (!autoBusy) onToggleAuto() }}
+        className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${autoOn ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"} ${autoBusy ? "opacity-50" : ""}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${autoOn ? "bg-green-500" : "bg-slate-400"}`} />
+        AUTO {autoOn ? "ON" : "OFF"}
+      </span>
+    </div>
   )
 }
 
@@ -1279,6 +1352,18 @@ export default function PipelineMonitoringPage() {
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const [contentTimeline, setContentTimeline] = useState<ContentTimeline | null>(null)
   const [timelineLoading, setTimelineLoading] = useState(false)
+
+  const [stageAuto, setStageAuto] = useState<StageAutoPolicy>({ s1_auto: false, s2_auto: false, s3_auto: false, s4_auto: false, s5_auto: false, s6_auto: false })
+  const [stageAutoBusy, setStageAutoBusy] = useState(false)
+
+  useEffect(() => { metadataApi.getStageAutoPolicy().then(setStageAuto).catch(() => {}) }, [])
+
+  const toggleStageAuto = useCallback(async (stage: number, next: boolean) => {
+    const key = `s${stage}_auto` as keyof StageAutoPolicy
+    setStageAutoBusy(true)
+    try { const updated = await metadataApi.patchStageAutoPolicy({ [key]: next }); setStageAuto(updated) }
+    catch { /* ignore */ } finally { setStageAutoBusy(false) }
+  }, [])
 
   const fetchPipeline = useCallback(async () => {
     setLoading(true)
@@ -1598,38 +1683,16 @@ export default function PipelineMonitoringPage() {
                   colorClass={s.colorClass}
                   active={activeStage === s.stage}
                   onClick={() => setActiveStage(activeStage === s.stage ? null : s.stage)}
+                  autoOn={stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy]}
+                  onToggleAuto={() => toggleStageAuto(s.stage, !stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy])}
+                  autoBusy={stageAutoBusy}
                 />
               ))}
             </div>
 
-            {/* 좌3/우2 그리드 */}
+            {/* 좌(목록) / 우(선택 콘텐츠 작업) 마스터-디테일 */}
             <div className="grid grid-cols-5 gap-4 items-start">
-              {/* 좌측 — ActiveStagePanel */}
-              <div className="col-span-3">
-                {activeStage !== null ? (
-                  <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
-                    {activeStage === 1 ? (
-                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} />
-                    ) : activeStage === 2 ? (
-                      <BatchRecallTrigger onRefresh={refreshTestSummary} />
-                    ) : activeStage === 3 ? (
-                      <AiProcessPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
-                    ) : activeStage === 4 ? (
-                      <TestReviewPanel onRefresh={refreshTestSummary} />
-                    ) : activeStage === 5 || activeStage === 6 ? (
-                      <div className="text-center text-xs text-muted-foreground py-8">
-                        {activeStage === 5 ? "승인" : "게시"} 단계 패널 준비 중 — 검수 통과 후 자동 전이 현황을 우측 목록·타임라인에서 확인하세요
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-amber-200 dark:border-amber-800/30 p-6 text-center text-xs text-amber-600/60 dark:text-amber-500/60">
-                    스테이지 카드를 클릭해 패널을 열어주세요
-                  </div>
-                )}
-              </div>
-
-              {/* 우측 — TestContentList + Timeline + ProgressLog */}
+              {/* 좌측 — 콘텐츠 목록(master) + 타임라인 */}
               <div className="col-span-2 space-y-3">
                 <TestContentList
                   contents={testContents}
@@ -1642,6 +1705,31 @@ export default function PipelineMonitoringPage() {
                   loading={timelineLoading}
                 />
                 <ProgressLog contentId={selectedContentId} />
+              </div>
+
+              {/* 우측 — 선택 콘텐츠 단계 작업 패널(detail) */}
+              <div className="col-span-3">
+                {activeStage !== null ? (
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
+                    {activeStage === 1 ? (
+                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                    ) : activeStage === 2 ? (
+                      <BatchRecallTrigger onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                    ) : activeStage === 3 ? (
+                      <AiProcessPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                    ) : activeStage === 4 ? (
+                      <TestReviewPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                    ) : activeStage === 5 || activeStage === 6 ? (
+                      <div className="text-center text-xs text-muted-foreground py-8">
+                        {activeStage === 5 ? "승인" : "게시"} 단계 패널 준비 중
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-amber-200 dark:border-amber-800/30 p-6 text-center text-xs text-amber-600/60 dark:text-amber-500/60">
+                    스테이지 카드를 클릭해 패널을 열어주세요
+                  </div>
+                )}
               </div>
             </div>
           </div>
