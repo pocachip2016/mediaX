@@ -54,6 +54,7 @@ export interface MetadataOut {
   cp_genre: string | null
   cp_tags: string[] | null
   ai_synopsis: string | null
+  short_synopsis: string | null
   ai_genre_primary: string | null
   ai_genre_secondary: string | null
   ai_mood_tags: string[] | null

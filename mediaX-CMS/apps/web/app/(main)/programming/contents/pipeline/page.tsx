@@ -629,7 +629,8 @@ function EnrichFieldRow({ field, rec, contentId, currentValue, applied, onApplie
   field: string; rec: FieldRecommendation | null; contentId: number; currentValue: string | null; applied: boolean; onApplied: (field: string) => void
 }) {
   const label = ENRICH_FIELD_LABELS[field] ?? field
-  const best = rec?.recommendations?.[0] ?? null
+  const recs = rec?.recommendations ?? []
+  const best = recs[0] ?? null
   const alreadyCurrent = !!(best && currentValue && best.value.trim() === currentValue.trim())
   const [busy, setBusy] = useState(false)
 
@@ -641,29 +642,43 @@ function EnrichFieldRow({ field, rec, contentId, currentValue, applied, onApplie
     finally { setBusy(false) }
   }
 
+  // 소스별로 그룹화: 같은 값이면 배지만 추가, 다른 값이면 별도 줄
+  const grouped: { value: string; sources: string[] }[] = []
+  for (const r of recs) {
+    const existing = grouped.find((g) => g.value.trim().toLowerCase() === r.value.trim().toLowerCase())
+    if (existing) existing.sources.push(r.source_type.toUpperCase())
+    else grouped.push({ value: r.value, sources: [r.source_type.toUpperCase()] })
+  }
+
+  const sourceColor = (src: string) =>
+    src === "TMDB" ? "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300"
+    : src === "KMDB" ? "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300"
+    : "bg-muted text-muted-foreground"
+
   return (
-    <div className="grid grid-cols-[4.5rem_1fr_1fr_3.5rem] items-stretch border-b border-border last:border-0 text-xs">
-      <div className="flex items-center px-2 py-2 text-muted-foreground">{label}</div>
-      <div className={`px-2 py-2 border-l border-border ${currentValue ? "text-foreground" : "text-muted-foreground/70"}`}>
-        {currentValue ? <span className="line-clamp-2">{currentValue}</span> : "(없음)"}
+    <div className="grid grid-cols-[4.5rem_1fr_1fr_4rem] items-stretch border-b border-border last:border-0 text-[10px]">
+      <div className="flex items-center px-2 py-1.5 font-medium text-muted-foreground">{label}</div>
+      <div className={`px-2 py-1.5 border-l border-border ${currentValue ? "text-foreground" : "text-muted-foreground/50"}`}>
+        {currentValue ? <span>{currentValue}</span> : "(없음)"}
       </div>
-      {/* 보완값 — 외부 소스에 있는 경우에만 표시 */}
-      <div className="px-2 py-2 border-l border-border">
-        {best ? (
-          <div>
-            <span className="text-foreground line-clamp-2">{best.value}</span>
-            <span className="ml-1 text-[10px] text-blue-500 uppercase">{best.source_type}</span>
+      <div className="px-2 py-1.5 border-l border-border space-y-0.5">
+        {grouped.length > 0 ? grouped.map((g, i) => (
+          <div key={i} className="flex items-baseline gap-1 flex-wrap">
+            <span className="text-foreground">{g.value}</span>
+            {g.sources.map((s) => (
+              <span key={s} className={`text-[9px] font-medium px-1 py-0.5 rounded ${sourceColor(s)}`}>{s}</span>
+            ))}
           </div>
-        ) : (
-          <span className="text-muted-foreground/50">—</span>
+        )) : (
+          <span className="text-muted-foreground/40">—</span>
         )}
       </div>
-      <div className="flex items-center justify-center border-l border-border">
+      <div className="flex items-center justify-center border-l border-border px-1">
         {applied || alreadyCurrent ? (
-          <span className="text-[10px] text-emerald-600 font-medium">✓</span>
+          <span className="text-[9px] font-medium text-emerald-600">✓</span>
         ) : best ? (
           <button onClick={() => void handleApply()} disabled={busy}
-            className="text-[10px] px-1.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50">
+            className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50">
             {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : "적용"}
           </button>
         ) : null}
@@ -1132,11 +1147,18 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
       const freshDetail = await metadataApi.getContent(selectedContentId)
       setDetail(freshDetail)
       setShortSynopsisDone(true)
-      const val = r.result_preview ?? freshDetail.metadata_record?.ai_synopsis ?? null
+      const val = r.result_preview ?? freshDetail.metadata_record?.short_synopsis ?? null
       if (val) {
         setRows((prev) => prev.map((row) =>
           row.field === "synopsis"
-            ? { ...row, currentValue: val, suggestValue: val, suggestSource: "AI" as const, aiSaved: true }
+            ? {
+                ...row,
+                currentValue: currentFieldValue(freshDetail, "synopsis"),
+                suggestValue: val,
+                suggestSource: "AI" as const,
+                aiSaved: false,
+                ragUpdate: { contentField: "synopsis", arg: val },
+              }
             : row
         ))
       }
@@ -1384,10 +1406,10 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
           {lastRun && <span className="text-[10px] text-blue-600 self-center">{lastRun}</span>}
         </div>
         <div className="rounded border border-border bg-background overflow-hidden">
-            <div className="grid grid-cols-[4.5rem_1fr_1fr_3.5rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
+            <div className="grid grid-cols-[4.5rem_1fr_1fr_4rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
               <div className="px-2 py-1">필드</div>
-              <div className="px-2 py-1 border-l border-border">현재(전)</div>
-              <div className="px-2 py-1 border-l border-border">보완값(후)</div>
+              <div className="px-2 py-1 border-l border-border">현재값</div>
+              <div className="px-2 py-1 border-l border-border">보완값(소스)</div>
               <div className="px-2 py-1 border-l border-border text-center">적용</div>
             </div>
             <div>
@@ -1491,6 +1513,200 @@ function ProgressLog({ contentId }: { contentId: number | null }) {
   )
 }
 
+// ── 검수 인라인 필드 편집 테이블 ─────────────────────────────
+
+const REVIEW_EDIT_FIELDS: Array<{
+  field: string
+  label: string
+  contentField: string
+  getValue: (c: ContentDetail) => string
+  numeric?: boolean
+  multiline?: boolean
+}> = [
+  {
+    field: "title",
+    label: "제목",
+    contentField: "title",
+    getValue: (c) => c.title ?? "",
+  },
+  {
+    field: "genres",
+    label: "장르",
+    contentField: "genres",
+    getValue: (c) => c.genres.map((g) => g.genre.name_ko).join(", "),
+  },
+  {
+    field: "cast",
+    label: "출연진",
+    contentField: "cast",
+    getValue: (c) => c.credits.filter((cr) => /actor|cast|주연|출연/i.test(cr.role)).map((cr) => cr.person.name_ko).join(", "),
+  },
+  {
+    field: "directors",
+    label: "감독",
+    contentField: "directors",
+    getValue: (c) => c.credits.filter((cr) => /director|감독|연출/i.test(cr.role)).map((cr) => cr.person.name_ko).join(", "),
+  },
+  {
+    field: "runtime",
+    label: "러닝타임(분)",
+    contentField: "runtime",
+    getValue: (c) => c.runtime_minutes ? String(c.runtime_minutes) : "",
+    numeric: true,
+  },
+  {
+    field: "country",
+    label: "국가",
+    contentField: "country",
+    getValue: (c) => c.country ?? "",
+  },
+  {
+    field: "production_year",
+    label: "제작연도",
+    contentField: "production_year",
+    getValue: (c) => c.production_year ? String(c.production_year) : "",
+    numeric: true,
+  },
+  {
+    field: "rating_age",
+    label: "등급",
+    contentField: "rating_age",
+    getValue: (c) => c.rating_age ?? "",
+  },
+  {
+    field: "synopsis",
+    label: "줄거리",
+    contentField: "synopsis",
+    getValue: (c) => c.metadata_record?.final_synopsis || c.metadata_record?.ai_synopsis || c.metadata_record?.cp_synopsis || "",
+    multiline: true,
+  },
+]
+
+function ReviewFieldTable({ selectedContentId, onApplied }: { selectedContentId: number | null; onApplied?: () => void }) {
+  const [detail, setDetail] = useState<ContentDetail | null>(null)
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState("")
+  const [applying, setApplying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadDetail = useCallback(async () => {
+    if (!selectedContentId) { setDetail(null); return }
+    try { setDetail(await metadataApi.getContent(selectedContentId)) } catch { setDetail(null) }
+  }, [selectedContentId])
+
+  useEffect(() => { setEditingField(null); setError(null); void loadDetail() }, [loadDetail])
+
+  const startEdit = (field: typeof REVIEW_EDIT_FIELDS[number], currentVal: string) => {
+    setEditingField(field.field)
+    setEditValue(currentVal)
+    setError(null)
+  }
+
+  const cancelEdit = () => { setEditingField(null); setError(null) }
+
+  const applyEdit = async () => {
+    if (!selectedContentId || !editingField) return
+    const fieldDef = REVIEW_EDIT_FIELDS.find((f) => f.field === editingField)
+    if (!fieldDef) return
+    if (fieldDef.numeric && editValue.trim() === "") return
+
+    setApplying(true); setError(null)
+    try {
+      const rawVal = fieldDef.numeric ? parseInt(editValue.trim(), 10) : editValue.trim()
+      await metadataApi.updateContent(selectedContentId, { [fieldDef.contentField]: rawVal } as Parameters<typeof metadataApi.updateContent>[1])
+      const freshDetail = await metadataApi.getContent(selectedContentId)
+      setDetail(freshDetail)
+      setEditingField(null)
+      onApplied?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "적용 오류")
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  if (!selectedContentId || !detail) return null
+
+  return (
+    <div className="rounded-lg border border-orange-200 dark:border-orange-800/40 bg-orange-50/40 dark:bg-orange-900/10 p-3 space-y-2">
+      <p className="text-[11px] font-semibold text-orange-700 dark:text-orange-400 uppercase tracking-wide">필드 편집 — #{selectedContentId} {detail.title}</p>
+      {error && <p className="text-[10px] text-red-500">{error}</p>}
+      <div className="rounded border border-border bg-background overflow-hidden">
+        <div className="grid grid-cols-[5rem_1fr_5rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
+          <div className="px-2 py-1">필드</div>
+          <div className="px-2 py-1 border-l border-border">현재값</div>
+          <div className="px-2 py-1 border-l border-border text-center">적용</div>
+        </div>
+        {REVIEW_EDIT_FIELDS.map((fDef) => {
+          const currentVal = fDef.getValue(detail)
+          const isEditing = editingField === fDef.field
+          return (
+            <div key={fDef.field} className="grid grid-cols-[5rem_1fr_5rem] items-stretch border-t border-border text-[10px]">
+              <div className="flex items-center px-2 py-1.5 font-medium text-muted-foreground shrink-0">{fDef.label}</div>
+              <div
+                className={`px-2 py-1.5 border-l border-border cursor-pointer ${isEditing ? "bg-accent/30" : "hover:bg-accent/20"}`}
+                onClick={() => !isEditing && startEdit(fDef, currentVal)}
+              >
+                {isEditing ? (
+                  fDef.multiline ? (
+                    <textarea
+                      autoFocus
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      rows={4}
+                      className="w-full text-[10px] bg-transparent border-none outline-none resize-none text-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <input
+                      autoFocus
+                      type={fDef.numeric ? "number" : "text"}
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      className="w-full text-[10px] bg-transparent border-none outline-none text-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )
+                ) : (
+                  <span className={currentVal ? "text-foreground" : "text-muted-foreground/40 italic"}>
+                    {currentVal || "(없음 — 클릭하여 입력)"}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col items-center justify-center gap-1 border-l border-border px-1 py-1">
+                {isEditing ? (
+                  <>
+                    <button
+                      onClick={() => void applyEdit()}
+                      disabled={applying || (!!fDef.numeric && editValue.trim() === "")}
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-orange-600 hover:bg-orange-700 text-white font-medium disabled:opacity-50 w-full text-center"
+                    >
+                      {applying ? "…" : "적용"}
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-accent w-full text-center"
+                    >
+                      취소
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => startEdit(fDef, currentVal)}
+                    className="text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-accent"
+                  >
+                    편집
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function TestReviewPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
   const [items, setItems] = useState<ContentOut[]>([])
   const [loading, setLoading] = useState(false)
@@ -1572,6 +1788,9 @@ function TestReviewPanel({ onRefresh, selectedContentId }: { onRefresh: () => vo
         <h3 className="text-sm font-semibold">④ 검수 큐 (TEST_PIPELINE)</h3>
         <p className="text-xs text-muted-foreground mt-0.5">AI처리완료(ai) 항목 선택 후 일괄 승인/반려</p>
       </div>
+
+      {/* 필드 편집 테이블 */}
+      <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchStaging} />
 
       {loading ? (
         <div className="text-center py-4 text-xs text-muted-foreground">

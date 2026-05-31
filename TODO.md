@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-pipeline-review-edit** — S2 멀티소스배지 + S4 검수 인라인 편집(9필드 클릭→적용) + short_synopsis 한국어 강제 + result_preview 버그픽스 + PipelineBoard 정리 (2026-06-01)
 - [x] **dev-s3-enrich-boost-panel** — S3 통합 보강 패널 — RAG/AI번역/AI축약 3버튼 + 전체 필드 테이블(현재값 항상 표시) + 유사값 자동 ✓(runtime/country/cast/genres) + synopsis_ko·en 필드 (2026-05-31)
 - [x] **dev-rag-field-extract** — Wikidata/Wikipedia RAG 보강 — ExternalSourceType enum + 0034 migration + reference_extract 서비스 + /test/pipeline/reference-extract 엔드포인트 + FE STEP B UI + E2E 검증 (2026-05-31)
 - [x] **dev-stage-two-axis** — 위치(current_stage)/완료(status) 두 축 분리(advance=위치+produce status, CP무관 by_stage 카운트) + EnrichFieldRow 현재값/WebSearch 수동입력 + WebSearch 검색 복구(DDG/cache) + seed clean 동적삭제 (2026-05-31)

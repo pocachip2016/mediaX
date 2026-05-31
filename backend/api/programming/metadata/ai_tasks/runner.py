@@ -179,7 +179,12 @@ async def run_single_ai_task(content_id: int, task_name: str, db: "Session") -> 
         task.apply(meta, output)
         _save_result(db, content_id, task_name, output.engine, output.result, input_hash)
         db.commit()
-        preview = str(output.result)[:120] if output.result else None
+        # task_name 키 우선 추출, 없으면 첫 번째 값, 없으면 전체 str
+        if output.result:
+            val = output.result.get(task_name) or next(iter(output.result.values()), None)
+            preview = str(val)[:300] if val is not None else None
+        else:
+            preview = None
         logger.info("[ai_runner:single] content_id=%d task=%s engine=%s ok", content_id, task_name, output.engine)
         return {"task_name": task_name, "status": "ok", "engine": output.engine, "result_preview": preview}
     except Exception as exc:
