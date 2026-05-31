@@ -54,13 +54,15 @@ class OllamaDDGProvider(WebSearchProvider):
     async def _fetch_from_ddg(self, query: str, num: int) -> list[WebSearchResult]:
         """Fetch results from DuckDuckGo HTML."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # DuckDuckGo HTML endpoint
-                resp = await client.get(
-                    "https://html.duckduckgo.com/",
-                    params={"q": query, "dl": "ko"},  # Korean preference
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                # DuckDuckGo HTML 검색 엔드포인트는 /html/ (루트는 302 리다이렉트됨).
+                # POST form 방식이 봇 차단·리다이렉트에 더 안정적. kl=kr-ko = 한국 지역.
+                resp = await client.post(
+                    "https://html.duckduckgo.com/html/",
+                    data={"q": query, "kl": "kr-ko"},
                     headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Content-Type": "application/x-www-form-urlencoded",
                     },
                 )
                 resp.raise_for_status()
@@ -68,6 +70,8 @@ class OllamaDDGProvider(WebSearchProvider):
             # Parse HTML results
             parser = DDGResultParser()
             parser.feed(resp.text)
+            parser.close()
+            parser.flush()  # 마지막 결과 flush
             results = parser.results[:num]
 
             return results
@@ -104,70 +108,77 @@ class OllamaDDGProvider(WebSearchProvider):
 
 
 class DDGResultParser(HTMLParser):
-    """Parse DuckDuckGo HTML results."""
+    """Parse DuckDuckGo /html/ results.
+
+    구조: <a class="result__a" href="URL">TITLE</a> ... <a class="result__snippet">SNIPPET</a>
+    각 result__a(제목 앵커)를 만나면 이전 누적 결과를 flush 후 새 결과 시작.
+    """
 
     def __init__(self):
         super().__init__()
         self.results: list[WebSearchResult] = []
-        self.in_result = False
+        self.in_title = False
+        self.in_snippet = False
+        self.current_url = ""
+        self.current_title = ""
+        self.current_snippet = ""
+
+    def flush(self):
+        """누적 중인 결과를 확정해 results에 추가."""
+        url = _decode_ddg_url(self.current_url)
+        if url and self.current_title:
+            self.results.append(WebSearchResult(
+                url=url,
+                title=self.current_title.strip(),
+                snippet=self.current_snippet.strip(),
+                source_domain=_extract_domain(url),
+                score=1.0,
+            ))
         self.current_url = ""
         self.current_title = ""
         self.current_snippet = ""
 
     def handle_starttag(self, tag, attrs):
-        attrs_dict = dict(attrs)
-
-        # DuckDuckGo result container
-        if tag == "div" and attrs_dict.get("class") == "result":
-            self.in_result = True
-
-        # Extract URL from result link
-        if self.in_result and tag == "a" and "result__a" in attrs_dict.get("class", ""):
-            self.current_url = attrs_dict.get("href", "")
-
-        # Extract title
-        if self.in_result and tag == "span" and "result__title" in attrs_dict.get("class", ""):
+        if tag != "a":
+            return
+        cls = dict(attrs).get("class", "") or ""
+        href = dict(attrs).get("href", "") or ""
+        if "result__a" in cls:
+            # 새 결과 제목 앵커 → 이전 결과 flush 후 시작
+            self.flush()
+            self.current_url = href
             self.in_title = True
-
-        # Extract snippet
-        if (
-            self.in_result
-            and tag == "a"
-            and "result__snippet" in attrs_dict.get("class", "")
-        ):
+        elif "result__snippet" in cls:
             self.in_snippet = True
 
     def handle_data(self, data):
-        if self.in_result:
-            if hasattr(self, "in_title") and self.in_title:
-                self.current_title += data.strip()
-            if hasattr(self, "in_snippet") and self.in_snippet:
-                self.current_snippet += data.strip()
+        if self.in_title:
+            self.current_title += data
+        elif self.in_snippet:
+            self.current_snippet += data
 
     def handle_endtag(self, tag):
-        if tag == "div" and self.in_result:
-            # End of result container
-            if self.current_url and self.current_title:
-                result = WebSearchResult(
-                    url=self.current_url,
-                    title=self.current_title,
-                    snippet=self.current_snippet,
-                    source_domain=_extract_domain(self.current_url),
-                    score=1.0,
-                )
-                self.results.append(result)
-
-            self.in_result = False
-            self.current_url = ""
-            self.current_title = ""
-            self.current_snippet = ""
+        if tag == "a":
             self.in_title = False
             self.in_snippet = False
 
-        elif tag == "span" and hasattr(self, "in_title"):
-            self.in_title = False
-        elif tag == "a" and hasattr(self, "in_snippet"):
-            self.in_snippet = False
+
+def _decode_ddg_url(href: str) -> str:
+    """DDG 리다이렉트 링크(//duckduckgo.com/l/?uddg=...)면 실제 URL 디코드."""
+    if not href:
+        return ""
+    import urllib.parse
+    if "uddg=" in href:
+        try:
+            qs = urllib.parse.urlparse(href if "://" in href else "https:" + href).query
+            uddg = urllib.parse.parse_qs(qs).get("uddg", [])
+            if uddg:
+                return urllib.parse.unquote(uddg[0])
+        except Exception:
+            pass
+    if href.startswith("//"):
+        return "https:" + href
+    return href
 
 
 def _extract_domain(url: str) -> str:
