@@ -17,6 +17,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from shared.database import get_db
@@ -54,6 +55,7 @@ class CleanupResponse(BaseModel):
 
 class StageSummary(BaseModel):
     by_status: dict[str, int]
+    by_stage: dict[str, int]   # 위치(bucket) 기준 카운트 — 카드 표시용
     by_type: dict[str, int]
     total: int
     last_seeded_at: str | None
@@ -100,8 +102,43 @@ def cleanup_pipeline(dry_run: bool = False, db: Session = Depends(get_db)):
 @router.get("/summary", response_model=StageSummary,
             dependencies=[Depends(require_pipeline_test)])
 def pipeline_summary(db: Session = Depends(get_db)):
-    """TEST_PIPELINE 콘텐츠의 단계별 현황."""
-    rows = db.query(Content).filter(Content.cp_name == "TEST_PIPELINE").all()
+    """파이프라인 단계별 현황.
+    - by_stage: **CP 무관** 전체 콘텐츠의 위치(stage) 카운트 — 카드 표시용.
+      시드/BULK/개별 등 어떤 경로로 들어왔든 현재 stage에 있으면 모두 집계.
+    - by_status/by_type/total/last_seeded_at: 시드 패널 관리용으로 TEST_PIPELINE 한정.
+    """
+    from api.programming.metadata.models.content import PipelineStage
+
+    # current_stage → 콘솔 카드 번호(bucket)
+    _STAGE_BUCKET: dict[str, int] = {
+        PipelineStage.S1_INTAKE.value:         1,
+        PipelineStage.S2_NORMALIZE.value:      2,
+        PipelineStage.S3_SOURCE_MATCH.value:   2,
+        PipelineStage.S4_GAP_DETECT.value:     2,
+        PipelineStage.S5_WEBSEARCH_FILL.value: 2,
+        PipelineStage.S6_LLM_EXTRACT.value:    3,
+        PipelineStage.S7_STAGING.value:        3,
+        PipelineStage.S8_REVIEW.value:         4,
+        PipelineStage.S9_PUBLISH.value:        5,
+    }
+
+    # ── 카드 카운트(by_stage): CP 무관 전체 (소프트 삭제 제외) ──
+    by_stage: dict[str, int] = {}
+    stage_rows = (
+        db.query(Content.current_stage, func.count())
+        .filter(Content.is_deleted.is_(False))
+        .group_by(Content.current_stage)
+        .all()
+    )
+    for cur_stage, cnt in stage_rows:
+        # current_stage 없으면(시드 직후/레거시) → bucket 1
+        bucket = _STAGE_BUCKET.get(cur_stage.value if cur_stage else "", 1)
+        by_stage[str(bucket)] = by_stage.get(str(bucket), 0) + cnt
+
+    # ── 시드 패널용(by_status/by_type/total): TEST_PIPELINE 한정 ──
+    rows = db.query(Content).filter(
+        Content.cp_name == "TEST_PIPELINE", Content.is_deleted.is_(False)
+    ).all()
 
     by_status: dict[str, int] = {}
     by_type: dict[str, int] = {}
@@ -117,6 +154,7 @@ def pipeline_summary(db: Session = Depends(get_db)):
 
     return StageSummary(
         by_status=by_status,
+        by_stage=by_stage,
         by_type=by_type,
         total=len(rows),
         last_seeded_at=last_created.isoformat() if last_created else None,
@@ -135,9 +173,11 @@ def get_pipeline_events(
     if content_id is not None:
         q = q.filter(StageEvent.content_id == content_id)
     else:
-        # content_id 없으면 TEST_PIPELINE 콘텐츠만
+        # content_id 없으면 TEST_PIPELINE 콘텐츠만 (소프트 삭제 제외)
         test_ids = [
-            r.id for r in db.query(Content.id).filter(Content.cp_name == "TEST_PIPELINE").all()
+            r.id for r in db.query(Content.id).filter(
+                Content.cp_name == "TEST_PIPELINE", Content.is_deleted.is_(False)
+            ).all()
         ]
         if test_ids:
             q = q.filter(StageEvent.content_id.in_(test_ids))
@@ -204,17 +244,38 @@ class AiTaskResponse(BaseModel):
 @router.post("/advance", response_model=AdvanceResponse,
              dependencies=[Depends(require_pipeline_test)])
 def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
-    """[다음단계로] — 내부처리 없이 status 1칸 진행 + StageEvent(ADVANCED) 기록."""
-    from api.programming.metadata.models.content import StageEventType
-    from api.programming.metadata.models.stage_event import StageEvent as SE
+    """[다음단계로] — 현재 단계를 완료하고 다음 bucket 진입 stage로 이동.
+    위치(current_stage)는 다음 bucket으로, status(완료)는 **떠나는 단계의 produce**로 올림.
+    예) S2(Enrich)→S3(AI) advance 시 status raw→enriched. S1→S2는 raw 유지."""
     from api.programming.metadata.stage_events import record_stage_event
-    from api.programming.metadata.models.content import PipelineStage
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
 
-    _STATUS_STAGE = {
-        ContentStatus.enriched: PipelineStage.S2_NORMALIZE,
-        ContentStatus.ai:       PipelineStage.S6_LLM_EXTRACT,
-        ContentStatus.review:   PipelineStage.S8_REVIEW,
-        ContentStatus.approved: PipelineStage.S9_PUBLISH,
+    # bucket(현재 위치) → 다음 bucket 진입 PipelineStage
+    _BUCKET_NEXT_STAGE = {
+        1: PipelineStage.S2_NORMALIZE,    # 생성 → Enrich
+        2: PipelineStage.S6_LLM_EXTRACT,  # Enrich → AI처리
+        3: PipelineStage.S8_REVIEW,       # AI처리 → 검수
+        4: PipelineStage.S9_PUBLISH,      # 검수 → 승인
+    }
+
+    # 떠나는 bucket → 그 단계 완료 시 status(produce). 다음 단계로 넘어가면 이 status로 확정.
+    _BUCKET_PRODUCE_STATUS = {
+        1: ContentStatus.raw,        # 생성 완료 = raw (S2 도착 시 raw 유지)
+        2: ContentStatus.enriched,   # Enrich 완료 = enriched
+        3: ContentStatus.ai,         # AI처리 완료 = ai
+        4: ContentStatus.review,     # 검수 완료 = review
+    }
+
+    _STAGE_BUCKET: dict[str, int] = {
+        PipelineStage.S1_INTAKE.value:         1,
+        PipelineStage.S2_NORMALIZE.value:      2,
+        PipelineStage.S3_SOURCE_MATCH.value:   2,
+        PipelineStage.S4_GAP_DETECT.value:     2,
+        PipelineStage.S5_WEBSEARCH_FILL.value: 2,
+        PipelineStage.S6_LLM_EXTRACT.value:    3,
+        PipelineStage.S7_STAGING.value:        3,
+        PipelineStage.S8_REVIEW.value:         4,
+        PipelineStage.S9_PUBLISH.value:        5,
     }
 
     results: dict[int, str] = {}
@@ -224,12 +285,18 @@ def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
         if not c:
             results[cid] = "not_found"
             continue
-        nxt = _ADVANCE_NEXT.get(c.status)
-        if nxt is None:
+        # current_stage 없으면(시드 직후) → bucket 1
+        cur_bucket = _STAGE_BUCKET.get(c.current_stage.value if c.current_stage else "", 1)
+        next_stage = _BUCKET_NEXT_STAGE.get(cur_bucket)
+        if next_stage is None:
             results[cid] = "terminal"
             continue
-        record_stage_event(db, cid, _STATUS_STAGE[nxt], StageEventType.ADVANCED, actor="user")
-        results[cid] = nxt.value
+        record_stage_event(db, cid, next_stage, StageEventType.ADVANCED, actor="user")
+        # 떠나는 단계 완료 → status를 produce로 확정 (위치는 record_stage_event가 이동)
+        produce = _BUCKET_PRODUCE_STATUS.get(cur_bucket)
+        if produce is not None:
+            c.status = produce
+        results[cid] = f"bucket_{cur_bucket + 1}"
         advanced += 1
 
     db.commit()

@@ -55,6 +55,7 @@ class ContentOut(BaseModel):
     parent_id: Optional[int] = None
     season_number: Optional[int] = None
     episode_number: Optional[int] = None
+    current_stage: Optional[str] = None   # 위치(stage) — 두 축(위치/완료) 중 위치 SSOT
 
     model_config = {"from_attributes": True}
 

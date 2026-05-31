@@ -44,6 +44,7 @@ export interface ContentOut {
   parent_id?: number | null
   season_number?: number | null
   episode_number?: number | null
+  current_stage?: string | null   // 위치(stage) SSOT — 두 축(위치/완료) 중 위치
 }
 
 export interface MetadataOut {
@@ -349,6 +350,17 @@ export const metadataApi = {
   createContent: (data: { title: string; content_type?: ContentType; cp_name?: string; production_year?: number }) =>
     request<ContentOut>("/api/programming/metadata/contents", {
       method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // 수동 필드 값 적용 — manual source 머지 후 resolve. WebSearch로 찾은 값 직접 입력용.
+  updateContent: (id: number, data: {
+    title?: string; synopsis?: string; cast?: string; directors?: string; genres?: string;
+    country?: string; runtime?: number; rating_age?: string; poster_url?: string; production_year?: number
+  }) =>
+    request<ContentDetail>(`/api/programming/metadata/contents/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
 
@@ -1249,6 +1261,7 @@ export interface PipelineTestCleanup {
 
 export interface PipelineTestStageSummary {
   by_status: Record<string, number>
+  by_stage: Record<string, number>   // 위치(bucket) 기준 — 카드 카운트용
   by_type: Record<string, number>
   total: number
   last_seeded_at: string | null

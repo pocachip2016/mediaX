@@ -31,12 +31,24 @@ const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
 
 const STAGE_DEFS = [
   { stage: 1, name: "생성",    statusKey: "raw",      colorClass: "bg-yellow-500" },
-  { stage: 2, name: "회수",    statusKey: "enriched", colorClass: "bg-blue-500" },
+  { stage: 2, name: "Enrich",  statusKey: "enriched", colorClass: "bg-blue-500" },
   { stage: 3, name: "AI처리",  statusKey: "ai",       colorClass: "bg-violet-500" },
   { stage: 4, name: "검수",    statusKey: "review",     colorClass: "bg-orange-500" },
   { stage: 5, name: "승인",    statusKey: "approved",   colorClass: "bg-green-500" },
   { stage: 6, name: "게시",    statusKey: "published",  colorClass: "bg-gray-500" },
 ] as const
+
+// current_stage(위치) → 콘솔 카드 bucket. 백엔드 pipeline_router._STAGE_BUCKET와 일치.
+const STAGE_TO_BUCKET: Record<string, number> = {
+  s1_intake: 1,
+  s2_normalize: 2, s3_source_match: 2, s4_gap_detect: 2, s5_websearch_fill: 2,
+  s6_llm_extract: 3, s7_staging: 3,
+  s8_review: 4, s9_publish: 5,
+}
+// 콘텐츠의 위치 bucket — current_stage 없으면(시드 직후/레거시) bucket 1.
+function stageBucket(c: { current_stage?: string | null }): number {
+  return c.current_stage ? (STAGE_TO_BUCKET[c.current_stage] ?? 1) : 1
+}
 
 // ── Mock 데이터 ──────────────────────────────────────────
 
@@ -319,7 +331,7 @@ function SampleSeedPanel({
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  raw: "생성완료", enriched: "회수완료", ai: "AI처리완료",
+  raw: "RAW", enriched: "Enrich완료", ai: "AI처리완료",
   review: "검수", approved: "승인", rejected: "반려", published: "게시",
 }
 const STATUS_COLOR: Record<string, string> = {
@@ -387,7 +399,7 @@ function TestContentList({
   )
 }
 
-const TIMELINE_STAGES = ["생성", "회수", "AI처리", "검수", "승인", "게시"] as const
+const TIMELINE_STAGES = ["생성", "Enrich", "AI처리", "검수", "승인", "게시"] as const
 
 function ContentPipelineTimeline({
   timeline,
@@ -571,37 +583,128 @@ const ENRICH_FIELD_LABELS: Record<string, string> = {
   external_id: "외부ID", production_year: "제작연도",
 }
 
-function EnrichFieldRow({ field, rec, contentId, applied, onApplied }: {
-  field: string; rec: FieldRecommendation | null; contentId: number; applied: boolean; onApplied: (field: string) => void
+// enrich 필드 → ContentUpdate(PUT) 키. 매핑 있는 필드만 수동 값 입력/적용 가능.
+const FIELD_TO_UPDATE_KEY: Record<string, string> = {
+  synopsis: "synopsis", cast: "cast", director: "directors",
+  genres: "genres", primary_genre: "genres", country: "country",
+  runtime: "runtime", production_year: "production_year", poster: "poster_url",
+}
+
+// 선택 콘텐츠(ContentDetail)에서 필드별 현재값을 문자열로 추출 — 적용 후 재조회 시 갱신됨
+function currentFieldValue(c: ContentDetail | null, field: string): string | null {
+  if (!c) return null
+  const join = (xs: (string | null | undefined)[]) => {
+    const v = xs.filter(Boolean).join(", ")
+    return v || null
+  }
+  switch (field) {
+    case "synopsis":
+      return c.metadata_record?.final_synopsis || c.metadata_record?.ai_synopsis || c.metadata_record?.cp_synopsis || null
+    case "runtime":
+      return c.runtime_minutes ? `${c.runtime_minutes}분` : null
+    case "country":
+      return c.country || null
+    case "production_year":
+      return c.production_year ? String(c.production_year) : null
+    case "poster":
+      return c.poster_url || null
+    case "cast":
+      return join(c.credits.filter((cr) => /actor|cast|주연|출연|조연|단역/i.test(cr.role)).map((cr) => cr.person.name_ko))
+    case "director":
+      return join(c.credits.filter((cr) => /director|감독|연출/i.test(cr.role)).map((cr) => cr.person.name_ko))
+    case "genres":
+    case "primary_genre":
+      return join(c.genres.map((g) => g.genre.name_ko))
+    default:
+      return null
+  }
+}
+
+function EnrichFieldRow({ field, rec, contentId, currentValue, applied, onApplied }: {
+  field: string; rec: FieldRecommendation | null; contentId: number; currentValue: string | null; applied: boolean; onApplied: (field: string) => void
 }) {
   const label = ENRICH_FIELD_LABELS[field] ?? field
   const best = rec?.recommendations?.[0] ?? null
+  const updateKey = FIELD_TO_UPDATE_KEY[field]   // 수동 입력 가능 필드만 매핑됨
   const [busy, setBusy] = useState(false)
-  const handleApply = async () => {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
+
+  const startEdit = () => {
+    if (!updateKey) return
+    setDraft(best?.value ?? "")
+    setEditing(true)
+  }
+
+  // 외부 소스 추천값 원클릭 적용 (캐시 DB)
+  const handleApplyExternal = async () => {
     if (!best) return
     setBusy(true)
     try { await metadataApi.applyExternalFields(contentId, best.source_id, [field]); onApplied(field) }
     catch (e) { console.error("apply field failed", e) }
     finally { setBusy(false) }
   }
+
+  // 수동 입력값 적용 (WebSearch 결과 등) — manual source 머지
+  const handleApplyManual = async () => {
+    const v = draft.trim()
+    if (!v || !updateKey) return
+    setBusy(true)
+    try {
+      const payload: Record<string, string | number> =
+        field === "runtime" || field === "production_year" ? { [updateKey]: Number(v) } : { [updateKey]: v }
+      await metadataApi.updateContent(contentId, payload)
+      setEditing(false); onApplied(field)
+    } catch (e) { console.error("manual apply failed", e) }
+    finally { setBusy(false) }
+  }
+
   return (
     <div className="grid grid-cols-[4.5rem_1fr_1fr_3.5rem] items-stretch border-b border-border last:border-0 text-xs">
       <div className="flex items-center px-2 py-2 text-muted-foreground">{label}</div>
-      <div className="px-2 py-2 text-muted-foreground/70 border-l border-border">(없음)</div>
-      <div className="px-2 py-2 border-l border-border">
-        {best ? (
-          <div><span className="text-foreground line-clamp-2">{best.value}</span>
-          <span className="ml-1 text-[10px] text-blue-500 uppercase">{best.source_type}</span></div>
-        ) : <span className="text-red-500 dark:text-red-400">✗ 여전히 필요 → WebSearch</span>}
+      <div className={`px-2 py-2 border-l border-border ${currentValue ? "text-foreground" : "text-muted-foreground/70"}`}>
+        {currentValue ? <span className="line-clamp-2">{currentValue}</span> : "(없음)"}
       </div>
-      <div className="flex items-center justify-center border-l border-border">
-        {best && (applied
-          ? <span className="text-[10px] text-emerald-600 font-medium">✓</span>
-          : <button onClick={() => void handleApply()} disabled={busy}
-              className="text-[10px] px-1.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50">
-              {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : "적용"}
-            </button>
+      {/* 보완값(후) — 클릭 시 편집 textbox (WebSearch 결과 직접 입력) */}
+      <div className="px-2 py-2 border-l border-border">
+        {editing ? (
+          <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleApplyManual(); if (e.key === "Escape") setEditing(false) }}
+            placeholder="값 입력 (WebSearch 결과 등)"
+            className="w-full text-xs px-1.5 py-1 rounded border border-violet-300 dark:border-violet-700 bg-background focus:outline-none focus:ring-1 focus:ring-violet-400" />
+        ) : best ? (
+          <button onClick={startEdit} className="text-left w-full hover:bg-accent/50 rounded" title="클릭하여 수정/입력">
+            <span className="text-foreground line-clamp-2">{best.value}</span>
+            <span className="ml-1 text-[10px] text-blue-500 uppercase">{best.source_type}</span>
+          </button>
+        ) : updateKey ? (
+          <button onClick={startEdit} className="text-left w-full text-violet-600 dark:text-violet-400 hover:underline" title="클릭하여 입력">
+            + 값 입력 (WebSearch 결과)
+          </button>
+        ) : (
+          <span className="text-red-500 dark:text-red-400">✗ 여전히 필요 → WebSearch</span>
         )}
+      </div>
+      {/* 적용 — 편집 중 draft 있으면 manual 적용, 아니면 외부 원클릭 적용 */}
+      <div className="flex items-center justify-center gap-1 border-l border-border">
+        {editing ? (
+          <>
+            {draft.trim() && (
+              <button onClick={() => void handleApplyManual()} disabled={busy}
+                className="text-[10px] px-1.5 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white font-medium disabled:opacity-50">
+                {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : "적용"}
+              </button>
+            )}
+            <button onClick={() => setEditing(false)} className="text-[10px] text-muted-foreground hover:text-foreground" title="취소">✕</button>
+          </>
+        ) : applied ? (
+          <span className="text-[10px] text-emerald-600 font-medium">✓</span>
+        ) : best ? (
+          <button onClick={() => void handleApplyExternal()} disabled={busy}
+            className="text-[10px] px-1.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50">
+            {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : "적용"}
+          </button>
+        ) : null}
       </div>
     </div>
   )
@@ -811,8 +914,10 @@ function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel }: {
   const [activeTab, setActiveTab] = useState<"seed" | "single" | "bulk">("seed")
   const [rawIds, setRawIds] = useState<number[]>([])
   useEffect(() => {
-    metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "raw", size: 100 })
-      .then((r) => setRawIds(r.items.map((c) => c.id))).catch(() => {})
+    // 위치(stage) 기준: CP 무관 S1(bucket 1)에 남아있는 전체 콘텐츠. advance 후 위치가
+    // S2로 이동하면 bucket 1에서 빠져 건수가 줄고, 0이 되면 StageAdvanceBar가 자동 disable.
+    metadataApi.listContents({ size: 100 })
+      .then((r) => setRawIds(r.items.filter((c) => stageBucket(c) === 1).map((c) => c.id))).catch(() => {})
   }, [summary])
   return (
     <div className="space-y-4">
@@ -831,13 +936,14 @@ function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel }: {
       {activeTab === "seed" && <SampleSeedPanel summary={summary} onRefresh={onRefresh} />}
       {activeTab === "single" && <AddContentInlinePanel onRefresh={onRefresh} />}
       {activeTab === "bulk" && <BulkUploadEmbed onRefresh={onRefresh} />}
-      <StageAdvanceBar ids={rawIds} fromStatus="raw" toStatus="enriched" onDone={onRefresh} />
+      <StageAdvanceBar ids={rawIds} fromStatus="생성" toStatus="Enrich" onDone={onRefresh} />
     </div>
   )
 }
 
 function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
   const [title, setTitle] = useState("")
+  const [content, setContent] = useState<ContentDetail | null>(null)
   const [recs, setRecs] = useState<RecommendationsOut | null>(null)
   const [loading, setLoading] = useState(false)
   const [subBusy, setSubBusy] = useState<Record<string, boolean>>({})
@@ -856,12 +962,12 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
   }
 
   const fetchRecs = useCallback(async () => {
-    if (!selectedContentId) { setRecs(null); setTitle(""); return }
+    if (!selectedContentId) { setRecs(null); setTitle(""); setContent(null); return }
     setLoading(true)
     try {
       const [c, r] = await Promise.all([metadataApi.getContent(selectedContentId), metadataApi.getRecommendations(selectedContentId)])
-      setTitle(c.title); setRecs(r)
-    } catch { setRecs(null) } finally { setLoading(false) }
+      setTitle(c.title); setContent(c); setRecs(r)
+    } catch { setRecs(null); setContent(null) } finally { setLoading(false) }
   }, [selectedContentId])
 
   useEffect(() => { setShowWebSearch(false); setLastRun(null); setAppliedFields(new Set()); fetchRecs() }, [fetchRecs])
@@ -933,6 +1039,7 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
             <div className="max-h-56 overflow-y-auto">
               {allFields.map((f) => (
                 <EnrichFieldRow key={f} field={f} rec={recByField(f)} contentId={selectedContentId}
+                  currentValue={currentFieldValue(content, f)}
                   applied={appliedFields.has(f)}
                   onApplied={(field) => { setAppliedFields((s) => new Set(s).add(field)); void fetchRecs() }} />
               ))}
@@ -967,7 +1074,7 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
           </>
         }
       </div>
-      <StageAdvanceBar ids={[selectedContentId]} fromStatus="raw" toStatus="enriched" onDone={() => { onRefresh(); fetchRecs() }} />
+      <StageAdvanceBar ids={[selectedContentId]} fromStatus="생성" toStatus="Enrich" onDone={() => { onRefresh(); fetchRecs() }} />
     </div>
   )
 }
@@ -1080,7 +1187,7 @@ function AiProcessPanel({ onRefresh, selectedContentId }: { onRefresh: () => voi
           </div>
         </div>
       )}
-      <StageAdvanceBar ids={items.map((c) => c.id)} fromStatus="enriched" toStatus="ai" onDone={() => { onRefresh(); fetchEnriched() }} />
+      <StageAdvanceBar ids={items.map((c) => c.id)} fromStatus="Enrich" toStatus="AI처리" onDone={() => { onRefresh(); fetchEnriched() }} />
     </div>
   )
 }
@@ -1282,7 +1389,7 @@ function TestReviewPanel({ onRefresh, selectedContentId: _sel }: { onRefresh: ()
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
-      <StageAdvanceBar ids={[...selectedIds]} fromStatus="ai" toStatus="review" onDone={() => { onRefresh(); fetchStaging() }} />
+      <StageAdvanceBar ids={[...selectedIds]} fromStatus="AI처리" toStatus="검수" onDone={() => { onRefresh(); fetchStaging() }} />
     </div>
   )
 }
@@ -1679,7 +1786,7 @@ export default function PipelineMonitoringPage() {
                   key={s.stage}
                   stage={s.stage}
                   name={s.name}
-                  count={testSummary?.by_status[s.statusKey] ?? 0}
+                  count={testSummary?.by_stage?.[String(s.stage)] ?? 0}
                   colorClass={s.colorClass}
                   active={activeStage === s.stage}
                   onClick={() => setActiveStage(activeStage === s.stage ? null : s.stage)}

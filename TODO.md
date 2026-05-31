@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-stage-two-axis** — 위치(current_stage)/완료(status) 두 축 분리(advance=위치+produce status, CP무관 by_stage 카운트) + EnrichFieldRow 현재값/WebSearch 수동입력 + WebSearch 검색 복구(DDG/cache) + seed clean 동적삭제 (2026-05-31)
 - [x] **dev-pipeline-console-controls D1** — E2E 5케이스(auto_chain 회귀 가드) + verify.sh D1 등록 (2026-05-30)
 - [x] **dev-pipeline-console-controls C4** — ProgressLog(10초 폴링) + BE GET /test/pipeline/events(content_id, limit) + FE PipelineEventLog 타입 + 우측 패널 하단 배치 (2026-05-30)
 - [x] **dev-pipeline-console-controls C3** — AiProcessPanel(Task on/off + AI 결과 diff + 벌크 실행) + BE 2 엔드포인트(GET /contents/{id}/ai-results, POST /test/pipeline/process-ai) + FE 타입/함수 (2026-05-30)

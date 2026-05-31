@@ -54,12 +54,14 @@ def record_stage_event(
     )
     db.add(event)
 
-    # current_stage + status 동기 갱신
+    # 두 축 분리(ADR): 위치(current_stage)와 완료(status)를 분리한다.
+    #   - ENTERED/ADVANCED = 위치만 이동(status 불변) — "다음단계로"
+    #   - COMPLETED        = 그 단계 작업 완료 → status 점프 — 명시적 "처리완료"
     content = db.get(Content, content_id)
     if content:
         content.current_stage = stage
         new_status = derive_status_from_stage(stage)
-        if new_status and event_type in (StageEventType.ENTERED, StageEventType.COMPLETED, StageEventType.ADVANCED):
+        if new_status and event_type == StageEventType.COMPLETED:
             content.status = new_status
         if event_type == StageEventType.FAILED and error:
             content.failure_code = FailureCode.SYSTEM_ERROR
