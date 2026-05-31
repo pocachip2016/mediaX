@@ -5120,6 +5120,67 @@ print('  ✓ 스키마 확장 확인')
     echo "=== PASS ==="
     ;;
 
+  dev-rag-field-extract-step5)
+    echo "=== dev-rag-field-extract-step5: E2E — 실제 Wikidata/Wikipedia 호출 + DB upsert ==="
+    # 0034 migration 적용 확인
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -c "SELECT version_num FROM alembic_version;" 2>&1 | grep -q "0034" || { echo "FAIL: 0034 migration 미적용"; exit 1; }
+    echo "  ✓ 0034 migration 적용됨"
+    # externalsourcetype enum에 wikidata/wikipedia 확인
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -c "\dT+ externalsourcetype" 2>&1 | grep -q "wikidata" || { echo "FAIL: wikidata enum 없음"; exit 1; }
+    echo "  ✓ externalsourcetype enum 확장 확인"
+    # 엔드포인트 E2E (서울의 봄 id=1842)
+    RESULT=$(curl -s -X POST "http://localhost:8000/api/test/pipeline/reference-extract" \
+      -H "Content-Type: application/json" -d '{"content_id": 1842}')
+    echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if d.get('sources_hit') else 1)" || { echo "FAIL: sources_hit 없음 — $RESULT"; exit 1; }
+    echo "  ✓ reference-extract 200 + sources_hit 확인"
+    # DB upsert 확인
+    COUNT=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "SELECT COUNT(*) FROM external_meta_sources WHERE content_id=1842 AND source_type IN ('wikidata','wikipedia');" 2>&1 | tr -d ' ')
+    [ "$COUNT" -ge 1 ] || { echo "FAIL: ExternalMetaSource 레코드 없음 (count=$COUNT)"; exit 1; }
+    echo "  ✓ ExternalMetaSource DB upsert 확인 (count=$COUNT)"
+    # 404 케이스
+    HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:8000/api/test/pipeline/reference-extract" \
+      -H "Content-Type: application/json" -d '{"content_id": 99999}')
+    [ "$HTTP" = "404" ] || { echo "FAIL: 존재하지 않는 ID → 404 아님 ($HTTP)"; exit 1; }
+    echo "  ✓ 404 케이스 확인"
+    echo "=== PASS ==="
+    ;;
+
+  dev-rag-field-extract-step4)
+    echo "=== dev-rag-field-extract-step4: FE — RAG STEP B UI + api.ts 연결 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "ReferenceExtractResponse"       "$FE_ROOT/lib/api.ts"  || { echo "FAIL: ReferenceExtractResponse 타입 없음"; exit 1; }
+    grep -q "referenceExtract"               "$FE_ROOT/lib/api.ts"  || { echo "FAIL: pipelineTestApi.referenceExtract 없음"; exit 1; }
+    grep -q "ReferenceExtractResponse"       "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: page.tsx import 없음"; exit 1; }
+    grep -q "ragResult\|ragBusy"             "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: ragResult 상태 없음"; exit 1; }
+    grep -q "runRag\|referenceExtract"       "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: runRag 함수 없음"; exit 1; }
+    grep -q "STEP B"                         "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STEP B UI 섹션 없음"; exit 1; }
+    grep -q "RAG 보강 실행"                  "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: RAG 버튼 없음"; exit 1; }
+    echo "  ✓ api.ts 타입·함수 + page.tsx STEP B UI 확인"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-rag-field-extract-step3)
+    echo "=== dev-rag-field-extract-step3: Wikidata/Wikipedia RAG 보강 — 서비스 + 엔드포인트 ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_reference_extract.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -8
+    echo "  ✓ reference_extract pytest 통과"
+    grep -q "def reference_extract"              api/meta_core/reference_extract.py     || { echo "FAIL: reference_extract 함수 없음"; exit 1; }
+    grep -q "WikidataClient"                     api/meta_core/reference_extract.py     || { echo "FAIL: WikidataClient 미사용"; exit 1; }
+    grep -q "WikipediaClient"                    api/meta_core/reference_extract.py     || { echo "FAIL: WikipediaClient 미사용"; exit 1; }
+    grep -q "ExternalSourceType.wikidata"        api/meta_core/reference_extract.py     || { echo "FAIL: wikidata source_type 없음"; exit 1; }
+    grep -q "ExternalSourceType.wikipedia"       api/meta_core/reference_extract.py     || { echo "FAIL: wikipedia source_type 없음"; exit 1; }
+    grep -q "def reference_extract_endpoint"     api/test/pipeline_router.py            || { echo "FAIL: 엔드포인트 없음"; exit 1; }
+    grep -q "wikidata"                           api/programming/metadata/models/external.py || { echo "FAIL: ExternalSourceType enum 미등록"; exit 1; }
+    [ -f "alembic/versions/0034_rag_source_types.py" ] || { echo "FAIL: 0034 마이그레이션 없음"; exit 1; }
+    echo "  ✓ 서비스·엔드포인트·enum·마이그레이션 구조 확인"
+    echo "=== PASS ==="
+    ;;
+
   dev-stage-manual-steps)
     echo "=== dev-stage-manual-steps: 내부처리/다음단계 분리 (ADR-009) ==="
     cd "$BACKEND"

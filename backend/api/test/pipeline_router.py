@@ -364,3 +364,51 @@ def list_ai_tasks():
     """사용 가능한 AI task 목록."""
     from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
     return {"tasks": list(AI_TASK_REGISTRY.keys())}
+
+
+# ── RAG Reference Extract ─────────────────────────────────────────────────────
+
+class ReferenceExtractRequest(BaseModel):
+    content_id: int
+
+
+class ReferenceExtractResponse(BaseModel):
+    content_id: int
+    title_used: str
+    year_used: Optional[int]
+    wikidata_facts: dict
+    wikidata_url: Optional[str]
+    wikipedia_text: Optional[str]
+    wikipedia_url: Optional[str]
+    wikipedia_lang: Optional[str]
+    sources_hit: list[str]
+    sources_skipped: list[str]
+
+
+@router.post("/reference-extract", response_model=ReferenceExtractResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def reference_extract_endpoint(req: ReferenceExtractRequest, db: Session = Depends(get_db)):
+    """Wikidata + Wikipedia RAG 조회 — 빈 필드 보강 후보 수집. status 불변.
+
+    wikidata_facts: 구조화 fact (directors/cast/country/genres/runtime/production_year)
+    wikipedia_text: intro 텍스트 (CC BY-SA — FE에서 LLM 요약 후 사용, 직접 저장 금지)
+    """
+    from api.meta_core.reference_extract import reference_extract
+
+    c = db.query(Content).filter(Content.id == req.content_id, Content.is_deleted.is_(False)).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="content not found")
+
+    result = reference_extract(req.content_id, db)
+    return ReferenceExtractResponse(
+        content_id=result.content_id,
+        title_used=result.title_used,
+        year_used=result.year_used,
+        wikidata_facts=result.wikidata_facts,
+        wikidata_url=result.wikidata_url,
+        wikipedia_text=result.wikipedia_text,
+        wikipedia_url=result.wikipedia_url,
+        wikipedia_lang=result.wikipedia_lang,
+        sources_hit=result.sources_hit,
+        sources_skipped=result.sources_skipped,
+    )

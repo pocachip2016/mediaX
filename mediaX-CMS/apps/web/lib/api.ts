@@ -1470,6 +1470,12 @@ export interface EnrichSourceResponse { content_id: number; source: string; cand
 export interface AiTaskResponse { content_id: number; task_name: string; status: string; engine: string | null; result_preview: string | null; status_unchanged: string }
 export interface EnrichPolicy { use_cache_db: boolean; confidence_threshold: number; use_websearch: boolean }
 export interface StageAutoPolicy { s1_auto: boolean; s2_auto: boolean; s3_auto: boolean; s4_auto: boolean; s5_auto: boolean; s6_auto: boolean }
+export interface ReferenceExtractResponse {
+  content_id: number; title_used: string; year_used: number | null
+  wikidata_facts: Record<string, unknown>; wikidata_url: string | null
+  wikipedia_text: string | null; wikipedia_url: string | null; wikipedia_lang: string | null
+  sources_hit: string[]; sources_skipped: string[]
+}
 
 export const pipelineTestApi = {
   seed: () =>
@@ -1501,6 +1507,10 @@ export const pipelineTestApi = {
     }),
   listAiTasks: () =>
     requestTest<{ tasks: string[] }>("/api/test/pipeline/ai-tasks"),
+  referenceExtract: (content_id: number) =>
+    requestTest<ReferenceExtractResponse>("/api/test/pipeline/reference-extract", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id }),
+    }),
 }
 
 // ── Distribution / Curation ───────────────────────────────

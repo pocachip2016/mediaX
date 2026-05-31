@@ -7,7 +7,7 @@ Create Date: 2026-05-30
 from alembic import op
 
 revision = "0032"
-down_revision = "0031"
+down_revision = "0030"  # 0031 was never created — chain fixed
 branch_labels = None
 depends_on = None
 

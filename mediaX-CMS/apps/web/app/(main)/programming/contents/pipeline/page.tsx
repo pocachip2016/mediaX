@@ -23,6 +23,7 @@ import {
   type RecommendationsOut,
   type FieldRecommendation,
   type EnrichPolicy,
+  type ReferenceExtractResponse,
 } from "@/lib/api"
 import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
 
@@ -906,6 +907,9 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
   const [subBusy, setSubBusy] = useState<Record<string, boolean>>({})
   const [lastRun, setLastRun] = useState<string | null>(null)
   const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
+  const [ragResult, setRagResult] = useState<ReferenceExtractResponse | null>(null)
+  const [ragBusy, setRagBusy] = useState(false)
+  const [ragError, setRagError] = useState<string | null>(null)
 
   const fetchRecs = useCallback(async () => {
     if (!selectedContentId) { setRecs(null); setTitle(""); setContent(null); return }
@@ -916,7 +920,7 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
     } catch { setRecs(null); setContent(null) } finally { setLoading(false) }
   }, [selectedContentId])
 
-  useEffect(() => { setLastRun(null); setAppliedFields(new Set()); fetchRecs() }, [fetchRecs])
+  useEffect(() => { setLastRun(null); setAppliedFields(new Set()); setRagResult(null); setRagError(null); fetchRecs() }, [fetchRecs])
 
   const runSource = async (source: "tmdb" | "kmdb") => {
     if (!selectedContentId) return
@@ -927,6 +931,16 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
       await fetchRecs()
     } catch (e) { setLastRun(`${source}: ${e instanceof Error ? e.message : "오류"}`) }
     finally { setSubBusy((b) => ({ ...b, [source]: false })) }
+  }
+
+  const runRag = async () => {
+    if (!selectedContentId) return
+    setRagBusy(true); setRagError(null)
+    try {
+      const r = await pipelineTestApi.referenceExtract(selectedContentId)
+      setRagResult(r)
+    } catch (e) { setRagError(e instanceof Error ? e.message : "RAG 오류") }
+    finally { setRagBusy(false) }
   }
 
   const recByField = (f: string): FieldRecommendation | null => {
@@ -991,6 +1005,57 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
               ))}
             </div>
           </div>
+      </div>
+      {/* STEP B — RAG 보완 */}
+      <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50/40 dark:bg-violet-900/10 p-3 space-y-2">
+        <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide">STEP B — RAG 보완 / Wikidata·Wikipedia (status 불변)</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => void runRag()} disabled={ragBusy}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
+            {ragBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+            RAG 보강 실행
+          </button>
+          {ragResult && (
+            <span className="flex gap-1.5 text-[10px]">
+              {ragResult.sources_hit.map((s) => (
+                <span key={s} className="px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 font-medium">{s} ✓</span>
+              ))}
+              {ragResult.sources_skipped.map((s) => (
+                <span key={s} className="px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{s} —</span>
+              ))}
+            </span>
+          )}
+          {ragError && <span className="text-[10px] text-red-500">{ragError}</span>}
+        </div>
+        {ragResult && ragResult.sources_hit.length > 0 && (
+          <div className="space-y-2 pt-1">
+            {ragResult.sources_hit.includes("wikidata") && Object.keys(ragResult.wikidata_facts).length > 0 && (
+              <div className="rounded border border-border bg-background p-2 text-[11px] space-y-1">
+                <p className="font-semibold text-violet-700 dark:text-violet-400">Wikidata 구조화 fact</p>
+                {Object.entries(ragResult.wikidata_facts).map(([k, v]) => (
+                  <div key={k} className="flex gap-2">
+                    <span className="text-muted-foreground w-24 shrink-0">{k}</span>
+                    <span className="text-foreground break-all">{Array.isArray(v) ? (v as string[]).join(", ") : String(v)}</span>
+                  </div>
+                ))}
+                {ragResult.wikidata_url && (
+                  <a href={ragResult.wikidata_url} target="_blank" rel="noreferrer" className="text-[10px] text-violet-500 hover:underline">{ragResult.wikidata_url}</a>
+                )}
+              </div>
+            )}
+            {ragResult.sources_hit.includes("wikipedia") && ragResult.wikipedia_text && (
+              <div className="rounded border border-border bg-background p-2 text-[11px] space-y-1">
+                <p className="font-semibold text-violet-700 dark:text-violet-400">
+                  Wikipedia intro <span className="font-normal text-[10px] text-muted-foreground">(CC BY-SA — LLM 요약 후 사용)</span>
+                </p>
+                <p className="text-foreground line-clamp-4 leading-relaxed">{ragResult.wikipedia_text}</p>
+                {ragResult.wikipedia_url && (
+                  <a href={ragResult.wikipedia_url} target="_blank" rel="noreferrer" className="text-[10px] text-violet-500 hover:underline">{ragResult.wikipedia_url}</a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <StageAdvanceBar ids={[selectedContentId]} fromStatus="생성" toStatus="Enrich" onDone={() => { onRefresh(); fetchRecs() }} />
     </div>
