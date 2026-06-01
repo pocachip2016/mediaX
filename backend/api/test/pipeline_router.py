@@ -212,6 +212,16 @@ class AdvanceResponse(BaseModel):
     results: dict[int, str]
 
 
+class ReviewActionRequest(BaseModel):
+    ids: list[int]
+
+
+class ReviewActionResponse(BaseModel):
+    processed: int
+    skipped: int
+    results: dict[int, str]
+
+
 class EnrichSourceRequest(BaseModel):
     content_id: int
     source: str
@@ -301,6 +311,79 @@ def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
 
     db.commit()
     return AdvanceResponse(advanced=advanced, skipped=len(req.ids) - advanced, results=results)
+
+
+@router.post("/approve", response_model=ReviewActionResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def approve_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
+    """[승인] — 검수 통과. status=approved 확정 → 실제 콘텐츠 목록 노출.
+    위치=승인(S9_PUBLISH), 게시 단계 없이 종료점. StageEvent COMPLETED 기록."""
+    from api.programming.metadata.stage_events import record_stage_event
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+
+    results: dict[int, str] = {}
+    processed = 0
+    for cid in req.ids:
+        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
+        if not c:
+            results[cid] = "not_found"
+            continue
+        # COMPLETED at S9_PUBLISH → derive_status_from_stage = approved (record_stage_event 내부 처리)
+        record_stage_event(db, cid, PipelineStage.S9_PUBLISH, StageEventType.COMPLETED, actor="user")
+        results[cid] = "approved"
+        processed += 1
+
+    db.commit()
+    return ReviewActionResponse(processed=processed, skipped=len(req.ids) - processed, results=results)
+
+
+@router.post("/reject", response_model=ReviewActionResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def reject_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
+    """[반려] — status=rejected, 위치(검수) 유지. StageEvent REJECTED 기록.
+    반려된 콘텐츠는 [재검수]로 복귀 가능."""
+    from api.programming.metadata.stage_events import record_stage_event
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+
+    results: dict[int, str] = {}
+    processed = 0
+    for cid in req.ids:
+        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
+        if not c:
+            results[cid] = "not_found"
+            continue
+        # 현재 위치 유지(없으면 검수). REJECTED는 derive를 트리거하지 않으므로 status 수동 설정.
+        stage = c.current_stage or PipelineStage.S8_REVIEW
+        record_stage_event(db, cid, stage, StageEventType.REJECTED, actor="user")
+        c.status = ContentStatus.rejected
+        results[cid] = "rejected"
+        processed += 1
+
+    db.commit()
+    return ReviewActionResponse(processed=processed, skipped=len(req.ids) - processed, results=results)
+
+
+@router.post("/re-review", response_model=ReviewActionResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def re_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
+    """[재검수] — 반려 콘텐츠를 검수 가능 상태(status=ai)로 복귀, 위치=검수. StageEvent RETRIED 기록."""
+    from api.programming.metadata.stage_events import record_stage_event
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+
+    results: dict[int, str] = {}
+    processed = 0
+    for cid in req.ids:
+        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
+        if not c:
+            results[cid] = "not_found"
+            continue
+        record_stage_event(db, cid, PipelineStage.S8_REVIEW, StageEventType.RETRIED, actor="user")
+        c.status = ContentStatus.ai
+        results[cid] = "re_reviewed"
+        processed += 1
+
+    db.commit()
+    return ReviewActionResponse(processed=processed, skipped=len(req.ids) - processed, results=results)
 
 
 @router.post("/enrich-source", response_model=EnrichSourceResponse,

@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-(없음)
+- [ ] **dev-s4-review-cleanup** — S4 단일선택 통일 + 승인/반려/재검수. BE step1 완료(approve/reject/re-review 엔드포인트 + REJECTED enum), FE step2·verify step3 남음
 
 ## Next (이번 마일스톤)
 (없음)
