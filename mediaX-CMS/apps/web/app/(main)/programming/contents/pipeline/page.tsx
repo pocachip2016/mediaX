@@ -1568,16 +1568,11 @@ const REVIEW_EDIT_FIELDS: Array<{
     numeric: true,
   },
   {
-    field: "rating_age",
-    label: "등급",
-    contentField: "rating_age",
-    getValue: (c) => c.rating_age ?? "",
-  },
-  {
     field: "synopsis",
     label: "줄거리",
     contentField: "synopsis",
-    getValue: (c) => c.metadata_record?.final_synopsis || c.metadata_record?.ai_synopsis || c.metadata_record?.cp_synopsis || "",
+    // manual edit → cp_synopsis; cp_synopsis must precede ai_synopsis so edits are visible
+    getValue: (c) => c.metadata_record?.final_synopsis || c.metadata_record?.cp_synopsis || c.metadata_record?.ai_synopsis || "",
     multiline: true,
   },
 ]
