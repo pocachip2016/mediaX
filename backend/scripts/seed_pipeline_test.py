@@ -482,6 +482,32 @@ def clean_pipeline_test(db, dry_run: bool = False) -> int:
     return len(ids)
 
 
+def clean_by_ids(db, ids: list[int], dry_run: bool = False) -> int:
+    """특정 ID 목록만 삭제 — stage-based cleanup. CP 무관.
+    clean_pipeline_test와 동일한 FK-safe 동적 삭제 로직 사용.
+    """
+    if not ids:
+        return 0
+    if dry_run:
+        return len(ids)
+
+    contents_table = Content.__table__
+    for table in reversed(Base.metadata.sorted_tables):
+        if table is contents_table:
+            continue
+        fk_cols = {fk.parent.name for fk in table.foreign_keys
+                   if fk.column.table is contents_table}
+        for col in fk_cols:
+            db.execute(table.delete().where(table.c[col].in_(ids)))
+
+    # parent_id 자기참조 FK — 자식(season/episode) 먼저 삭제
+    db.query(Content).filter(Content.parent_id.in_(ids)).delete(synchronize_session=False)
+    db.query(Content).filter(Content.id.in_(ids)).delete(synchronize_session=False)
+
+    db.commit()
+    return len(ids)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────

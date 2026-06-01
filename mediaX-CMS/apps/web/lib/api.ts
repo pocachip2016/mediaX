@@ -1481,6 +1481,12 @@ export interface ReferenceExtractResponse {
   sources_hit: string[]; sources_skipped: string[]
 }
 
+export interface RevertResponse {
+  reverted: number
+  skipped: number
+  results: Record<number, string>
+}
+
 export const pipelineTestApi = {
   seed: () =>
     requestTest<PipelineTestSeedResult>("/api/test/pipeline/seed", { method: "POST" }),
@@ -1489,6 +1495,15 @@ export const pipelineTestApi = {
       `/api/test/pipeline/cleanup?dry_run=${dry_run}`,
       { method: "POST" }
     ),
+  cleanupStage: (ids: number[], dry_run = false) =>
+    requestTest<PipelineTestCleanup>(
+      `/api/test/pipeline/cleanup-stage?dry_run=${dry_run}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }
+    ),
+  revert: (ids: number[]) =>
+    requestTest<RevertResponse>("/api/test/pipeline/revert", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
   summary: () =>
     requestTest<PipelineTestStageSummary>("/api/test/pipeline/summary"),
   events: (content_id?: number, limit = 30) => {

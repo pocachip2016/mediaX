@@ -173,10 +173,7 @@ function SampleSeedPanel({
   onRefresh: () => void
 }) {
   const [seeding, setSeeding] = useState(false)
-  const [cleaning, setCleaning] = useState(false)
   const [seedResult, setSeedResult] = useState<PipelineTestSeedResult | null>(null)
-  const [cleanupResult, setCleanupResult] = useState<PipelineTestCleanup | null>(null)
-  const [cleanupConfirm, setCleanupConfirm] = useState(false)
 
   const handleSeed = async () => {
     setSeeding(true)
@@ -189,21 +186,6 @@ function SampleSeedPanel({
       console.error("seed failed", e)
     } finally {
       setSeeding(false)
-    }
-  }
-
-  const handleCleanup = async (dry_run: boolean) => {
-    setCleaning(true)
-    setCleanupResult(null)
-    setCleanupConfirm(false)
-    try {
-      const r = await pipelineTestApi.cleanup(dry_run)
-      setCleanupResult(r)
-      if (!dry_run) onRefresh()
-    } catch (e) {
-      console.error("cleanup failed", e)
-    } finally {
-      setCleaning(false)
     }
   }
 
@@ -275,24 +257,6 @@ function SampleSeedPanel({
           </div>
         </div>
       )}
-      {cleanupResult && (
-        <div className={`rounded-lg border px-3 py-2.5 ${
-          cleanupResult.dry_run
-            ? "border-blue-200 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/10"
-            : "border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10"
-        }`}>
-          <div className={`text-sm font-medium ${
-            cleanupResult.dry_run
-              ? "text-blue-700 dark:text-blue-400"
-              : "text-red-700 dark:text-red-400"
-          }`}>
-            {cleanupResult.dry_run
-              ? `[건식] 삭제 대상 ${cleanupResult.deleted}건 — 실제 삭제되지 않음`
-              : `클린업 완료: ${cleanupResult.deleted}건 삭제됨`}
-          </div>
-        </div>
-      )}
-
       {/* 액션 버튼 */}
       <div className="flex items-center gap-2 flex-wrap">
         <button
@@ -303,41 +267,6 @@ function SampleSeedPanel({
           <FlaskConical className={`h-3.5 w-3.5 ${seeding ? "animate-pulse" : ""}`} />
           시드 생성 (15건)
         </button>
-
-        <button
-          onClick={() => handleCleanup(true)}
-          disabled={cleaning || !summary?.total}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent disabled:opacity-50 transition-colors"
-        >
-          건식 테스트
-        </button>
-
-        {cleanupConfirm ? (
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-red-500 font-medium">TEST_PIPELINE 데이터 전체 삭제. 계속?</span>
-            <button
-              onClick={() => handleCleanup(false)}
-              className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition-colors"
-            >
-              삭제 확인
-            </button>
-            <button
-              onClick={() => setCleanupConfirm(false)}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-accent transition-colors"
-            >
-              취소
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setCleanupConfirm(true)}
-            disabled={cleaning || !summary?.total}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors"
-          >
-            {cleaning ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            클린업
-          </button>
-        )}
       </div>
     </div>
   )
@@ -586,6 +515,105 @@ function StageAdvanceBar({ ids, fromStatus, toStatus, onDone, disabled }: {
         {result && <span className={`text-xs ${result.startsWith("✓") ? "text-emerald-600" : "text-red-600"}`}>{result}</span>}
       </div>
       <p className="text-[10px] text-muted-foreground">내부처리 없이 status만 1칸 진행.</p>
+    </div>
+  )
+}
+
+function StageControlBar({
+  stageContents,
+  onDone,
+  showPrev = true,
+}: {
+  stageContents: ContentOut[]
+  onDone: () => void
+  showPrev?: boolean
+}) {
+  const [cleanupConfirm, setCleanupConfirm] = useState(false)
+  const [cleaning, setCleaning] = useState(false)
+  const [reverting, setReverting] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const ids = stageContents.map((c) => c.id)
+
+  const handleCleanup = async (dry_run: boolean) => {
+    setCleaning(true)
+    setResult(null)
+    setCleanupConfirm(false)
+    try {
+      const r = await pipelineTestApi.cleanupStage(ids, dry_run)
+      setResult(
+        dry_run
+          ? `[건식] 삭제 대상 ${r.deleted}건 — 실제 삭제되지 않음`
+          : `클린업 완료: ${r.deleted}건 삭제됨`
+      )
+      if (!dry_run) onDone()
+    } catch (e) {
+      setResult(`오류: ${e instanceof Error ? e.message : "클린업 실패"}`)
+    } finally {
+      setCleaning(false)
+    }
+  }
+
+  const handleRevert = async () => {
+    if (!ids.length) return
+    setReverting(true)
+    setResult(null)
+    try {
+      const r = await pipelineTestApi.revert(ids)
+      setResult(`↩ ${r.reverted}건 이전단계 복귀`)
+      onDone()
+    } catch (e) {
+      setResult(`오류: ${e instanceof Error ? e.message : "이전단계 실패"}`)
+    } finally {
+      setReverting(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-dashed border-border/60 flex items-center gap-2 flex-wrap">
+      {showPrev && (
+        <button
+          onClick={() => void handleRevert()}
+          disabled={reverting || !ids.length}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+        >
+          {reverting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>↩</span>}
+          이전단계 ({ids.length}건)
+        </button>
+      )}
+
+      {cleanupConfirm ? (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-red-500 font-medium">이 단계 {ids.length}건 삭제. 계속?</span>
+          <button
+            onClick={() => void handleCleanup(false)}
+            className="px-2.5 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-medium transition-colors"
+          >
+            삭제 확인
+          </button>
+          <button
+            onClick={() => setCleanupConfirm(false)}
+            className="px-2.5 py-1 rounded-lg border border-border text-[11px] hover:bg-accent transition-colors"
+          >
+            취소
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setCleanupConfirm(true)}
+          disabled={cleaning || !ids.length}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors"
+        >
+          {cleaning ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+          클린업 ({ids.length}건)
+        </button>
+      )}
+
+      {result && (
+        <span className={`text-[11px] ${result.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>
+          {result}
+        </span>
+      )}
     </div>
   )
 }
@@ -896,17 +924,11 @@ const CREATION_TABS = [
   { key: "bulk", label: "📤 대량(CSV)" },
 ] as const
 
-function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel }: {
-  summary: PipelineTestStageSummary | null; onRefresh: () => void; selectedContentId: number | null
+function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel, stageContents }: {
+  summary: PipelineTestStageSummary | null; onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[]
 }) {
   const [activeTab, setActiveTab] = useState<"seed" | "single" | "bulk">("seed")
-  const [rawIds, setRawIds] = useState<number[]>([])
-  useEffect(() => {
-    // 위치(stage) 기준: CP 무관 S1(bucket 1)에 남아있는 전체 콘텐츠. advance 후 위치가
-    // S2로 이동하면 bucket 1에서 빠져 건수가 줄고, 0이 되면 StageAdvanceBar가 자동 disable.
-    metadataApi.listContents({ size: 100 })
-      .then((r) => setRawIds(r.items.filter((c) => stageBucket(c) === 1).map((c) => c.id))).catch(() => {})
-  }, [summary])
+  const rawIds = stageContents.map((c) => c.id)
   return (
     <div className="space-y-4">
       <div>
@@ -925,6 +947,7 @@ function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel }: {
       {activeTab === "single" && <AddContentInlinePanel onRefresh={onRefresh} />}
       {activeTab === "bulk" && <BulkUploadEmbed onRefresh={onRefresh} />}
       <StageAdvanceBar ids={rawIds} fromStatus="생성" toStatus="Enrich" onDone={onRefresh} />
+      <StageControlBar stageContents={stageContents} onDone={onRefresh} showPrev={false} />
     </div>
   )
 }
@@ -1439,6 +1462,7 @@ function BatchRecallTrigger({ onRefresh, selectedContentId, stageContents }: { o
           <StageAdvanceBar ids={stageContents.map((c) => c.id)} fromStatus={`생성 전체 (${stageContents.length}건)`} toStatus="Enrich" onDone={onRefresh} />
         )}
       </div>
+      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
     </div>
   )
 }
@@ -1459,6 +1483,7 @@ function AiProcessPanel({ onRefresh, selectedContentId, stageContents }: { onRef
           <StageAdvanceBar ids={stageContents.map((c) => c.id)} fromStatus={`Enrich 전체 (${stageContents.length}건)`} toStatus="AI처리" onDone={onRefresh} />
         )}
       </div>
+      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
     </div>
   )
 }
@@ -1710,7 +1735,7 @@ function ReviewFieldTable({ selectedContentId, onApplied }: { selectedContentId:
   )
 }
 
-function RejectedPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
+function RejectedPanel({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
   const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
   const [acting, setActing] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
@@ -1779,6 +1804,7 @@ function RejectedPanel({ onRefresh, selectedContentId }: { onRefresh: () => void
         {acting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
         재검수 (검수 단계로 복귀)
       </button>
+      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
     </div>
   )
 }
@@ -1943,6 +1969,45 @@ function TestReviewPanel({ onRefresh, selectedContentId, stageContents }: { onRe
         }
       </div>
       <StageAdvanceBar ids={selectedContentId ? [selectedContentId] : []} fromStatus="AI처리" toStatus="검수" onDone={() => { onRefresh(); void fetchContent() }} />
+      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
+    </div>
+  )
+}
+
+function ApprovedStagePanel({ stageContents, onRefresh }: { stageContents: ContentOut[]; onRefresh: () => void }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">⑤ 승인</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          승인된 콘텐츠 — 실제 서비스 목록에 노출. 이전단계로 검수 단계 복귀 가능.
+        </p>
+      </div>
+      {stageContents.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+          승인된 콘텐츠 없음
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-background overflow-hidden">
+          <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">승인 콘텐츠</span>
+            <span className="text-xs text-muted-foreground">{stageContents.length}건</span>
+          </div>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {stageContents.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 px-3 py-2 text-xs">
+                <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                  {STATUS_LABEL[c.status] ?? c.status}
+                </span>
+                <span className="text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
+                <span className="font-medium truncate flex-1">{c.title}</span>
+                <span className="text-muted-foreground shrink-0">#{c.id}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
     </div>
   )
 }
@@ -2188,7 +2253,7 @@ export default function PipelineMonitoringPage() {
                 {activeStage !== null ? (
                   <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
                     {activeStage === 1 ? (
-                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
                     ) : activeStage === 2 ? (
                       <BatchRecallTrigger onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
                     ) : activeStage === 3 ? (
@@ -2196,11 +2261,9 @@ export default function PipelineMonitoringPage() {
                     ) : activeStage === 4 ? (
                       <TestReviewPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
                     ) : activeStage === 5 ? (
-                      <div className="text-center text-xs text-muted-foreground py-8">
-                        승인 단계 패널 준비 중
-                      </div>
+                      <ApprovedStagePanel stageContents={testContents} onRefresh={refreshTestSummary} />
                     ) : activeStage === 6 ? (
-                      <RejectedPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                      <RejectedPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
                     ) : null}
                   </div>
                 ) : (

@@ -55,6 +55,20 @@ class CleanupResponse(BaseModel):
     dry_run: bool
 
 
+class StageCleanupRequest(BaseModel):
+    ids: list[int]
+
+
+class RevertRequest(BaseModel):
+    ids: list[int]
+
+
+class RevertResponse(BaseModel):
+    reverted: int
+    skipped: int
+    results: dict[int, str]
+
+
 class StageSummary(BaseModel):
     by_status: dict[str, int]
     by_stage: dict[str, int]   # 위치(bucket) 기준 카운트 — 카드 표시용
@@ -99,6 +113,79 @@ def cleanup_pipeline(dry_run: bool = False, db: Session = Depends(get_db)):
     from scripts.seed_pipeline_test import clean_pipeline_test
     deleted = clean_pipeline_test(db, dry_run=dry_run)
     return CleanupResponse(deleted=deleted, dry_run=dry_run)
+
+
+@router.post("/cleanup-stage", response_model=CleanupResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def cleanup_stage_contents(
+    req: StageCleanupRequest,
+    dry_run: bool = False,
+    db: Session = Depends(get_db),
+):
+    """해당 단계 콘텐츠 삭제 — FE에서 stage-filtered IDs 전달. CP 무관.
+    dry_run=true 시 건수만 반환."""
+    from scripts.seed_pipeline_test import clean_by_ids
+    deleted = clean_by_ids(db, req.ids, dry_run=dry_run)
+    return CleanupResponse(deleted=deleted, dry_run=dry_run)
+
+
+@router.post("/revert", response_model=RevertResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def revert_stage(req: RevertRequest, db: Session = Depends(get_db)):
+    """[이전단계로] — 현재 bucket에서 이전 bucket으로 되돌림. status + current_stage 역진.
+    bucket 1(생성): terminal — skip.
+    bucket 6(반려): S8_REVIEW + status=ai (re-review와 동일)."""
+    from api.programming.metadata.stage_events import record_stage_event
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+
+    _STAGE_BUCKET: dict[str, int] = {
+        PipelineStage.S1_INTAKE.value:         1,
+        PipelineStage.S2_NORMALIZE.value:      2,
+        PipelineStage.S3_SOURCE_MATCH.value:   2,
+        PipelineStage.S4_GAP_DETECT.value:     2,
+        PipelineStage.S5_WEBSEARCH_FILL.value: 2,
+        PipelineStage.S6_LLM_EXTRACT.value:    3,
+        PipelineStage.S7_STAGING.value:        3,
+        PipelineStage.S8_REVIEW.value:         4,
+        PipelineStage.S9_PUBLISH.value:        5,
+    }
+
+    # bucket N → 이전 bucket 진입 (stage, status)
+    _BUCKET_PREV: dict[int, tuple] = {
+        2: (PipelineStage.S1_INTAKE,      ContentStatus.raw),       # Enrich → 생성
+        3: (PipelineStage.S2_NORMALIZE,   ContentStatus.raw),       # AI → Enrich
+        4: (PipelineStage.S6_LLM_EXTRACT, ContentStatus.enriched),  # 검수 → AI
+        5: (PipelineStage.S8_REVIEW,      ContentStatus.ai),        # 승인 → 검수
+        6: (PipelineStage.S8_REVIEW,      ContentStatus.ai),        # 반려 → 검수
+    }
+
+    results: dict[int, str] = {}
+    reverted = 0
+    for cid in req.ids:
+        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
+        if not c:
+            results[cid] = "not_found"
+            continue
+
+        # rejected 항목은 bucket 6으로 분기
+        if c.status == ContentStatus.rejected:
+            cur_bucket = 6
+        else:
+            cur_bucket = _STAGE_BUCKET.get(c.current_stage.value if c.current_stage else "", 1)
+
+        prev = _BUCKET_PREV.get(cur_bucket)
+        if prev is None:
+            results[cid] = "terminal_prev"  # bucket 1은 이전단계 없음
+            continue
+
+        prev_stage, prev_status = prev
+        record_stage_event(db, cid, prev_stage, StageEventType.RETRIED, actor="user")
+        c.status = prev_status
+        results[cid] = f"bucket_{cur_bucket - 1 if cur_bucket != 6 else 4}"
+        reverted += 1
+
+    db.commit()
+    return RevertResponse(reverted=reverted, skipped=len(req.ids) - reverted, results=results)
 
 
 @router.get("/summary", response_model=StageSummary,
