@@ -46,6 +46,8 @@ class SeedResponse(BaseModel):
     series_incomplete: int
     conflict: int
     total_root: int
+    skipped_in_pipeline: int = 0
+    skipped_registered: int = 0
 
 
 class CleanupResponse(BaseModel):
@@ -123,16 +125,20 @@ def pipeline_summary(db: Session = Depends(get_db)):
     }
 
     # ── 카드 카운트(by_stage): CP 무관 전체 (소프트 삭제 제외) ──
+    # rejected 항목은 위치(current_stage)와 무관하게 bucket 6(반려/실패)으로 분기.
     by_stage: dict[str, int] = {}
     stage_rows = (
-        db.query(Content.current_stage, func.count())
+        db.query(Content.current_stage, Content.status, func.count())
         .filter(Content.is_deleted.is_(False))
-        .group_by(Content.current_stage)
+        .group_by(Content.current_stage, Content.status)
         .all()
     )
-    for cur_stage, cnt in stage_rows:
-        # current_stage 없으면(시드 직후/레거시) → bucket 1
-        bucket = _STAGE_BUCKET.get(cur_stage.value if cur_stage else "", 1)
+    for cur_stage, status, cnt in stage_rows:
+        if status == ContentStatus.rejected:
+            bucket = 6
+        else:
+            # current_stage 없으면(시드 직후/레거시) → bucket 1
+            bucket = _STAGE_BUCKET.get(cur_stage.value if cur_stage else "", 1)
         by_stage[str(bucket)] = by_stage.get(str(bucket), 0) + cnt
 
     # ── 시드 패널용(by_status/by_type/total): TEST_PIPELINE 한정 ──

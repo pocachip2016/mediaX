@@ -5205,6 +5205,119 @@ print('  ✓ 스키마 확장 확인')
     echo "=== PASS ==="
     ;;
 
+  dev-s4-review-cleanup)
+    echo "=== dev-s4-review-cleanup: S4 검수 승인/반려/재검수 E2E ==="
+    cd "$BACKEND"
+    # BE pytest
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_s4_review_actions.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ approve/reject/re-review pytest 7건 통과"
+    # BE 엔드포인트 구조
+    grep -q "def approve_review"  api/test/pipeline_router.py || { echo "FAIL: approve 엔드포인트 없음"; exit 1; }
+    grep -q "def reject_review"   api/test/pipeline_router.py || { echo "FAIL: reject 엔드포인트 없음"; exit 1; }
+    grep -q "def re_review"       api/test/pipeline_router.py || { echo "FAIL: re-review 엔드포인트 없음"; exit 1; }
+    grep -q "StageEventType.REJECTED" api/test/pipeline_router.py || { echo "FAIL: REJECTED enum 미사용"; exit 1; }
+    echo "  ✓ BE 엔드포인트 구조 확인"
+    # FE 배선
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    ! grep -q "bulkApprove\|bulkReject" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: 구식 bulkApprove/bulkReject 잔존"; exit 1; }
+    grep -q "reReview"  "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.reReview 없음"; exit 1; }
+    grep -q "re-review" "$FE_ROOT/lib/api.ts" || { echo "FAIL: re-review 엔드포인트 배선 없음"; exit 1; }
+    echo "  ✓ FE 단일선택 재구성 + 구식 API 미사용 확인"
+    # typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-s6-rejected-card)
+    echo "=== dev-s6-rejected-card: S6 반려/실패 버킷 + RejectedPanel ==="
+    cd "$BACKEND"
+    # BE pytest
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_s6_rejected_bucket.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ 반려→bucket6 pytest 통과"
+    # BE 집계 로직 확인
+    grep -q "ContentStatus.rejected" api/test/pipeline_router.py || { echo "FAIL: rejected 분기 없음"; exit 1; }
+    grep -q "bucket = 6" api/test/pipeline_router.py || { echo "FAIL: bucket 6 할당 없음"; exit 1; }
+    echo "  ✓ BE bucket 6 분기 확인"
+    # FE 확인
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "반려/실패" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS '반려/실패' 없음"; exit 1; }
+    grep -q "contentBucket" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: contentBucket 헬퍼 없음"; exit 1; }
+    grep -q "RejectedPanel" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: RejectedPanel 컴포넌트 없음"; exit 1; }
+    echo "  ✓ FE STAGE_DEFS + contentBucket + RejectedPanel 확인"
+    # FE typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-s4-review-cleanup-step1)
+    echo "=== dev-s4-review-cleanup step1: S4 단일선택 FE 재구성 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # BE 엔드포인트 확인
+    grep -q "def approve_review"  "$SCRIPT_DIR/../backend/api/test/pipeline_router.py" || { echo "FAIL: approve 엔드포인트 없음"; exit 1; }
+    grep -q "def reject_review"   "$SCRIPT_DIR/../backend/api/test/pipeline_router.py" || { echo "FAIL: reject 엔드포인트 없음"; exit 1; }
+    grep -q "def re_review"       "$SCRIPT_DIR/../backend/api/test/pipeline_router.py" || { echo "FAIL: re-review 엔드포인트 없음"; exit 1; }
+    echo "  ✓ BE approve/reject/re-review 엔드포인트 확인"
+    # FE api.ts 배선 확인
+    grep -q "pipelineTestApi.approve\|approve:" "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.approve 없음"; exit 1; }
+    grep -q "pipelineTestApi.reject\|reject:"   "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.reject 없음"; exit 1; }
+    grep -q "reReview"                          "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.reReview 없음"; exit 1; }
+    grep -q "re-review"                         "$FE_ROOT/lib/api.ts" || { echo "FAIL: re-review 엔드포인트 배선 없음"; exit 1; }
+    echo "  ✓ FE api.ts approve/reject/reReview 배선 확인"
+    # 구식 bulkApprove 미사용 확인 (TestReviewPanel 내)
+    ! grep -q "bulkApprove\|bulkReject" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: 구식 bulkApprove/bulkReject 잔존"; exit 1; }
+    echo "  ✓ 구식 bulkApprove/bulkReject 미사용 확인"
+    # FE typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-seed-dedup)
+    echo "=== dev-seed-dedup: 시드 중복 입력 방지 ==="
+    cd "$BACKEND"
+    # BE pytest
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_seed_dedup.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ 시드 dedup pytest 4건 통과"
+    # BE 구조 확인
+    grep -q "_find_existing_content" scripts/seed_pipeline_test.py || { echo "FAIL: _find_existing_content 헬퍼 없음"; exit 1; }
+    grep -q "skipped_in_pipeline"   scripts/seed_pipeline_test.py || { echo "FAIL: skipped_in_pipeline 카운트 없음"; exit 1; }
+    grep -q "skipped_registered"    scripts/seed_pipeline_test.py || { echo "FAIL: skipped_registered 카운트 없음"; exit 1; }
+    grep -q "skipped_in_pipeline"   api/test/pipeline_router.py   || { echo "FAIL: SeedResponse에 skipped_in_pipeline 없음"; exit 1; }
+    echo "  ✓ BE 구조 확인"
+    # FE 타입 + typecheck
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "skipped_in_pipeline"   "$FE_ROOT/lib/api.ts"          || { echo "FAIL: FE PipelineTestSeedResult에 skipped_in_pipeline 없음"; exit 1; }
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-stage-bulk-buttons)
+    echo "=== dev-stage-bulk-buttons: S2/S3/S4 개별+전체 다음단계 버튼 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    PAGE="$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx"
+    grep -q "stageContents"           "$PAGE" || { echo "FAIL: stageContents prop 없음"; exit 1; }
+    grep -q "BulkApproveButton"       "$PAGE" || { echo "FAIL: BulkApproveButton 컴포넌트 없음"; exit 1; }
+    grep -q "전체.*건.*승인\|전체.*승인" "$PAGE" || { echo "FAIL: 전체 승인 버튼 텍스트 없음"; exit 1; }
+    grep -q "stageContents.length >= 2" "$PAGE" || { echo "FAIL: 2건 이상 조건 없음"; exit 1; }
+    echo "  ✓ FE 구조 확인 (stageContents, BulkApproveButton, 전체 버튼)"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps)"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef } from "react"
-import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Zap, Square, CheckSquare } from "lucide-react"
+import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Zap } from "lucide-react"
 import {
   metadataApi,
   pipelineTestApi,
@@ -24,6 +24,8 @@ import {
   type FieldRecommendation,
   type EnrichPolicy,
   type ReferenceExtractResponse,
+  type ContentStatus,
+  type ReviewActionResponse,
 } from "@/lib/api"
 import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
 
@@ -37,7 +39,7 @@ const STAGE_DEFS = [
   { stage: 3, name: "AI처리",  statusKey: "ai",       colorClass: "bg-violet-500" },
   { stage: 4, name: "검수",    statusKey: "review",     colorClass: "bg-orange-500" },
   { stage: 5, name: "승인",    statusKey: "approved",   colorClass: "bg-green-500" },
-  { stage: 6, name: "게시",    statusKey: "published",  colorClass: "bg-gray-500" },
+  { stage: 6, name: "반려/실패", statusKey: "rejected",  colorClass: "bg-red-500" },
 ] as const
 
 // current_stage(위치) → 콘솔 카드 bucket. 백엔드 pipeline_router._STAGE_BUCKET와 일치.
@@ -50,6 +52,10 @@ const STAGE_TO_BUCKET: Record<string, number> = {
 // 콘텐츠의 위치 bucket — current_stage 없으면(시드 직후/레거시) bucket 1.
 function stageBucket(c: { current_stage?: string | null }): number {
   return c.current_stage ? (STAGE_TO_BUCKET[c.current_stage] ?? 1) : 1
+}
+// 반려 항목은 위치와 무관하게 bucket 6(반려/실패)으로 분기. BE pipeline_summary와 일치.
+function contentBucket(c: { current_stage?: string | null; status?: string | null }): number {
+  return c.status === "rejected" ? 6 : stageBucket(c)
 }
 
 // ── Mock 데이터 ──────────────────────────────────────────
@@ -261,6 +267,11 @@ function SampleSeedPanel({
             <div>영화-완전 {seedResult.movie_complete}건 · 영화-불완전 {seedResult.movie_incomplete}건</div>
             <div>시리즈-완전 {seedResult.series_complete}건 · 시리즈-불완전 {seedResult.series_incomplete}건 · 충돌 {seedResult.conflict}건</div>
             <div className="font-medium">합계 {seedResult.total_root}건 (루트 콘텐츠 기준)</div>
+            {(seedResult.skipped_in_pipeline > 0 || seedResult.skipped_registered > 0) && (
+              <div className="text-amber-600 dark:text-amber-400">
+                스킵 — 진행중 {seedResult.skipped_in_pipeline}건 · 등록완료 {seedResult.skipped_registered}건 (중복)
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1328,7 +1339,7 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
   )
 }
 
-function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
+function BatchRecallTrigger({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
   const [title, setTitle] = useState("")
   const [content, setContent] = useState<ContentDetail | null>(null)
   const [recs, setRecs] = useState<RecommendationsOut | null>(null)
@@ -1422,25 +1433,17 @@ function BatchRecallTrigger({ onRefresh, selectedContentId }: { onRefresh: () =>
             </div>
           </div>
       </div>
-      <StageAdvanceBar ids={[selectedContentId]} fromStatus="생성" toStatus="Enrich" onDone={() => { onRefresh(); fetchRecs() }} />
+      <div className="flex items-start gap-2 flex-wrap">
+        <StageAdvanceBar ids={[selectedContentId]} fromStatus="생성" toStatus="Enrich" onDone={() => { onRefresh(); void fetchRecs() }} />
+        {stageContents.length >= 2 && (
+          <StageAdvanceBar ids={stageContents.map((c) => c.id)} fromStatus={`생성 전체 (${stageContents.length}건)`} toStatus="Enrich" onDone={onRefresh} />
+        )}
+      </div>
     </div>
   )
 }
 
-function AiProcessPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
-  const [items, setItems] = useState<ContentOut[]>([])
-  const [loadingList, setLoadingList] = useState(false)
-
-  const fetchItems = useCallback(async () => {
-    setLoadingList(true)
-    try {
-      const r = await metadataApi.listContents({ size: 100 })
-      setItems(r.items.filter((c) => stageBucket(c) === 3))
-    } catch { setItems([]) } finally { setLoadingList(false) }
-  }, [])
-
-  useEffect(() => { fetchItems() }, [fetchItems])
-
+function AiProcessPanel({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
   return (
     <div className="space-y-4">
       <div>
@@ -1450,7 +1453,12 @@ function AiProcessPanel({ onRefresh, selectedContentId }: { onRefresh: () => voi
 
       <EnrichBoostPanel selectedContentId={selectedContentId} onRefresh={onRefresh} />
 
-      <StageAdvanceBar ids={items.map((c) => c.id)} fromStatus="Enrich" toStatus="AI처리" onDone={() => { onRefresh(); fetchItems() }} />
+      <div className="flex items-start gap-2 flex-wrap">
+        <StageAdvanceBar ids={selectedContentId ? [selectedContentId] : []} fromStatus="Enrich" toStatus="AI처리" onDone={onRefresh} />
+        {stageContents.length >= 2 && (
+          <StageAdvanceBar ids={stageContents.map((c) => c.id)} fromStatus={`Enrich 전체 (${stageContents.length}건)`} toStatus="AI처리" onDone={onRefresh} />
+        )}
+      </div>
     </div>
   )
 }
@@ -1702,130 +1710,57 @@ function ReviewFieldTable({ selectedContentId, onApplied }: { selectedContentId:
   )
 }
 
-function TestReviewPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
-  const [items, setItems] = useState<ContentOut[]>([])
-  const [loading, setLoading] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+function RejectedPanel({ onRefresh, selectedContentId }: { onRefresh: () => void; selectedContentId: number | null }) {
+  const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
   const [acting, setActing] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [showWebSearch, setShowWebSearch] = useState(false)
-  const [useWebsearch, setUseWebsearch] = useState(false)
-  const [policyBusy, setPolicyBusy] = useState(false)
-  const [reviewTitle, setReviewTitle] = useState("")
+  const [title, setTitle] = useState("")
 
-  useEffect(() => { metadataApi.getEnrichPolicy().then((p) => setUseWebsearch(p.use_websearch)).catch(() => {}) }, [])
-  useEffect(() => {
-    if (!selectedContentId) { setReviewTitle(""); return }
-    metadataApi.getContent(selectedContentId).then((c) => setReviewTitle(c.title)).catch(() => {})
+  const fetchContent = useCallback(async () => {
+    if (!selectedContentId) { setTitle(""); setContentStatus(null); return }
+    try {
+      const c = await metadataApi.getContent(selectedContentId)
+      setTitle(c.title)
+      setContentStatus(c.status as ContentStatus)
+    } catch { setContentStatus(null) }
   }, [selectedContentId])
 
-  const toggleWebsearch = async () => {
-    setPolicyBusy(true)
-    try { const p = await metadataApi.patchEnrichPolicy({ use_websearch: !useWebsearch }); setUseWebsearch(p.use_websearch) }
-    catch { /* ignore */ } finally { setPolicyBusy(false) }
-  }
+  useEffect(() => { void fetchContent() }, [fetchContent])
 
-  const fetchStaging = useCallback(async () => {
-    setLoading(true)
+  const handleReReview = async () => {
+    if (!selectedContentId) return
+    setActing(true); setResultMsg(null); setError(null)
     try {
-      const r = await metadataApi.listContents({ cp_name: "TEST_PIPELINE", status: "ai", size: 50 })
-      setItems(r.items)
-      setSelectedIds(new Set())
-    } catch { setItems([]) } finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { fetchStaging() }, [fetchStaging])
-
-  const toggleAll = () => {
-    setSelectedIds(selectedIds.size === items.length ? new Set() : new Set(items.map((c) => c.id)))
-  }
-
-  const toggleOne = (id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-
-  const handleApprove = async () => {
-    if (!selectedIds.size) return
-    setActing(true)
-    setResultMsg(null)
-    setError(null)
-    try {
-      const r = await metadataApi.bulkApprove({ content_ids: [...selectedIds], reviewer: "test-console" })
-      setResultMsg(`✓ ${r.approved}건 승인됨`)
+      const r = await pipelineTestApi.reReview([selectedContentId])
+      setResultMsg(`↻ #${selectedContentId} 검수 단계로 복귀 (${r.processed}건)`)
       onRefresh()
-      fetchStaging()
-    } catch (e) { setError(e instanceof Error ? e.message : "승인 실패") }
+      await fetchContent()
+    } catch (e) { setError(e instanceof Error ? e.message : "재검수 실패") }
     finally { setActing(false) }
   }
 
-  const handleReject = async () => {
-    if (!selectedIds.size) return
-    setActing(true)
-    setResultMsg(null)
-    setError(null)
-    try {
-      const r = await metadataApi.bulkReject({ content_ids: [...selectedIds], reviewer: "test-console" })
-      setResultMsg(`✓ ${r.rejected}건 반려됨`)
-      onRefresh()
-      fetchStaging()
-    } catch (e) { setError(e instanceof Error ? e.message : "반려 실패") }
-    finally { setActing(false) }
-  }
+  const isRejected = contentStatus === "rejected"
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">④ 검수 큐 (TEST_PIPELINE)</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">AI처리완료(ai) 항목 선택 후 일괄 승인/반려</p>
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">✕ 반려/실패</h3>
+          {selectedContentId
+            ? <p className="text-xs text-muted-foreground mt-0.5">#{selectedContentId} {title && <span className="font-medium text-foreground">{title}</span>}</p>
+            : <p className="text-xs text-muted-foreground mt-0.5">좌측 목록에서 반려 콘텐츠를 선택하세요</p>
+          }
+        </div>
+        {contentStatus && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+            {STATUS_LABEL[contentStatus] ?? contentStatus}
+          </span>
+        )}
       </div>
 
-      {/* 필드 편집 테이블 */}
-      <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchStaging} />
-
-      {loading ? (
-        <div className="text-center py-4 text-xs text-muted-foreground">
-          <RefreshCw className="h-4 w-4 mx-auto mb-1 animate-spin opacity-50" />로딩 중…
-        </div>
-      ) : items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-          검토대기(staging) 상태 TEST_PIPELINE 항목 없음
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <div className="px-3 py-2 bg-muted/40 flex items-center gap-2">
-            <button onClick={toggleAll} className="shrink-0">
-              {selectedIds.size === items.length
-                ? <CheckSquare className="h-3.5 w-3.5 text-primary" />
-                : <Square className="h-3.5 w-3.5 text-muted-foreground" />}
-            </button>
-            <span className="text-xs font-semibold text-muted-foreground flex-1">검토대기 항목</span>
-            <span className="text-xs text-muted-foreground">{selectedIds.size}/{items.length}건 선택</span>
-          </div>
-          <div className="divide-y divide-border max-h-48 overflow-y-auto">
-            {items.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => toggleOne(c.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent transition-colors ${
-                  selectedIds.has(c.id) ? "bg-primary/5" : ""
-                }`}
-              >
-                {selectedIds.has(c.id)
-                  ? <CheckSquare className="h-3.5 w-3.5 text-primary shrink-0" />
-                  : <Square className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                <span className="text-xs text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
-                <span className="text-xs font-medium truncate flex-1">{c.title}</span>
-                <span className="text-xs text-muted-foreground shrink-0">#{c.id}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 필드 수정 — 재검수 전 메타 보강 */}
+      <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchContent} />
 
       {error && (
         <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
@@ -1836,30 +1771,153 @@ function TestReviewPanel({ onRefresh, selectedContentId }: { onRefresh: () => vo
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <button
+        onClick={() => void handleReReview()}
+        disabled={!selectedContentId || !isRejected || acting}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-400 text-sm font-medium hover:bg-amber-50 dark:hover:bg-amber-900/10 disabled:opacity-50 transition-colors"
+      >
+        {acting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+        재검수 (검수 단계로 복귀)
+      </button>
+    </div>
+  )
+}
+
+function BulkApproveButton({ stageContents, onRefresh, setResultMsg, setError }: {
+  stageContents: ContentOut[]; onRefresh: () => void
+  setResultMsg: (m: string | null) => void; setError: (e: string | null) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const approvableIds = stageContents.filter((c) => c.status !== "rejected").map((c) => c.id)
+  if (!approvableIds.length) return null
+  const handleBulkApprove = async () => {
+    setBusy(true); setResultMsg(null); setError(null)
+    try {
+      const r = await pipelineTestApi.approve(approvableIds)
+      setResultMsg(`✓ 전체 ${r.processed}건 승인됨`)
+      onRefresh()
+    } catch (e) { setError(e instanceof Error ? e.message : "전체 승인 실패") }
+    finally { setBusy(false) }
+  }
+  return (
+    <button
+      onClick={() => void handleBulkApprove()}
+      disabled={busy}
+      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-green-700 hover:bg-green-800 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+    >
+      {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+      전체 {approvableIds.length}건 승인
+    </button>
+  )
+}
+
+function TestReviewPanel({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
+  const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
+  const [acting, setActing] = useState(false)
+  const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showWebSearch, setShowWebSearch] = useState(false)
+  const [useWebsearch, setUseWebsearch] = useState(false)
+  const [policyBusy, setPolicyBusy] = useState(false)
+  const [reviewTitle, setReviewTitle] = useState("")
+
+  useEffect(() => { metadataApi.getEnrichPolicy().then((p) => setUseWebsearch(p.use_websearch)).catch(() => {}) }, [])
+
+  const fetchContent = useCallback(async () => {
+    if (!selectedContentId) { setReviewTitle(""); setContentStatus(null); return }
+    try {
+      const c = await metadataApi.getContent(selectedContentId)
+      setReviewTitle(c.title)
+      setContentStatus(c.status as ContentStatus)
+    } catch { setContentStatus(null) }
+  }, [selectedContentId])
+
+  useEffect(() => { void fetchContent() }, [fetchContent])
+
+  const toggleWebsearch = async () => {
+    setPolicyBusy(true)
+    try { const p = await metadataApi.patchEnrichPolicy({ use_websearch: !useWebsearch }); setUseWebsearch(p.use_websearch) }
+    catch { /* ignore */ } finally { setPolicyBusy(false) }
+  }
+
+  const runAction = async (
+    action: (ids: number[]) => Promise<ReviewActionResponse>,
+    successMsg: (r: ReviewActionResponse) => string
+  ) => {
+    if (!selectedContentId) return
+    setActing(true); setResultMsg(null); setError(null)
+    try {
+      const r = await action([selectedContentId])
+      setResultMsg(successMsg(r))
+      onRefresh()
+      await fetchContent()
+    } catch (e) { setError(e instanceof Error ? e.message : "처리 실패") }
+    finally { setActing(false) }
+  }
+
+  const isRejected = contentStatus === "rejected"
+  const canAct = !!selectedContentId && !acting
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">④ 검수</h3>
+          {selectedContentId
+            ? <p className="text-xs text-muted-foreground mt-0.5">#{selectedContentId} {reviewTitle && <span className="font-medium text-foreground">{reviewTitle}</span>}</p>
+            : <p className="text-xs text-muted-foreground mt-0.5">좌측 목록에서 검수할 콘텐츠를 선택하세요</p>
+          }
+        </div>
+        {contentStatus && (
+          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+            isRejected ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+            : contentStatus === "approved" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+          }`}>{STATUS_LABEL[contentStatus] ?? contentStatus}</span>
+        )}
+      </div>
+
+      {/* 필드 편집 테이블 */}
+      <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchContent} />
+
+      {error && (
+        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
+      )}
+      {resultMsg && (
+        <div className="rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 px-3 py-2.5">
+          <div className="text-sm font-medium text-green-700 dark:text-green-400">{resultMsg}</div>
+        </div>
+      )}
+
+      {/* 검수 결정 3액션 + 전체 승인 */}
+      <div className="flex items-center gap-2 flex-wrap">
         <button
-          onClick={handleApprove}
-          disabled={acting || !selectedIds.size}
+          onClick={() => void runAction(pipelineTestApi.approve, (r) => `✓ #${selectedContentId} 승인됨 (${r.processed}건)`)}
+          disabled={!canAct || isRejected}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium disabled:opacity-50 transition-colors"
         >
           {acting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-          일괄 승인 ({selectedIds.size}건)
+          승인
         </button>
         <button
-          onClick={handleReject}
-          disabled={acting || !selectedIds.size}
+          onClick={() => void runAction(pipelineTestApi.reject, (r) => `✗ #${selectedContentId} 반려됨 (${r.processed}건)`)}
+          disabled={!canAct || isRejected}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors"
         >
-          반려 ({selectedIds.size}건)
+          반려
         </button>
         <button
-          onClick={fetchStaging}
-          disabled={loading}
-          className="p-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50 transition-colors"
+          onClick={() => void runAction(pipelineTestApi.reReview, (r) => `↻ #${selectedContentId} 재검수 복귀 (${r.processed}건)`)}
+          disabled={!canAct || !isRejected}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-800/40 text-amber-600 dark:text-amber-400 text-sm hover:bg-amber-50 dark:hover:bg-amber-900/10 disabled:opacity-50 transition-colors"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          재검수
         </button>
+        {stageContents.length >= 2 && (
+          <BulkApproveButton stageContents={stageContents} onRefresh={onRefresh} setResultMsg={setResultMsg} setError={setError} />
+        )}
       </div>
+
       {/* WebSearch — 검수 단계에서 추가 보완 검색 */}
       <div className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-violet-50/40 dark:bg-violet-900/10 p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -1884,7 +1942,7 @@ function TestReviewPanel({ onRefresh, selectedContentId }: { onRefresh: () => vo
           </>
         }
       </div>
-      <StageAdvanceBar ids={[...selectedIds]} fromStatus="AI처리" toStatus="검수" onDone={() => { onRefresh(); fetchStaging() }} />
+      <StageAdvanceBar ids={selectedContentId ? [selectedContentId] : []} fromStatus="AI처리" toStatus="검수" onDone={() => { onRefresh(); void fetchContent() }} />
     </div>
   )
 }
@@ -1898,41 +1956,26 @@ function StatusDot({ status }: { status: "ok" | "warning" | "error" }) {
 }
 
 function PipelineStageCard({
-  stage, name, count, colorClass, active, onClick, autoOn, onToggleAuto, autoBusy,
+  stage, name, count, colorClass, active, onClick, autoOn, onToggleAuto, autoBusy, showAuto = true,
 }: {
   stage: number; name: string; count: number; colorClass: string; active: boolean; onClick: () => void
-  autoOn: boolean; onToggleAuto: () => void; autoBusy: boolean
+  autoOn: boolean; onToggleAuto: () => void; autoBusy: boolean; showAuto?: boolean
 }) {
+  const badgeLabel = stage === 6 ? "✕" : `S${stage}`
   return (
     <div onClick={onClick} role="button" tabIndex={0}
       className={`flex-1 min-w-[88px] cursor-pointer rounded-xl border-2 p-3 text-center transition-all ${active ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-accent"}`}>
-      <div className={`text-xs font-bold text-white ${colorClass} rounded px-1.5 py-0.5 inline-block mb-1.5`}>S{stage}</div>
+      <div className={`text-xs font-bold text-white ${colorClass} rounded px-1.5 py-0.5 inline-block mb-1.5`}>{badgeLabel}</div>
       <div className="text-xs font-medium text-foreground">{name}</div>
       <div className="text-xl font-bold mt-0.5">{count}</div>
-      <span role="switch" aria-checked={autoOn}
-        onClick={(e) => { e.stopPropagation(); if (!autoBusy) onToggleAuto() }}
-        className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${autoOn ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"} ${autoBusy ? "opacity-50" : ""}`}>
-        <span className={`h-1.5 w-1.5 rounded-full ${autoOn ? "bg-green-500" : "bg-slate-400"}`} />
-        AUTO {autoOn ? "ON" : "OFF"}
-      </span>
-    </div>
-  )
-}
-
-function PipelineStat({ label, value, color }: { label: string; value: number; color: string }) {
-  const colorMap: Record<string, string> = {
-    yellow: "text-yellow-600 dark:text-yellow-400",
-    blue: "text-blue-600 dark:text-blue-400",
-    violet: "text-violet-600 dark:text-violet-400",
-    orange: "text-orange-600 dark:text-orange-400",
-    green: "text-green-600 dark:text-green-400",
-    red: "text-red-600 dark:text-red-400",
-    gray: "text-muted-foreground",
-  }
-  return (
-    <div className="text-center">
-      <div className={`text-3xl font-bold ${colorMap[color] ?? ""}`}>{value}</div>
-      <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+      {showAuto && (
+        <span role="switch" aria-checked={autoOn}
+          onClick={(e) => { e.stopPropagation(); if (!autoBusy) onToggleAuto() }}
+          className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${autoOn ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"} ${autoBusy ? "opacity-50" : ""}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${autoOn ? "bg-green-500" : "bg-slate-400"}`} />
+          AUTO {autoOn ? "ON" : "OFF"}
+        </span>
+      )}
     </div>
   )
 }
@@ -1994,7 +2037,7 @@ export default function PipelineMonitoringPage() {
       // CP 무관 전체 조회. 단계 선택 시 해당 bucket 필터, 미선택 시 전체 표시.
       const r = await metadataApi.listContents({ size: 100 })
       const filtered = activeStage !== null
-        ? r.items.filter((c) => stageBucket(c) === activeStage)
+        ? r.items.filter((c) => contentBucket(c) === activeStage)
         : r.items
       setTestContents(filtered)
     } catch {
@@ -2048,9 +2091,6 @@ export default function PipelineMonitoringPage() {
     }
   }
 
-  const totalItems = pipeline.waiting_count + pipeline.processing_count + pipeline.staging_count + pipeline.review_count + pipeline.approved_count + pipeline.rejected_count
-  const successRate = totalItems > 0 ? ((pipeline.approved_count / totalItems) * 100).toFixed(1) : "0.0"
-
   return (
     <div className="space-y-6">
       {/* 헤더 */}
@@ -2081,56 +2121,101 @@ export default function PipelineMonitoringPage() {
         </div>
       </div>
 
-      {/* ADR-006: 파이프라인 보드 (마스터-디테일) */}
-      <PipelineBoard autoRefresh={autoRefresh} />
+      {/* Pipeline Test Console (dev only — NEXT_PUBLIC_ENABLE_PIPELINE_TEST=true) */}
+      {ENABLE_TEST && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10">
+          <div className="px-5 py-4 border-b border-amber-200 dark:border-amber-800/40 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FlaskConical className="h-4 w-4 text-amber-600" />
+              <h2 className="font-semibold text-amber-800 dark:text-amber-300">Pipeline Console</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800/40 text-amber-700 dark:text-amber-400 font-medium">
+                dev
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-600 dark:text-amber-500">
+                {testSummary && testSummary.total > 0 ? `시드 ${testSummary.total}건` : "시드 없음"}
+              </span>
+              <button
+                onClick={refreshTestSummary}
+                className="flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800/40 text-amber-600 dark:text-amber-500 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-colors"
+              >
+                <RefreshCw className="h-3 w-3" />
+                새로고침
+              </button>
+            </div>
+          </div>
 
-      {/* 전체 현황 카드 */}
-      <div className="rounded-xl border border-border bg-card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold">파이프라인 현황</h2>
-          <div className="text-sm text-muted-foreground">
-            평균 품질 <span className="font-bold text-foreground">{pipeline.avg_quality_score}점</span>
-            <span className="mx-2">·</span>
-            성공률 <span className="font-bold text-green-600">{successRate}%</span>
+          <div className="px-5 py-4 space-y-4">
+            {/* 6단계 스트립 */}
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {STAGE_DEFS.map((s) => (
+                <PipelineStageCard
+                  key={s.stage}
+                  stage={s.stage}
+                  name={s.name}
+                  count={testSummary?.by_stage?.[String(s.stage)] ?? 0}
+                  colorClass={s.colorClass}
+                  active={activeStage === s.stage}
+                  onClick={() => setActiveStage(activeStage === s.stage ? null : s.stage)}
+                  autoOn={stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy]}
+                  onToggleAuto={() => toggleStageAuto(s.stage, !stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy])}
+                  autoBusy={stageAutoBusy}
+                  showAuto={s.stage !== 6}
+                />
+              ))}
+            </div>
+
+            {/* 좌(목록) / 우(선택 콘텐츠 작업) 마스터-디테일 */}
+            <div className="grid grid-cols-5 gap-4 items-start">
+              {/* 좌측 — 콘텐츠 목록(master) + 타임라인 */}
+              <div className="col-span-2 space-y-3">
+                <TestContentList
+                  contents={testContents}
+                  loading={testContentsLoading}
+                  selectedId={selectedContentId}
+                  onSelect={handleSelectContent}
+                />
+                <ContentPipelineTimeline
+                  timeline={contentTimeline}
+                  loading={timelineLoading}
+                />
+                <ProgressLog contentId={selectedContentId} />
+              </div>
+
+              {/* 우측 — 선택 콘텐츠 단계 작업 패널(detail) */}
+              <div className="col-span-3">
+                {activeStage !== null ? (
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
+                    {activeStage === 1 ? (
+                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                    ) : activeStage === 2 ? (
+                      <BatchRecallTrigger onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
+                    ) : activeStage === 3 ? (
+                      <AiProcessPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
+                    ) : activeStage === 4 ? (
+                      <TestReviewPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
+                    ) : activeStage === 5 ? (
+                      <div className="text-center text-xs text-muted-foreground py-8">
+                        승인 단계 패널 준비 중
+                      </div>
+                    ) : activeStage === 6 ? (
+                      <RejectedPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-amber-200 dark:border-amber-800/30 p-6 text-center text-xs text-amber-600/60 dark:text-amber-500/60">
+                    스테이지 카드를 클릭해 패널을 열어주세요
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
-          <PipelineStat label="수신 대기" value={pipeline.waiting_count} color="yellow" />
-          <PipelineStat label="처리 중" value={pipeline.processing_count} color="blue" />
-          <PipelineStat label="검토 대기" value={pipeline.staging_count} color="violet" />
-          <PipelineStat label="검수 대기" value={pipeline.review_count} color="orange" />
-          <PipelineStat label="승인 완료" value={pipeline.approved_count} color="green" />
-          <PipelineStat label="반려/실패" value={pipeline.rejected_count} color="red" />
-        </div>
+      )}
 
-        {/* 흐름 바 */}
-        <div className="mt-5 flex items-center gap-1 overflow-x-auto pb-1 text-sm">
-          {[
-            { label: "이메일 수신", val: pipeline.waiting_count, bg: "bg-yellow-500" },
-            { label: "AI 처리", val: pipeline.processing_count, bg: "bg-blue-500" },
-            { label: "검색 완료", val: pipeline.staging_count, bg: "bg-violet-500" },
-            { label: "검수", val: pipeline.review_count, bg: "bg-orange-500" },
-            { label: "등록", val: pipeline.approved_count, bg: "bg-green-500" },
-          ].map((step, i) => (
-            <div key={step.label} className="flex items-center gap-1 shrink-0">
-              {i > 0 && <span className="text-muted-foreground text-xs px-0.5">→</span>}
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-white text-xs font-medium ${step.bg}`}>
-                {step.label}
-                <span className="font-bold">{step.val}</span>
-              </div>
-            </div>
-          ))}
-          {pipeline.failed_enrichment_count > 0 && (
-            <div className="flex items-center gap-1 shrink-0 ml-2">
-              <span className="text-muted-foreground text-xs">↘</span>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500 text-white text-xs font-medium">
-                <AlertCircle className="h-3 w-3" />
-                실패 {pipeline.failed_enrichment_count}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* ADR-006: 파이프라인 보드 (마스터-디테일) */}
+      <PipelineBoard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Beat 스케줄 상태 */}
@@ -2252,95 +2337,6 @@ export default function PipelineMonitoringPage() {
         </div>
       )}
 
-      {/* Pipeline Test Console (dev only — NEXT_PUBLIC_ENABLE_PIPELINE_TEST=true) */}
-      {ENABLE_TEST && (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10">
-          <div className="px-5 py-4 border-b border-amber-200 dark:border-amber-800/40 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FlaskConical className="h-4 w-4 text-amber-600" />
-              <h2 className="font-semibold text-amber-800 dark:text-amber-300">Pipeline Console</h2>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800/40 text-amber-700 dark:text-amber-400 font-medium">
-                dev
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-amber-600 dark:text-amber-500">
-                {testSummary && testSummary.total > 0 ? `시드 ${testSummary.total}건` : "시드 없음"}
-              </span>
-              <button
-                onClick={refreshTestSummary}
-                className="flex items-center gap-1 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800/40 text-amber-600 dark:text-amber-500 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-colors"
-              >
-                <RefreshCw className="h-3 w-3" />
-                새로고침
-              </button>
-            </div>
-          </div>
-
-          <div className="px-5 py-4 space-y-4">
-            {/* 6단계 스트립 */}
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {STAGE_DEFS.map((s) => (
-                <PipelineStageCard
-                  key={s.stage}
-                  stage={s.stage}
-                  name={s.name}
-                  count={testSummary?.by_stage?.[String(s.stage)] ?? 0}
-                  colorClass={s.colorClass}
-                  active={activeStage === s.stage}
-                  onClick={() => setActiveStage(activeStage === s.stage ? null : s.stage)}
-                  autoOn={stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy]}
-                  onToggleAuto={() => toggleStageAuto(s.stage, !stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy])}
-                  autoBusy={stageAutoBusy}
-                />
-              ))}
-            </div>
-
-            {/* 좌(목록) / 우(선택 콘텐츠 작업) 마스터-디테일 */}
-            <div className="grid grid-cols-5 gap-4 items-start">
-              {/* 좌측 — 콘텐츠 목록(master) + 타임라인 */}
-              <div className="col-span-2 space-y-3">
-                <TestContentList
-                  contents={testContents}
-                  loading={testContentsLoading}
-                  selectedId={selectedContentId}
-                  onSelect={handleSelectContent}
-                />
-                <ContentPipelineTimeline
-                  timeline={contentTimeline}
-                  loading={timelineLoading}
-                />
-                <ProgressLog contentId={selectedContentId} />
-              </div>
-
-              {/* 우측 — 선택 콘텐츠 단계 작업 패널(detail) */}
-              <div className="col-span-3">
-                {activeStage !== null ? (
-                  <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
-                    {activeStage === 1 ? (
-                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
-                    ) : activeStage === 2 ? (
-                      <BatchRecallTrigger onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
-                    ) : activeStage === 3 ? (
-                      <AiProcessPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
-                    ) : activeStage === 4 ? (
-                      <TestReviewPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} />
-                    ) : activeStage === 5 || activeStage === 6 ? (
-                      <div className="text-center text-xs text-muted-foreground py-8">
-                        {activeStage === 5 ? "승인" : "게시"} 단계 패널 준비 중
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-amber-200 dark:border-amber-800/30 p-6 text-center text-xs text-amber-600/60 dark:text-amber-500/60">
-                    스테이지 카드를 클릭해 패널을 열어주세요
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
