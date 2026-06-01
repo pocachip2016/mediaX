@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-pipeline-console-3col** — S2~S5 단계별 3단 카드 재구성(목록/상세/요약), StageActionBar 공용화, 단계 이동 후 상세 자동 초기화 (2026-06-01)
 - [x] **dev-stage-bulk-buttons** — S2/S3/S4 개별+전체 다음단계 버튼 통일(2건↑ 전체 버튼 표시) (2026-06-01)
 - [x] **dev-seed-dedup** — 시드 멱등화 — 전체 카탈로그 중복검사 + skipped_in_pipeline/registered 리포트 + pytest 4건 (2026-06-01)
 - [x] **dev-s6-rejected-card** — S6 반려/실패 버킷 + RejectedPanel + 재검수 복귀 + bucket 6 분기 + pytest 5건 (2026-06-01)
