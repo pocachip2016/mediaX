@@ -71,6 +71,7 @@ class StageEventType(str, enum.Enum):
     RETRIED      = "retried"
     GATE_OPENED  = "gate_opened"
     ADVANCED     = "advanced"
+    REJECTED     = "rejected"
 
 
 class FailureCode(str, enum.Enum):

@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.database import SessionLocal, engine, Base
+from api.meta_core.scoring import normalize_title
 import api.programming.metadata.models  # noqa — 모든 모델 로드
 # clean 시 FK 자식 테이블 전체 탐지를 위해 모든 모델 메타데이터 로드 (conftest와 동일)
 import api.meta_core.models  # noqa
@@ -131,6 +132,44 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _find_existing_content(db, title: str, year: int | None, content_type) -> "Content | None":
+    """전체 카탈로그(CP 무관)에서 동일 콘텐츠 탐색.
+    영화: normalize_title 일치 + production_year ±1.
+    시리즈: normalize_title 일치 (연도는 보조 — 없으면 무시).
+    """
+    from api.programming.metadata.models.content import ContentType as CT
+    norm = normalize_title(title)
+    prefix = title[:10]
+
+    if content_type == CT.movie and year is not None:
+        candidates = (
+            db.query(Content)
+            .filter(
+                Content.content_type == content_type,
+                Content.is_deleted.is_(False),
+                Content.title.ilike(f"%{prefix}%"),
+                Content.production_year.between(year - 1, year + 1),
+            )
+            .limit(20)
+            .all()
+        )
+    else:
+        candidates = (
+            db.query(Content)
+            .filter(
+                Content.content_type == content_type,
+                Content.is_deleted.is_(False),
+                Content.title.ilike(f"%{prefix}%"),
+            )
+            .limit(20)
+            .all()
+        )
+    for c in candidates:
+        if normalize_title(c.title) == norm:
+            return c
+    return None
+
+
 def _get_or_create_person(db, name_ko: str, name_en: str, tmdb_person_id: int) -> PersonMaster:
     p = db.query(PersonMaster).filter(PersonMaster.name_ko == name_ko).first()
     if not p:
@@ -145,12 +184,23 @@ def _get_or_create_person(db, name_ko: str, name_en: str, tmdb_person_id: int) -
 # ─────────────────────────────────────────────────────────────────────────────
 
 def seed_pipeline_test(db) -> dict:
-    counts = {"movie_complete": 0, "movie_incomplete": 0,
-              "series_complete": 0, "series_incomplete": 0, "conflict": 0}
+    counts = {
+        "movie_complete": 0, "movie_incomplete": 0,
+        "series_complete": 0, "series_incomplete": 0, "conflict": 0,
+        "skipped_in_pipeline": 0, "skipped_registered": 0,
+    }
 
     # ── 영화-완전 ────────────────────────────────────────────────────────────
     for (title, orig, year, runtime, genre_p, genre_s, synopsis,
          tmdb_id, poster_path, director_data, actors_data) in COMPLETE_MOVIES:
+
+        existing = _find_existing_content(db, title, year, ContentType.movie)
+        if existing:
+            if existing.status == ContentStatus.approved:
+                counts["skipped_registered"] += 1
+            else:
+                counts["skipped_in_pipeline"] += 1
+            continue
 
         c = Content(
             title=title, original_title=orig,
@@ -202,6 +252,14 @@ def seed_pipeline_test(db) -> dict:
 
     # ── 영화-불완전 ──────────────────────────────────────────────────────────
     for title, year in INCOMPLETE_MOVIES:
+        existing = _find_existing_content(db, title, year, ContentType.movie)
+        if existing:
+            if existing.status == ContentStatus.approved:
+                counts["skipped_registered"] += 1
+            else:
+                counts["skipped_in_pipeline"] += 1
+            continue
+
         c = Content(
             title=title, content_type=ContentType.movie,
             status=ContentStatus.raw, cp_name=CP,
@@ -223,6 +281,14 @@ def seed_pipeline_test(db) -> dict:
 
     # ── 시리즈-완전 ──────────────────────────────────────────────────────────
     for title, year, synopsis, num_seasons, eps_per_season in COMPLETE_SERIES:
+        existing = _find_existing_content(db, title, year, ContentType.series)
+        if existing:
+            if existing.status == ContentStatus.approved:
+                counts["skipped_registered"] += 1
+            else:
+                counts["skipped_in_pipeline"] += 1
+            continue  # 시즌/에피소드 전체 스킵 (cascade)
+
         series = Content(
             title=title, content_type=ContentType.series,
             status=ContentStatus.raw, cp_name=CP,
@@ -284,6 +350,14 @@ def seed_pipeline_test(db) -> dict:
 
     # ── 시리즈-불완전 ─────────────────────────────────────────────────────────
     for title, year, include_empty_season in INCOMPLETE_SERIES:
+        existing = _find_existing_content(db, title, year, ContentType.series)
+        if existing:
+            if existing.status == ContentStatus.approved:
+                counts["skipped_registered"] += 1
+            else:
+                counts["skipped_in_pipeline"] += 1
+            continue  # 빈 시즌 포함 전체 스킵 (cascade)
+
         series = Content(
             title=title, content_type=ContentType.series,
             status=ContentStatus.raw, cp_name=CP,
@@ -319,6 +393,14 @@ def seed_pipeline_test(db) -> dict:
     # ── 충돌 ─────────────────────────────────────────────────────────────────
     for (title, stored_year, correct_year, stored_genre,
          correct_genre, tmdb_id, tmdb_title) in CONFLICT_MOVIES:
+
+        existing = _find_existing_content(db, title, stored_year, ContentType.movie)
+        if existing:
+            if existing.status == ContentStatus.approved:
+                counts["skipped_registered"] += 1
+            else:
+                counts["skipped_in_pipeline"] += 1
+            continue
 
         c = Content(
             title=title, content_type=ContentType.movie,

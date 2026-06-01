@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SYSTEM = (
-    "You are a professional content summarizer. "
-    "Summarize the given synopsis into 2-3 concise sentences in the SAME language as the input. "
-    "Output only the summary, no explanation or commentary."
+    "You are a professional content summarizer for a Korean VOD platform. "
+    "Summarize the given synopsis into 2-3 concise sentences in Korean (한국어). "
+    "Output ONLY the Korean summary — absolutely NO Chinese, NO English, NO explanations."
 )
 
 
@@ -40,7 +40,7 @@ class ShortSynopsisTask(AiTask):
         )
 
     async def run(self, task_input: TaskInput, provider_chain: list) -> TaskOutput:
-        prompt = f"Summarize in 2-3 sentences:\n\n{task_input.payload['synopsis']}"
+        prompt = f"다음 줄거리를 한국어로 2~3문장 요약해줘:\n\n{task_input.payload['synopsis']}"
         text, engine = await call_with_chain(prompt, _SYSTEM, provider_chain)
         return TaskOutput(result={"short_synopsis": text}, engine=engine)
 

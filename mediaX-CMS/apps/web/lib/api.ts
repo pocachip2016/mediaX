@@ -54,6 +54,7 @@ export interface MetadataOut {
   cp_genre: string | null
   cp_tags: string[] | null
   ai_synopsis: string | null
+  short_synopsis: string | null
   ai_genre_primary: string | null
   ai_genre_secondary: string | null
   ai_mood_tags: string[] | null
@@ -1254,6 +1255,8 @@ export interface PipelineTestSeedResult {
   series_incomplete: number
   conflict: number
   total_root: number
+  skipped_in_pipeline: number
+  skipped_registered: number
 }
 
 export interface PipelineTestCleanup {
@@ -1466,6 +1469,7 @@ export interface PipelineEventLog {
 
 // ADR-009 response types
 export interface AdvanceResponse { advanced: number; skipped: number; results: Record<number, string> }
+export interface ReviewActionResponse { processed: number; skipped: number; results: Record<number, string> }
 export interface EnrichSourceResponse { content_id: number; source: string; candidates_upserted: number; suggestions_created: number; sources_hit: string[]; sources_skipped: string[]; status_unchanged: string }
 export interface AiTaskResponse { content_id: number; task_name: string; status: string; engine: string | null; result_preview: string | null; status_unchanged: string }
 export interface EnrichPolicy { use_cache_db: boolean; confidence_threshold: number; use_websearch: boolean }
@@ -1510,6 +1514,18 @@ export const pipelineTestApi = {
   referenceExtract: (content_id: number) =>
     requestTest<ReferenceExtractResponse>("/api/test/pipeline/reference-extract", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id }),
+    }),
+  approve: (ids: number[]) =>
+    requestTest<ReviewActionResponse>("/api/test/pipeline/approve", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  reject: (ids: number[]) =>
+    requestTest<ReviewActionResponse>("/api/test/pipeline/reject", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  reReview: (ids: number[]) =>
+    requestTest<ReviewActionResponse>("/api/test/pipeline/re-review", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
     }),
 }
 
