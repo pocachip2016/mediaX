@@ -1,0 +1,25 @@
+{
+  "project": "mediaX",
+  "phase": "dev-auto-headless",
+  "description": "AUTO 모드 헤드리스 단계 자동 연쇄 — 뷰(activeStage)와 분리해 S1→S2→S3→S4가 화면 클릭 없이 자동 진행. 단일 run-to-stable 오케스트레이터로 4-effect 대체.",
+  "status": "completed",
+  "steps": [
+    {
+      "step": 1,
+      "name": "fe-auto-orchestrator",
+      "status": "completed",
+      "summary": "anyAutoOn 헬퍼 + autoPipelineRef ref 추가, runAutoPipeline 오케스트레이터 신설(run-to-stable 루프, activeStage 무관 전체 조회), 구 runAuto·S1~S4 4-effect → 단일 트리거 effect([stageAuto]) 대체. typecheck 에러 0.",
+      "completed_at": "2026-06-02"
+    },
+    { "step": 2, "name": "fe-per-console-auto-panel", "status": "completed", "summary": "AutoRunPanel을 각 단계 콘솔(S1~S4) 우측 하단에 배치 — autoRun?.stage === N 게이트로 '현재 처리 중인 단계'의 콘솔에만 표시. setAutoLog([])를 단계 전환 시점으로 이동해 각 패널이 자기 단계 로그만 표시. (설계 변경: 초기 전역 단일 패널 → 콘솔별 stage-게이트). typecheck 에러 0.", "completed_at": "2026-06-02" },
+    { "step": 3, "name": "verify-auto-headless", "status": "completed", "summary": "verify.sh `auto-headless` case 신설 + 콘솔별 패널 게이트(stage===N || running) + runAutoRef 제거 회귀 가드 PASS. TODO Next→Done 이동, index.json 기록.", "completed_at": "2026-06-02" },
+    { "step": 4, "name": "fix-panel-null-stick", "status": "completed", "summary": "버그픽스(E2E 발견): 단계 포커스 이동 시 패널 영구 미표시. 근본원인 — 구 뷰종속 모델 잔재인 activeStage 변경 effect가 setAutoRun(null) 호출 → 오케스트레이터의 setAutoRun((prev)=>prev&&...)가 null 고착. 수정: activeStage effect에서 autoRun/autoLog/runAutoRef 리셋 제거(뷰만 초기화) + 죽은 runAutoRef 삭제 + 패널 게이트 완화(stage===N || running)로 포커스 콘솔 가시성 확보.", "completed_at": "2026-06-02" },
+    { "step": 5, "name": "fix-manual-advance-retrigger", "status": "completed", "summary": "버그픽스(E2E 발견): S1 수동 advance로 콘텐츠가 S2(AUTO ON)에 도착해도 미처리·패널 미표시. 근본원인 — Step1에서 트리거 effect deps를 plan의 [stageAuto, testSummary]가 아닌 [stageAuto]로 누락해 카운트 변동 시 재가동 안 됨. 수정: AUTO-ON 단계(S1~S4) by_stage 대기건수 합 autoPendingKey(useMemo) 파생 후 deps [stageAuto, autoPendingKey] 사용. testSummary 객체 참조 대신 숫자값 의존으로 무한 재가동 회피 + 도착 시 재가동.", "completed_at": "2026-06-02" },
+    { "step": 6, "name": "fix-per-stage-cancel", "status": "completed", "summary": "버그픽스(E2E 발견): S3 처리 중 S3 AUTO OFF해도 계속 진행. 근본원인 — 오케스트레이터 inner 루프 취소 검사가 !anyAutoOn(전체 단계 OFF여야 중단)이라 다른 단계가 ON이면 현재 단계 처리 지속. 수정: 현재 처리 단계 플래그 stageAutoRef.current[`s${stage}_auto`] 검사로 변경 → 해당 단계 OFF 시 inner break(다른 AUTO-ON 단계는 outer while에서 계속). 구 'break outer'/outer 라벨 제거.", "completed_at": "2026-06-02" },
+    { "step": 7, "name": "fix-panel-gate-stage-only", "status": "completed", "summary": "버그픽스(E2E 발견): S2 처리 중 S3 클릭 시 S3 콘솔에 S2 패널이 표시되고 S3 내용 가려짐. 근본원인 — Step4에서 패널 게이트를 (stage===N || running)으로 완화해 실행 중이면 어느 콘솔에서나 패널 표시. null-고착 버그(Step4)가 해결됐으므로 완화 불필요. 수정: 게이트를 autoRun.stage === N 단계전용으로 복원(포커스 콘솔엔 자기 단계 패널만). + '처리 오류' 로그에 실제 에러 메시지 포함(진단성 향상).", "completed_at": "2026-06-02" },
+    { "step": 8, "name": "fix-kmdb-quota-graceful-degrade", "status": "completed", "summary": "버그픽스(E2E 발견): S2 enrich가 '처리 오류: Failed to fetch'. 근본원인 — 캐시 미스 제목은 라이브 KMDB 폴백(_fetch_kmdb_with_cache) → 일일 한도(632/500) 초과 시 enrich_content KMDB 블록이 KmdbApiKeyMissing만 잡고 KmdbDailyLimitExceeded는 미처리 → 500 전파 → 브라우저 Failed to fetch. 수정: enrich_content에 except KmdbDailyLimitExceeded 추가 → KMDB만 스킵(kmdb:daily_limit), TMDB 등 유지(graceful degrade). 검증: enrich-autofill HTTP 500→200, 로그 'KMDB skip'. 정책결정: 테스트도 graceful degrade만(캐시-only 미적용).", "completed_at": "2026-06-02" },
+    { "step": 9, "name": "fix-focus-view-sync", "status": "completed", "summary": "기능복원(E2E 요청): AUTO 처리 시 포커스+상세 추종+목록 제거 미동작. 헤드리스 전환(Step1)에서 구 runAuto의 setSelectedContentId(추종)/setTestContents filter(제거)를 제거했었음. 복원: 오케스트레이터 루프에서 activeStageRef.current === stage(포커스한 단계 처리 중)일 때만 setSelectedContentId(c.id)로 포커스+상세 추종, moved 시 setTestContents filter로 목록 즉시 제거. 다른 단계 보고 있으면 뷰 비건드림(헤드리스 독립 유지).", "completed_at": "2026-06-02" },
+    { "step": 10, "name": "fix-stale-closure-list-refresh", "status": "completed", "summary": "버그픽스(E2E 발견): S2 AUTO 진행 중 S3 클릭 시 콘텐츠 목록 미갱신. 근본원인 — runAutoPipeline이 deps [pushLog,bumpSummary]로 1회 memo되며 refreshTestSummary를 stale 캡처(최초 activeStage=null → 전체목록 로드) → finally에서 잘못된 필터로 목록 덮어씀. 수정: refreshTestSummaryRef(useRef)로 최신 클로저 호출(finally) + refreshTestSummary 변경 시 ref 동기화 effect. 추가: 이동 목적지가 포커스 단계(activeStageRef === stage+1)면 그 단계 목록 라이브 갱신(도착 건 표시).", "completed_at": "2026-06-02" },
+    { "step": 11, "name": "fix-revert-clears-auto-log", "status": "completed", "summary": "UX(E2E 요청): 이전단계로(revert) 버튼 클릭 시 AUTO 처리 로그창 clear/reset. 수정: handleRevertDone에 setAutoRun(null)+setAutoLog([]) 추가. 부수 robustness: per-item setAutoRun을 절대값({stage,current,total,running})으로 변경 → revert가 autoRun을 null로 만들어도 처리 지속 시 패널 자연 복귀(null 고착 방지).", "completed_at": "2026-06-03" }
+  ]
+}

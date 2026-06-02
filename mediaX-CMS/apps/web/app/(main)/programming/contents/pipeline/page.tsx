@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef, type ReactNode } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from "react"
 import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Zap } from "lucide-react"
 import {
   metadataApi,
@@ -55,6 +55,9 @@ function stageBucket(c: { current_stage?: string | null }): number {
 // 반려 항목은 위치와 무관하게 bucket 6(반려/실패)으로 분기. BE pipeline_summary와 일치.
 function contentBucket(c: { current_stage?: string | null; status?: string | null }): number {
   return c.status === "rejected" ? 6 : stageBucket(c)
+}
+function anyAutoOn(p: StageAutoPolicy): boolean {
+  return p.s1_auto || p.s2_auto || p.s3_auto || p.s4_auto
 }
 
 // ── Mock 데이터 ──────────────────────────────────────────
@@ -1748,9 +1751,11 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
         </div>
-        {/* AUTO 진행 패널 — 우측 컬럼 하단 (추천 요약 아래) */}
-        {autoRun && autoLog && onCloseAuto && (
-          <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto} />
+        {/* AUTO 진행 패널 — 우측 컬럼 하단 (S2 처리 중일 때만) */}
+        {autoRun && autoLog && autoRun.stage === 2 && (
+          <div className="mt-3">
+            <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto ?? (() => {})} />
+          </div>
         )}
       </div>
     </>
@@ -1878,9 +1883,11 @@ function S3Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
         </div>
-        {/* AUTO 진행 패널 — 우측 컬럼 하단 (AI 결과 요약 아래) */}
-        {autoRun && autoLog && onCloseAuto && (
-          <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto} />
+        {/* AUTO 진행 패널 — 우측 컬럼 하단 (S3 처리 중일 때만) */}
+        {autoRun && autoLog && autoRun.stage === 3 && (
+          <div className="mt-3">
+            <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto ?? (() => {})} />
+          </div>
         )}
       </div>
     </>
@@ -2392,9 +2399,11 @@ function S4Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
         </div>
-        {/* AUTO 진행 패널 — 우측 컬럼 하단 (WebSearch 아래) */}
-        {autoRun && autoLog && onCloseAuto && (
-          <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto} />
+        {/* AUTO 진행 패널 — 우측 컬럼 하단 (S4 처리 중일 때만) */}
+        {autoRun && autoLog && autoRun.stage === 4 && (
+          <div className="mt-3">
+            <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto ?? (() => {})} />
+          </div>
         )}
       </div>
     </>
@@ -2790,28 +2799,23 @@ export default function PipelineMonitoringPage() {
   const [autoRun, setAutoRun] = useState<{ stage: number; current: number; total: number; running: boolean } | null>(null)
   const [autoLog, setAutoLog] = useState<AutoLogEntry[]>([])
   const autoLogIdRef = useRef(0)
-  const runAutoRef = useRef(false)
+  const autoPipelineRef = useRef(false)  // 헤드리스 AUTO 오케스트레이터 동시 실행 방지
+  // 오케스트레이터(runAutoPipeline)는 deps [pushLog,bumpSummary]로 1회 memo → refreshTestSummary를
+  // stale 캡처(최초 activeStage=null → 전체목록 로드). ref로 최신 클로저(현 activeStage 필터) 호출.
+  const refreshTestSummaryRef = useRef<(() => Promise<void>) | null>(null)
   const s4ReviewedRef = useRef<Set<number>>(new Set())  // S4 AUTO에서 이미 검수(잔류 판정)한 id — 재검수 방지
 
   // 루프 내 취소 판정용 최신값 ref (stale closure 방지)
   const stageAutoRef = useRef(stageAuto)
   useEffect(() => { stageAutoRef.current = stageAuto }, [stageAuto])
   const activeStageRef = useRef(activeStage)
-  // 단계 전환 시 즉시 초기화 — 이전 단계 목록/상세/AUTO가 잠시라도 따라오지 않도록
+  // 단계 전환 시 뷰(목록/상세)만 초기화 — autoRun/autoLog는 헤드리스 오케스트레이터가 소유하므로
+  // 단계 포커스를 옮겨도 진행 패널을 지우지 않는다 (지우면 setAutoRun((prev)=>prev&&...)가 null 고착).
   useEffect(() => {
     activeStageRef.current = activeStage
     setTestContents([])
     setSelectedContentId(null)
-    setAutoRun(null)
-    setAutoLog([])
-    runAutoRef.current = false
   }, [activeStage])
-
-  // AUTO 토글 시 runAutoRef 초기화 — 새 배치 실행 허용
-  // (runAuto 완료 후 refreshTestSummary가 testContents를 갱신해도 재실행하지 않도록
-  //  runAuto 내부에서는 runAutoRef를 false로 재설정하지 않음)
-  // activeStage 변경 시 초기화는 위 activeStage effect에서 처리
-  useEffect(() => { runAutoRef.current = false }, [stageAuto])
 
   // 임계값 변경 시 S4 검수 완료 마킹 초기화 — 새 기준으로 잔류 건 재평가 허용
   // (단계 재진입으로는 clear하지 않음: "한번 검수한 건 재검수 안 함" 의도 유지)
@@ -2831,8 +2835,11 @@ export default function PipelineMonitoringPage() {
     } catch { /* ignore */ }
   }, [])
 
-  // revert 성공 후: AUTO OFF + 이전 단계 카드 포커싱
+  // revert 성공 후: AUTO 로그/패널 CLEAR + AUTO OFF + 이전 단계 카드 포커싱
   const handleRevertDone = useCallback(async () => {
+    // 이전단계로 되돌리면 직전 AUTO 처리 맥락이 무효 → 로그창 clear/reset.
+    setAutoRun(null)
+    setAutoLog([])
     // AUTO 비활성화가 완료된 후에 단계 전환 — 먼저 전환하면 이전 단계 AUTO가 여전히 ON인 상태에서
     // 콘텐츠가 로드되어 AUTO 러너가 즉시 작동(한 건 자동 진행) 하는 버그 방지
     await disablePrevStageAuto()
@@ -2927,111 +2934,131 @@ export default function PipelineMonitoringPage() {
     } : prev)
   }, [])
 
-  // 건별 순차 처리 — 처리 결과(moved)에 따라 이동/잔류, 진행률·LOG·목록·카드 즉시 갱신
-  const runAuto = useCallback(async (
-    stage: number,
-    items: ContentOut[],
-    processOne: (c: ContentOut) => Promise<{ moved: boolean; level: AutoLogEntry["level"]; msg: string }>,
-  ) => {
-    if (runAutoRef.current) return
-    runAutoRef.current = true
-    setAutoLog([])
-    setAutoRun({ stage, current: 0, total: items.length, running: true })
-    const toBucket = stage + 1  // S1→2, S2→3, S3→4, S4→5(승인)
-    const movedIds = new Set<number>()  // 이동 완료 ID 추적 — refreshTestSummary 후 재필터용
-    for (let i = 0; i < items.length; i++) {
-      // 매 iteration 시작 시 AUTO 상태·단계 확인 — OFF 또는 단계 이탈 시 즉시 중단
-      const autoOn = (stageAutoRef.current as unknown as Record<string, unknown>)[`s${stage}_auto`]
-      if (!autoOn || activeStageRef.current !== stage) {
-        pushLog("info", `⏸ AUTO 중단 — ${i}/${items.length}건 처리 후 정지`)
-        break
+  // run-to-stable: activeStage 무관 헤드리스 연쇄 — S1→S2→S3→S4 순서대로 처리 대상이 있는 최저 단계를
+  // 한 패스 처리 후 전체 재조회·반복. 모든 활성 bucket이 빌 때(stable) 종료.
+  const runAutoPipeline = useCallback(async () => {
+    if (autoPipelineRef.current) return
+    autoPipelineRef.current = true
+
+    try {
+      while (anyAutoOn(stageAutoRef.current)) {
+        let allItems: ContentOut[]
+        try {
+          const r = await metadataApi.listContents({ size: 100 })
+          allItems = r.items
+        } catch {
+          break
+        }
+        const th = stageAutoRef.current.s4_quality_threshold ?? 90
+
+        const stageDefs: Array<{
+          stage: number
+          enabled: boolean
+          items: ContentOut[]
+          process: (c: ContentOut) => Promise<{ moved: boolean; level: AutoLogEntry["level"]; msg: string }>
+        }> = [
+          {
+            stage: 1, enabled: stageAutoRef.current.s1_auto,
+            items: allItems.filter((c) => contentBucket(c) === 1),
+            process: async (c) => {
+              await pipelineTestApi.advance([c.id])
+              return { moved: true, level: "success", msg: "보완 단계로 이동" }
+            },
+          },
+          {
+            stage: 2, enabled: stageAutoRef.current.s2_auto,
+            items: allItems.filter((c) => contentBucket(c) === 2),
+            process: async (c) => {
+              const res = await pipelineTestApi.enrichAutofill(c.id)
+              await pipelineTestApi.advance([c.id])
+              return { moved: true, level: "success", msg: `보완 ${res.filled_fields.length}필드 → AI 단계` }
+            },
+          },
+          {
+            stage: 3, enabled: stageAutoRef.current.s3_auto,
+            items: allItems.filter((c) => contentBucket(c) === 3),
+            process: async (c) => {
+              const res = await pipelineTestApi.aiAutofill(c.id)
+              await pipelineTestApi.advance([c.id])
+              return { moved: true, level: "success", msg: `AI처리(${Object.keys(res.ai_tasks).length}태스크) → 검수 단계` }
+            },
+          },
+          {
+            stage: 4, enabled: stageAutoRef.current.s4_auto,
+            items: allItems.filter((c) => contentBucket(c) === 4 && !s4ReviewedRef.current.has(c.id)),
+            process: async (c) => {
+              if ((c.quality_score ?? 0) >= th) {
+                await pipelineTestApi.approve([c.id])
+                return { moved: true, level: "success", msg: `승인 (${c.quality_score ?? 0}점 ≥ ${th})` }
+              }
+              s4ReviewedRef.current.add(c.id)
+              return { moved: false, level: "skip", msg: `검수 잔류 (${c.quality_score ?? 0}점 < ${th})` }
+            },
+          },
+        ]
+
+        const target = stageDefs.find((d) => d.enabled && d.items.length > 0)
+        if (!target) break  // stable: 모든 활성 bucket 비었거나 S4 전부 잔류
+
+        const { stage, items, process } = target
+        const stageKey = `s${stage}_auto` as keyof StageAutoPolicy
+        setAutoLog([])  // 단계 전환 시 로그 리셋 — 각 단계 콘솔 패널이 자기 단계 로그만 표시
+        setAutoRun({ stage, current: 0, total: items.length, running: true })
+
+        for (let i = 0; i < items.length; i++) {
+          // 현재 처리 중인 단계의 AUTO가 꺼지면 즉시 중단 — 다른 AUTO-ON 단계는 outer 루프에서 계속.
+          // anyAutoOn(전체)이 아니라 해당 단계 플래그를 봐야 S3만 OFF 시 S3가 멈춘다.
+          if (!stageAutoRef.current[stageKey]) {
+            pushLog("info", `⏸ S${stage} AUTO 중단 — ${i}/${items.length}건 처리 후 정지`)
+            break
+          }
+          const c = items[i]!
+          // 포커스한 단계를 처리 중이면 현재 건을 선택 — 목록 포커스 + 상세 패널이 처리 건 추종.
+          // 다른 단계를 보고 있으면 뷰를 건드리지 않음(헤드리스 독립).
+          if (activeStageRef.current === stage) setSelectedContentId(c.id)
+          let r: { moved: boolean; level: AutoLogEntry["level"]; msg: string }
+          try { r = await process(c) }
+          catch (e) { r = { moved: false, level: "error", msg: `처리 오류: ${e instanceof Error ? e.message : String(e)}` } }
+          pushLog(r.level, `[${i + 1}/${items.length}] ${c.title} — ${r.msg}`)
+          if (r.moved) {
+            bumpSummary(stage, stage + 1)
+            // 포커스한 단계면 이동 완료 건을 목록에서 즉시 제거(다음 단계로 사라짐).
+            if (activeStageRef.current === stage) setTestContents((prev) => prev.filter((x) => x.id !== c.id))
+            // 이동 목적지가 포커스한 단계면 그 단계 목록을 갱신(도착 건 표시).
+            else if (activeStageRef.current === stage + 1) void refreshTestSummaryRef.current?.()
+          }
+          // 절대값 set — revert 등으로 autoRun이 null이 돼도 처리 지속 시 패널 자연 복귀(null 고착 방지).
+          setAutoRun({ stage, current: i + 1, total: items.length, running: true })
+        }
       }
-      const c = items[i]!
-      setSelectedContentId(c.id)  // 상세 패널이 현재 처리 건 추종
-      let r: { moved: boolean; level: AutoLogEntry["level"]; msg: string }
-      try { r = await processOne(c) }
-      catch { r = { moved: false, level: "error", msg: "처리 오류" } }
-      pushLog(r.level, `[${i + 1}/${items.length}] ${c.title} — ${r.msg}`)
-      if (r.moved) {
-        movedIds.add(c.id)
-        setTestContents((prev) => prev.filter((x) => x.id !== c.id))
-        bumpSummary(stage, toBucket)
-      }
-      setAutoRun((prev) => prev && { ...prev, current: i + 1 })
+    } finally {
+      if (refreshTestSummaryRef.current) await refreshTestSummaryRef.current()
+      setAutoRun((prev) => prev && { ...prev, running: false })
+      autoPipelineRef.current = false
     }
-    await refreshTestSummary()  // 종료 시 서버 정합성 동기화
-    // refreshTestSummary가 testContents를 서버 재조회로 덮어쓸 수 있으므로
-    // 이동 완료 건을 다시 제거해 현재 단계 목록에서 빠지도록 보장
-    if (movedIds.size > 0) {
-      setTestContents((prev) => prev.filter((c) => !movedIds.has(c.id)))
-    }
-    setAutoRun((prev) => prev && { ...prev, running: false })
-    // S4는 reviewed-set(s4ReviewedRef)이 잔류 건 재검수를 차단하므로 latch 불필요 →
-    // 해제해 refreshTestSummary 후 잔류 목록이 즉시 다시 표시되도록 함. S1~S3는 latch 유지.
-    if (stage === 4) runAutoRef.current = false
-    // runAutoRef.current는 여기서 해제하지 않음 — refreshTestSummary가 testContents를 갱신해
-    // useEffect가 재발화할 때 중복 실행을 방지해야 함.
-    // 해제는 activeStage/stageAuto 변경 시(아래 effect)에만 수행.
   // refreshTestSummary는 아래 정의 — 클로저 캡처(effect 실행 시점엔 정의됨)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pushLog, bumpSummary])
 
-  // S1 AUTO: 항상 다음 단계로 이동
-  useEffect(() => {
-    // 현재 단계 bucket에 실제로 속한 항목만 — activeStage 전환 직후 stale testContents(이전 단계 것) 차단
-    const items = testContents.filter((c) => contentBucket(c) === 1)
-    if (!stageAuto.s1_auto || activeStage !== 1 || items.length === 0 || runAutoRef.current) return
-    void runAuto(1, items, async (c) => {
-      await pipelineTestApi.advance([c.id])
-      return { moved: true, level: "success", msg: "보완 단계로 이동" }
-    })
-  // runAuto는 useCallback 안정 ref. stageAuto/activeStage 변화(토글) 시 즉시 재발화.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testContents, stageAuto, activeStage])
+  // AUTO-ON 단계(S1~S4)의 처리 대기 건수 합 — 값 기반 키.
+  // testSummary 객체 참조 대신 이 숫자에 의존해야 무한 재가동 방지(refreshTestSummary가 매번 새 객체 생성).
+  // 수동 advance/seed 등으로 AUTO-ON 단계 카운트가 변하면 키가 바뀌어 오케스트레이터 재가동.
+  const autoPendingKey = useMemo(() => {
+    const bs = testSummary?.by_stage ?? {}
+    let sum = 0
+    if (stageAuto.s1_auto) sum += bs["1"] ?? 0
+    if (stageAuto.s2_auto) sum += bs["2"] ?? 0
+    if (stageAuto.s3_auto) sum += bs["3"] ?? 0
+    if (stageAuto.s4_auto) sum += bs["4"] ?? 0
+    return sum
+  }, [testSummary, stageAuto])
 
-  // S2 AUTO: enrich(빈 값만) 성공 시 이동
+  // AUTO 활성화 또는 대기 건수 변동 시 헤드리스 오케스트레이터 가동 — activeStage 무관.
   useEffect(() => {
-    const items = testContents.filter((c) => contentBucket(c) === 2)
-    if (!stageAuto.s2_auto || activeStage !== 2 || items.length === 0 || runAutoRef.current) return
-    void runAuto(2, items, async (c) => {
-      const res = await pipelineTestApi.enrichAutofill(c.id)
-      await pipelineTestApi.advance([c.id])
-      return { moved: true, level: "success", msg: `보완 ${res.filled_fields.length}필드 → AI 단계` }
-    })
+    if (!anyAutoOn(stageAuto) || autoPipelineRef.current) return
+    void runAutoPipeline()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testContents, stageAuto, activeStage])
-
-  // S3 AUTO: AI처리(빈 값만) 성공 시 이동
-  useEffect(() => {
-    const items = testContents.filter((c) => contentBucket(c) === 3)
-    if (!stageAuto.s3_auto || activeStage !== 3 || items.length === 0 || runAutoRef.current) return
-    void runAuto(3, items, async (c) => {
-      const res = await pipelineTestApi.aiAutofill(c.id)
-      await pipelineTestApi.advance([c.id])
-      return { moved: true, level: "success", msg: `AI처리(${Object.keys(res.ai_tasks).length}태스크) → 검수 단계` }
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testContents, stageAuto, activeStage])
-
-  // S4 AUTO: quality_score >= threshold면 승인(→S5), 미달은 잔류(목록 유지) + 1회만 평가
-  useEffect(() => {
-    if (!stageAuto.s4_auto || activeStage !== 4) return
-    const th = stageAuto.s4_quality_threshold ?? 90
-    // 아직 검수 안 한 bucket-4 건만 대상 — 잔류 판정 건(s4ReviewedRef)은 재검수하지 않아 무한루프 방지
-    const pending = testContents.filter(
-      (c) => contentBucket(c) === 4 && !s4ReviewedRef.current.has(c.id),
-    )
-    if (pending.length === 0 || runAutoRef.current) return
-    void runAuto(4, pending, async (c) => {
-      if ((c.quality_score ?? 0) >= th) {
-        await pipelineTestApi.approve([c.id])
-        return { moved: true, level: "success", msg: `승인 (${c.quality_score ?? 0}점 ≥ ${th})` }
-      }
-      s4ReviewedRef.current.add(c.id)
-      return { moved: false, level: "skip", msg: `검수 잔류 (${c.quality_score ?? 0}점 < ${th})` }
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testContents, stageAuto, activeStage])
+  }, [stageAuto, autoPendingKey])
 
   const refreshTestSummary = useCallback(async () => {
     if (!ENABLE_TEST) return
@@ -3041,6 +3068,9 @@ export default function PipelineMonitoringPage() {
     } catch {}
     await fetchTestContents()
   }, [fetchTestContents])
+
+  // 오케스트레이터가 최신 refreshTestSummary(현 activeStage 필터)를 호출하도록 ref 동기화 — stale 캡처 방지.
+  useEffect(() => { refreshTestSummaryRef.current = refreshTestSummary }, [refreshTestSummary])
 
   // Test Console 초기 summary 로드
   useEffect(() => {
@@ -3251,8 +3281,10 @@ export default function PipelineMonitoringPage() {
                           )}
                         </div>
                       </div>
-                      {/* AUTO 진행 패널 — 우측 컬럼 하단 */}
-                      {autoRun && <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={() => setAutoRun(null)} />}
+                      {/* AUTO 진행 패널 — 우측 컬럼 하단 (S1 처리 중일 때만) */}
+                      {autoRun && autoLog && autoRun.stage === 1 && (
+                        <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={() => setAutoRun(null)} />
+                      )}
                     </div>
                   )}
                 </>

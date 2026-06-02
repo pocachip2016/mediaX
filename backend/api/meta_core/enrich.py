@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from shared.config import settings
 from api.meta_core.gap import analyze_gap
 from api.meta_core.scoring import classify_match, compute_match_score, normalize_title
-from api.meta_core.clients.kmdb_client import KmdbApiKeyMissing, KmdbClient
+from api.meta_core.clients.kmdb_client import KmdbApiKeyMissing, KmdbClient, KmdbDailyLimitExceeded
 from api.meta_core.models.intelligence import FieldSuggestion, MatchEdge, MetadataCandidate
 from api.programming.metadata.models.content import Content
 from api.programming.metadata.models.external import ExternalSourceType
@@ -105,6 +105,11 @@ def enrich_content(
                 result.sources_skipped.append("kmdb:no_result")
         except KmdbApiKeyMissing:
             result.sources_skipped.append("kmdb:no_key")
+        except KmdbDailyLimitExceeded:
+            # 일일 한도(500) 초과 — KMDB만 스킵하고 TMDB 등 나머지 enrich는 유지(graceful degrade).
+            # 잡지 않으면 enrich_content가 500을 던져 S2 autofill 전체가 'Failed to fetch'로 실패.
+            logger.warning("[enrich] content_id=%d KMDB 일일 한도 초과 — KMDB skip", content_id)
+            result.sources_skipped.append("kmdb:daily_limit")
 
     db.flush()
     logger.info(
