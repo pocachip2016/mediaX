@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-(없음)
+- [ ] dev-s4-auto-residual — S4 AUTO 잔류 유지+재검수 방지 (코드 완료, 타입체크 OK). 남음: 브라우저 E2E 확인 + verify.sh `s4-auto-residual` 엔트리 + plan index.json 기록
 
 ## Next (이번 마일스톤)
 - [ ] dev-stage-auto-autofill 회귀 가드 — enrich-autofill/ai-autofill 빈필드 보존 + S4 threshold 자동승인 pytest + verify.sh 엔트리

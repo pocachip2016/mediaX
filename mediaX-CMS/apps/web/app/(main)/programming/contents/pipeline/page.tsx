@@ -2791,6 +2791,7 @@ export default function PipelineMonitoringPage() {
   const [autoLog, setAutoLog] = useState<AutoLogEntry[]>([])
   const autoLogIdRef = useRef(0)
   const runAutoRef = useRef(false)
+  const s4ReviewedRef = useRef<Set<number>>(new Set())  // S4 AUTO에서 이미 검수(잔류 판정)한 id — 재검수 방지
 
   // 루프 내 취소 판정용 최신값 ref (stale closure 방지)
   const stageAutoRef = useRef(stageAuto)
@@ -2811,6 +2812,10 @@ export default function PipelineMonitoringPage() {
   //  runAuto 내부에서는 runAutoRef를 false로 재설정하지 않음)
   // activeStage 변경 시 초기화는 위 activeStage effect에서 처리
   useEffect(() => { runAutoRef.current = false }, [stageAuto])
+
+  // 임계값 변경 시 S4 검수 완료 마킹 초기화 — 새 기준으로 잔류 건 재평가 허용
+  // (단계 재진입으로는 clear하지 않음: "한번 검수한 건 재검수 안 함" 의도 유지)
+  useEffect(() => { s4ReviewedRef.current.clear() }, [stageAuto.s4_quality_threshold])
 
   useEffect(() => { metadataApi.getStageAutoPolicy().then(setStageAuto).catch(() => {}) }, [])
 
@@ -2961,6 +2966,9 @@ export default function PipelineMonitoringPage() {
       setTestContents((prev) => prev.filter((c) => !movedIds.has(c.id)))
     }
     setAutoRun((prev) => prev && { ...prev, running: false })
+    // S4는 reviewed-set(s4ReviewedRef)이 잔류 건 재검수를 차단하므로 latch 불필요 →
+    // 해제해 refreshTestSummary 후 잔류 목록이 즉시 다시 표시되도록 함. S1~S3는 latch 유지.
+    if (stage === 4) runAutoRef.current = false
     // runAutoRef.current는 여기서 해제하지 않음 — refreshTestSummary가 testContents를 갱신해
     // useEffect가 재발화할 때 중복 실행을 방지해야 함.
     // 해제는 activeStage/stageAuto 변경 시(아래 effect)에만 수행.
@@ -3005,16 +3013,21 @@ export default function PipelineMonitoringPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testContents, stageAuto, activeStage])
 
-  // S4 AUTO: quality_score >= threshold면 승인, 미달 잔류
+  // S4 AUTO: quality_score >= threshold면 승인(→S5), 미달은 잔류(목록 유지) + 1회만 평가
   useEffect(() => {
-    const items = testContents.filter((c) => contentBucket(c) === 4)
-    if (!stageAuto.s4_auto || activeStage !== 4 || items.length === 0 || runAutoRef.current) return
+    if (!stageAuto.s4_auto || activeStage !== 4) return
     const th = stageAuto.s4_quality_threshold ?? 90
-    void runAuto(4, items, async (c) => {
+    // 아직 검수 안 한 bucket-4 건만 대상 — 잔류 판정 건(s4ReviewedRef)은 재검수하지 않아 무한루프 방지
+    const pending = testContents.filter(
+      (c) => contentBucket(c) === 4 && !s4ReviewedRef.current.has(c.id),
+    )
+    if (pending.length === 0 || runAutoRef.current) return
+    void runAuto(4, pending, async (c) => {
       if ((c.quality_score ?? 0) >= th) {
         await pipelineTestApi.approve([c.id])
         return { moved: true, level: "success", msg: `승인 (${c.quality_score ?? 0}점 ≥ ${th})` }
       }
+      s4ReviewedRef.current.add(c.id)
       return { moved: false, level: "skip", msg: `검수 잔류 (${c.quality_score ?? 0}점 < ${th})` }
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
