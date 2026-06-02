@@ -491,6 +491,21 @@ def clean_by_ids(db, ids: list[int], dry_run: bool = False) -> int:
     if dry_run:
         return len(ids)
 
+    # 자손(시즌/에피소드)까지 모두 포함한 전체 id 집합 수집 —
+    # ids 는 부모(시리즈) id 일 수 있고, 자식도 각자 content_metadata 등 FK 참조를 가짐.
+    all_ids: set[int] = set(ids)
+    frontier = list(ids)
+    while frontier:
+        children = [r[0] for r in db.query(Content.id)
+                    .filter(Content.parent_id.in_(frontier)).all()]
+        new_children = [c for c in children if c not in all_ids]
+        if not new_children:
+            break
+        all_ids.update(new_children)
+        frontier = new_children
+    target_ids = list(all_ids)
+
+    # FK 로 contents 를 참조하는 모든 테이블을 먼저 삭제 (자손 id 포함)
     contents_table = Content.__table__
     for table in reversed(Base.metadata.sorted_tables):
         if table is contents_table:
@@ -498,14 +513,14 @@ def clean_by_ids(db, ids: list[int], dry_run: bool = False) -> int:
         fk_cols = {fk.parent.name for fk in table.foreign_keys
                    if fk.column.table is contents_table}
         for col in fk_cols:
-            db.execute(table.delete().where(table.c[col].in_(ids)))
+            db.execute(table.delete().where(table.c[col].in_(target_ids)))
 
-    # parent_id 자기참조 FK — 자식(season/episode) 먼저 삭제
-    db.query(Content).filter(Content.parent_id.in_(ids)).delete(synchronize_session=False)
-    db.query(Content).filter(Content.id.in_(ids)).delete(synchronize_session=False)
+    # parent_id 자기참조 FK — 자손이 먼저 삭제되도록 자식 → 부모 순
+    db.query(Content).filter(Content.parent_id.in_(target_ids)).delete(synchronize_session=False)
+    db.query(Content).filter(Content.id.in_(target_ids)).delete(synchronize_session=False)
 
     db.commit()
-    return len(ids)
+    return len(target_ids)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

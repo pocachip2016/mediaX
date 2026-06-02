@@ -535,6 +535,202 @@ async def run_single_ai_task_endpoint(req: AiTaskRequest, db: Session = Depends(
     )
 
 
+class EnrichAutofillRequest(BaseModel):
+    content_id: int
+
+
+class EnrichAutofillResponse(BaseModel):
+    content_id: int
+    enriched_sources: list[str]   # enrich_content가 hit한 소스
+    filled_fields: list[str]      # 비어있어 채운 필드
+    skipped_fields: list[str]     # 추천값 있으나 이미 값 있어 건너뛴 필드
+    status_unchanged: str
+
+
+@router.post("/enrich-autofill", response_model=EnrichAutofillResponse,
+             dependencies=[Depends(require_pipeline_test)])
+async def enrich_autofill(req: EnrichAutofillRequest, db: Session = Depends(get_db)):
+    """S2 AUTO — enrich(tmdb+kmdb) 후 **빈 필드에만** auto_fill 추천값 적용. status 불변.
+    conflict 필드는 자동 채우지 않음(수동 검수). 기존 값은 덮어쓰지 않음."""
+    from api.meta_core.enrich import enrich_content
+    from api.programming.metadata.service_recommendations import get_content_recommendations
+    from api.programming.metadata.service_bulk import apply_external_fields
+
+    c = db.query(Content).filter(Content.id == req.content_id, Content.is_deleted.is_(False)).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="content not found")
+
+    before_status = c.status
+
+    # 1. 외부 소스 회수 (suggestions/external sources 적재)
+    result = enrich_content(req.content_id, db, only_sources={"tmdb", "kmdb"})
+    db.flush()
+
+    # 2. 추천값 조회 — missing_fields(빈 필드) + 필드별 source_id 제공
+    recs = get_content_recommendations(db, req.content_id)
+    empty = set(recs.missing_fields)
+
+    filled_fields: list[str] = []
+    skipped_fields: list[str] = []
+
+    # 3. auto_fill만 순회 (conflict 제외) — 빈 필드만 채움
+    for rec in recs.auto_fill:
+        if not rec.recommendations:
+            continue
+        if rec.field not in empty:
+            skipped_fields.append(rec.field)  # 이미 값 있음
+            continue
+        best = max(rec.recommendations, key=lambda r: r.confidence or 0)
+        await apply_external_fields(db, req.content_id, best.source_id, [rec.field])
+        filled_fields.append(rec.field)
+
+    # 4. status 불변 보장 (apply 경로가 바꿨다면 복원) — advance가 이후 승급
+    db.refresh(c)
+    if c.status != before_status:
+        c.status = before_status
+        db.add(c)
+        db.commit()
+        db.refresh(c)
+
+    return EnrichAutofillResponse(
+        content_id=req.content_id,
+        enriched_sources=result.sources_hit,
+        filled_fields=filled_fields,
+        skipped_fields=skipped_fields,
+        status_unchanged=c.status.value if c.status else (before_status.value if before_status else ""),
+    )
+
+
+class AiAutofillRequest(BaseModel):
+    content_id: int
+
+
+class AiAutofillResponse(BaseModel):
+    content_id: int
+    rag_sources: list[str]       # reference_extract sources_hit (wikidata/wikipedia)
+    ai_tasks: dict[str, str]     # {task_name: ok|cached|skip|error}
+    filled_fields: list[str]     # 비어있어 채운 필드
+    skipped_fields: list[str]    # 추천/팩트 있으나 이미 값 있어 건너뛴 필드
+    status_unchanged: str
+
+
+@router.post("/ai-autofill", response_model=AiAutofillResponse,
+             dependencies=[Depends(require_pipeline_test)])
+async def ai_autofill(req: AiAutofillRequest, db: Session = Depends(get_db)):
+    """S3 AUTO — RAG+AI태스크 후 **빈 필드에만** 보완값 적용. status 불변.
+    1) reference_extract(wikidata+wikipedia) 2) tmdb/kmdb auto_fill
+    3) translate_synopsis + short_synopsis AI태스크.
+    conflict 필드·기존 값은 건드리지 않음."""
+    from api.meta_core.reference_extract import reference_extract
+    from api.programming.metadata.service_recommendations import get_content_recommendations
+    from api.programming.metadata.service_content import update_content
+    from api.programming.metadata.schemas import ContentUpdate
+    from api.programming.metadata.ai_tasks.runner import run_single_ai_task
+
+    c = db.query(Content).filter(Content.id == req.content_id, Content.is_deleted.is_(False)).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="content not found")
+
+    before_status = c.status
+
+    # 1. RAG 조회 (wikidata + wikipedia ExternalMetaSource 적재)
+    ref = reference_extract(req.content_id, db)
+    facts = ref.wikidata_facts  # top-level dict: directors/cast/country/genres/runtime/production_year
+
+    # 2. 추천값 조회 (tmdb/kmdb auto_fill + missing_fields)
+    recs = get_content_recommendations(db, req.content_id)
+    empty = set(recs.missing_fields)
+    # auto_fill confidence 최고 값 dict
+    autofill: dict[str, str] = {}
+    for rec in recs.auto_fill:
+        if rec.recommendations:
+            best = max(rec.recommendations, key=lambda r: r.confidence or 0)
+            autofill[rec.field] = best.value
+
+    # 3. 빈 필드에만 적용 — external auto_fill 우선, 없으면 wikidata facts fallback
+    payload: dict = {}
+    filled_fields: list[str] = []
+    skipped_fields: list[str] = []
+
+    def _pick(field: str, facts_key: str | None = None) -> str | None:
+        """external auto_fill 우선, 없으면 wikidata facts. 채울 값 없으면 None."""
+        v = autofill.get(field)
+        if not v and facts_key:
+            raw = facts.get(facts_key)
+            if raw is not None:
+                v = ", ".join(raw) if isinstance(raw, list) else str(raw)
+        return v if v else None
+
+    field_map: list[tuple[str, str, str | None]] = [
+        # (missing_fields key, ContentUpdate key, facts key)
+        ("cast",            "cast",            "cast"),
+        ("director",        "directors",       "directors"),
+        ("genres",          "genres",          "genres"),
+        ("country",         "country",         "country"),
+        ("synopsis",        "synopsis",        None),       # wikipedia 직접 저장 금지
+    ]
+    for missing_key, update_key, facts_key in field_map:
+        val = _pick(missing_key, facts_key)
+        if missing_key in empty:
+            if val:
+                payload[update_key] = val
+                filled_fields.append(missing_key)
+        else:
+            if val:
+                skipped_fields.append(missing_key)
+
+    # runtime: int 변환
+    if "runtime" in empty:
+        rv = autofill.get("runtime") or (str(facts.get("runtime")) if facts.get("runtime") else None)
+        if rv:
+            try:
+                payload["runtime"] = int(str(rv).strip().split()[0])
+                filled_fields.append("runtime")
+            except (ValueError, IndexError):
+                pass
+    elif autofill.get("runtime") or facts.get("runtime"):
+        skipped_fields.append("runtime")
+
+    # production_year: content 직접 필드 (Content.production_year 기준)
+    if not c.production_year:
+        yr = facts.get("production_year") or autofill.get("production_year")
+        if yr:
+            try:
+                payload["production_year"] = int(str(yr)[:4])
+                filled_fields.append("production_year")
+            except ValueError:
+                pass
+
+    if payload:
+        update_content(db, req.content_id, ContentUpdate(**payload))
+
+    # 4. AI 태스크 순차 실행 (translate_synopsis → short_synopsis)
+    ai_results: dict[str, str] = {}
+    for task_name in ("translate_synopsis", "short_synopsis"):
+        try:
+            r = await run_single_ai_task(req.content_id, task_name, db)
+            ai_results[task_name] = r.get("status", "ok")
+        except Exception as exc:
+            ai_results[task_name] = "error"
+
+    # 5. status 불변 보장
+    db.refresh(c)
+    if c.status != before_status:
+        c.status = before_status
+        db.add(c)
+        db.commit()
+        db.refresh(c)
+
+    return AiAutofillResponse(
+        content_id=req.content_id,
+        rag_sources=ref.sources_hit,
+        ai_tasks=ai_results,
+        filled_fields=filled_fields,
+        skipped_fields=skipped_fields,
+        status_unchanged=c.status.value if c.status else (before_status.value if before_status else ""),
+    )
+
+
 @router.get("/ai-tasks", dependencies=[Depends(require_pipeline_test)])
 def list_ai_tasks():
     """사용 가능한 AI task 목록."""

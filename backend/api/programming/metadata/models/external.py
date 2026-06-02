@@ -130,4 +130,5 @@ class StageAutoPolicy(Base):
     s4_auto = Column(Boolean, nullable=False, default=False)
     s5_auto = Column(Boolean, nullable=False, default=False)
     s6_auto = Column(Boolean, nullable=False, default=False)
+    s4_quality_threshold = Column(Float, nullable=False, default=90.0)  # S4 자동 승인 최소 quality_score
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
