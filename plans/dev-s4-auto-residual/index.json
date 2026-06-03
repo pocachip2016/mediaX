@@ -1,0 +1,30 @@
+{
+  "project": "mediaX",
+  "phase": "dev-s4-auto-residual",
+  "description": "S4 검수 단계 AUTO — quality_score가 임계값 미만인 건은 승인하지 않고 목록에 잔류시키되, 한 번 잔류 판정한 건은 재검수하지 않아(무한 재검수 방지) 안정적으로 멈춘다. 임계값 변경 시에는 새 기준으로 재평가를 허용한다.",
+  "status": "completed",
+  "source_commit": "a780ecf",
+  "post_hoc": true,
+  "decisions": {
+    "residual_keep": "S4 AUTO에서 quality_score < threshold면 approve하지 않고 잔류(moved:false). 목록에서 사라지지 않음.",
+    "block_re_review": "s4ReviewedRef(Set<id>)로 이미 잔류 판정한 건을 S4 대상에서 제외 → 동일 건 재검수/무한 루프 방지.",
+    "threshold_change_reeval": "stageAuto.s4_quality_threshold 변경 시 s4ReviewedRef.clear() → 새 기준으로 잔류 건 재평가 허용.",
+    "headless_migration": "auto-headless 리팩터(PR #18)로 로직이 runAutoPipeline의 S4 stageDef로 이동했으나 의미 동일하게 보존."
+  },
+  "steps": [
+    {
+      "step": 1,
+      "name": "s4-residual-keep-and-block-rereview",
+      "status": "completed",
+      "summary": "S4 AUTO: 임계값 미만 건 잔류(moved:false) + s4ReviewedRef로 재검수 차단 + S4 대상 필터에서 reviewed 제외 + 임계값 변경 시 clear(재평가). 커밋 a780ecf, auto-headless 리팩터로 runAutoPipeline S4 stageDef에 보존.",
+      "completed_at": "2026-06-03"
+    },
+    {
+      "step": 2,
+      "name": "verify-and-record",
+      "status": "completed",
+      "summary": "verify.sh `s4-auto-residual` 케이스 신설(s4ReviewedRef 존재 + 대상 필터 잔류 제외 + add/검수잔류 로그 + 임계값 clear + typecheck) + plan index.json 기록 + 브라우저 E2E 확인(잔류 3건 모두 quality_score 기준 정상 미달 확인).",
+      "completed_at": "2026-06-03"
+    }
+  ]
+}
