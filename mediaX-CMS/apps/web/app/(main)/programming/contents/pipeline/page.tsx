@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from "react"
 import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Zap } from "lucide-react"
 import {
   metadataApi,
@@ -11,7 +11,6 @@ import {
   type PipelineTestCleanup,
   type ContentOut,
   type ContentDetail,
-  type ContentTimeline,
   type ContentType,
   type BatchJobOut,
   type BulkActionResponse,
@@ -56,6 +55,9 @@ function stageBucket(c: { current_stage?: string | null }): number {
 // 반려 항목은 위치와 무관하게 bucket 6(반려/실패)으로 분기. BE pipeline_summary와 일치.
 function contentBucket(c: { current_stage?: string | null; status?: string | null }): number {
   return c.status === "rejected" ? 6 : stageBucket(c)
+}
+function anyAutoOn(p: StageAutoPolicy): boolean {
+  return p.s1_auto || p.s2_auto || p.s3_auto || p.s4_auto
 }
 
 // ── Mock 데이터 ──────────────────────────────────────────
@@ -220,26 +222,6 @@ function SampleSeedPanel({
         </div>
       </div>
 
-      {/* 현재 상태 분포 */}
-      {summary && summary.total > 0 && (
-        <div className="rounded-lg border border-border bg-background p-3 space-y-2">
-          <div className="text-xs font-semibold text-muted-foreground">현재 DB 상태 분포</div>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(summary.by_status)
-              .filter(([, v]) => v > 0)
-              .map(([k, v]) => (
-                <span key={k} className="text-xs px-2 py-0.5 rounded-full bg-muted font-medium">
-                  {k}: <span className="font-bold">{v}</span>
-                </span>
-              ))}
-          </div>
-          {summary.last_seeded_at && (
-            <div className="text-xs text-muted-foreground">
-              최근 시드: {new Date(summary.last_seeded_at).toLocaleString("ko-KR")}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 결과 피드백 */}
       {seedResult && (
@@ -341,101 +323,213 @@ function TestContentList({
   )
 }
 
-const TIMELINE_STAGES = ["생성", "Enrich", "AI처리", "검수", "승인", "게시"] as const
+// 단계별 전이 라벨 (advance API는 라벨 무관·status 1칸 진행)
+const STAGE_TRANSITION: Record<number, [string, string]> = {
+  1: ["생성", "Enrich"], 2: ["Enrich", "AI처리"], 3: ["AI처리", "검수"],
+  4: ["검수", "승인"], 5: ["승인", "게시"],
+}
 
-function ContentPipelineTimeline({
-  timeline,
-  loading,
-}: {
-  timeline: ContentTimeline | null
-  loading: boolean
-}) {
-  if (loading) {
+// 선택 콘텐츠의 메타 정보 카드 (타임라인 대체)
+// refreshKey 변경 시 강제 재조회 — 헤더 기능 버튼(Enrich/AI처리) 실행 후 갱신용
+function SelectedContentMeta({ contentId, refreshKey = 0 }: { contentId: number | null; refreshKey?: number }) {
+  const [detail, setDetail] = useState<ContentDetail | null>(null)
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    if (contentId === null) { setDetail(null); return }
+    let alive = true
+    setLoading(true)
+    metadataApi.getContent(contentId)
+      .then((d) => { if (alive) setDetail(d) })
+      .catch(() => { if (alive) setDetail(null) })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [contentId, refreshKey])
+
+  if (contentId === null) {
     return (
-      <div className="mt-3 rounded-lg border border-border bg-background p-4 text-center text-xs text-muted-foreground">
-        <RefreshCw className="h-4 w-4 mx-auto mb-1.5 animate-spin opacity-50" />
-        타임라인 로딩 중…
+      <div className="rounded-lg border border-dashed border-border bg-background p-4 text-center text-xs text-muted-foreground">
+        목록에서 콘텐츠를 선택하면 메타 정보가 표시됩니다
       </div>
     )
   }
-  if (!timeline) return null
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border bg-background p-4 text-center text-xs text-muted-foreground">
+        <RefreshCw className="h-4 w-4 mx-auto mb-1.5 animate-spin opacity-50" />
+        메타 로딩 중…
+      </div>
+    )
+  }
+  if (!detail) return null
 
-  const stageMap = new Map(timeline.stages.map((s) => [s.stage, s]))
+  const fields: Array<[string, string | null]> = [
+    ["제작연도", currentFieldValue(detail, "production_year")],
+    ["국가", currentFieldValue(detail, "country")],
+    ["장르", currentFieldValue(detail, "genres")],
+    ["러닝타임", currentFieldValue(detail, "runtime")],
+    ["출연", currentFieldValue(detail, "cast")],
+    ["감독", currentFieldValue(detail, "director")],
+  ]
+  const synopsis = currentFieldValue(detail, "synopsis")
 
   return (
-    <div className="mt-3 rounded-lg border border-border bg-background overflow-hidden">
-      {/* 헤더 */}
+    <div className="rounded-lg border border-border bg-background overflow-hidden">
       <div className="px-3 py-2 bg-muted/40 flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold truncate">{timeline.title}</span>
-        <span className="text-xs text-muted-foreground shrink-0">#{timeline.content_id}</span>
+        <span className="text-xs font-semibold truncate">{detail.title}</span>
+        <span className="text-xs text-muted-foreground shrink-0">#{detail.id}</span>
       </div>
-
-      <div className="px-3 py-3 space-y-3">
-        {/* 수평 타임라인 도트 */}
-        <div className="overflow-x-auto">
-          <div className="min-w-[320px]">
-            {/* 도트 + 선 */}
-            <div className="flex items-center">
-              {TIMELINE_STAGES.map((name, i) => {
-                const stage = stageMap.get(i + 1)
-                const isDone = stage?.status === "done"
-                const isActive = stage?.status === "active"
-                return (
-                  <div key={name} className="flex items-center flex-1">
-                    <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                      isDone ? "bg-primary border-primary" : isActive ? "bg-primary/30 border-primary animate-pulse" : "bg-background border-muted-foreground/30"
-                    }`}>
-                      {isDone && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                    </div>
-                    {i < TIMELINE_STAGES.length - 1 && (
-                      <div className={`flex-1 h-0.5 ${isDone ? "bg-primary" : "bg-muted-foreground/20"}`} />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-            {/* 스테이지 이름 + 시각 */}
-            <div className="flex mt-1.5">
-              {TIMELINE_STAGES.map((name, i) => {
-                const stage = stageMap.get(i + 1)
-                const timeStr = stage?.at
-                  ? new Date(stage.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })
-                  : "—"
-                return (
-                  <div key={name} className="flex-1 text-center">
-                    <div className="text-[10px] font-medium text-foreground">{name}</div>
-                    <div className="text-[10px] text-muted-foreground">{timeStr}</div>
-                  </div>
-                )
-              })}
-            </div>
+      <div className="p-3 flex gap-3">
+        {detail.poster_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={detail.poster_url} alt={detail.title} className="w-16 h-24 object-cover rounded border border-border shrink-0" />
+        ) : (
+          <div className="w-16 h-24 rounded border border-dashed border-border flex items-center justify-center text-[10px] text-muted-foreground shrink-0">No Img</div>
+        )}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${STATUS_COLOR[detail.status] ?? ""}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
+            <span className="text-[10px] text-muted-foreground">{TYPE_LABEL[detail.content_type] ?? detail.content_type}</span>
+          </div>
+          <div className="space-y-0.5 text-xs">
+            {fields.map(([label, value]) => (
+              <div key={label} className="flex gap-2">
+                <span className="text-muted-foreground w-14 shrink-0">{label}</span>
+                <span className="truncate flex-1">{value ?? "—"}</span>
+              </div>
+            ))}
           </div>
         </div>
-
-        {/* 상세 행 */}
-        <div className="border-t border-border pt-2 space-y-1">
-          {TIMELINE_STAGES.map((name, i) => {
-            const stage = stageMap.get(i + 1)
-            if (!stage || (stage.status === "pending" && Object.keys(stage.detail ?? {}).length === 0)) return null
-            const detailParts = Object.entries(stage.detail ?? {})
-              .filter(([, v]) => v !== null && v !== undefined && v !== "")
-              .map(([k, v]) => `${k}=${String(v).slice(0, 20)}`)
-              .join(" · ")
-            return (
-              <div key={name} className="flex items-start gap-2 text-xs">
-                <span className="shrink-0 text-muted-foreground w-16">①②③④⑤⑥"[i]"</span>
-                <span className={`shrink-0 font-medium ${stage.status === "done" ? "text-primary" : stage.status === "active" ? "text-amber-600" : "text-muted-foreground"}`}>
-                  {"①②③④⑤⑥"[i]} {name}
-                </span>
-                <span className="text-muted-foreground truncate">{detailParts || (stage.status === "pending" ? "대기중" : "—")}</span>
-              </div>
-            )
-          })}
-          {timeline.stages.every((s) => s.status === "pending") && (
-            <div className="text-xs text-muted-foreground text-center py-1">파이프라인 미시작 — 콘텐츠가 대기 상태</div>
-          )}
-        </div>
       </div>
+      {synopsis && (
+        <div className="px-3 pb-3 -mt-1">
+          <p className="text-xs text-muted-foreground line-clamp-4">{synopsis}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 메타 상세 밑 — 선택 콘텐츠 단건 다음단계로 / 삭제
+function SingleAdvanceDeleteBar({ contentId, activeStage, onDone, onDeleted }: {
+  contentId: number | null; activeStage: number | null; onDone: () => void; onDeleted: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [confirmDel, setConfirmDel] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+  if (contentId === null) return null
+  const [from, to] = STAGE_TRANSITION[activeStage ?? 0] ?? ["현재", "다음"]
+
+  const handleAdvance = async () => {
+    setBusy(true); setResult(null)
+    try {
+      const r = await pipelineTestApi.advance([contentId])
+      setResult(`✓ ${r.advanced}건 ${from}→${to}`)
+      onDone()
+    } catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "advance 실패"}`) }
+    finally { setBusy(false) }
+  }
+  const handleDelete = async () => {
+    setBusy(true); setResult(null); setConfirmDel(false)
+    try {
+      const r = await pipelineTestApi.cleanupStage([contentId])
+      setResult(`삭제 완료 (${r.deleted}건)`)
+      onDeleted()
+    } catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "삭제 실패"}`) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      <button onClick={() => void handleAdvance()} disabled={busy}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
+        {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>→</span>}
+        다음 단계로 (1건) · {from}→{to}
+      </button>
+      {confirmDel ? (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-red-500 font-medium">이 콘텐츠 삭제. 계속?</span>
+          <button onClick={() => void handleDelete()} className="px-2.5 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-medium transition-colors">삭제 확인</button>
+          <button onClick={() => setConfirmDel(false)} className="px-2.5 py-1 rounded-lg border border-border text-[11px] hover:bg-accent transition-colors">취소</button>
+        </div>
+      ) : (
+        <button onClick={() => setConfirmDel(true)} disabled={busy}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors">
+          <Trash2 className="h-3 w-3" /> 삭제
+        </button>
+      )}
+      {result && <span className={`text-[11px] ${result.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>{result}</span>}
+    </div>
+  )
+}
+
+// S1 전용 — 다음단계(?건) + 클린업(?건) 한 줄 버튼 (advance + cleanup)
+function S1BulkActionBar({ stageContents, activeStage, onDone, onDeleted, onAfterAdvance }: {
+  stageContents: ContentOut[]; activeStage: number | null; onDone: () => void; onDeleted?: () => void; onAfterAdvance?: () => void
+}) {
+  const ids = stageContents.map((c) => c.id)
+  const [from, to] = STAGE_TRANSITION[activeStage ?? 0] ?? ["현재", "다음"]
+  const [advBusy, setAdvBusy] = useState(false)
+  const [cleanBusy, setCleanBusy] = useState(false)
+  const [cleanConfirm, setCleanConfirm] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const handleAdvance = async () => {
+    setAdvBusy(true); setResult(null)
+    try {
+      const r = await pipelineTestApi.advance(ids)
+      setResult(`✓ ${r.advanced}건 ${from}→${to}`)
+      onDone()
+      onAfterAdvance?.()
+    } catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setAdvBusy(false) }
+  }
+  const handleCleanup = async () => {
+    setCleanBusy(true); setResult(null); setCleanConfirm(false)
+    try {
+      const r = await pipelineTestApi.cleanupStage(ids)
+      setResult(`삭제 ${r.deleted}건`)
+      onDeleted ? onDeleted() : onDone()
+    } catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setCleanBusy(false) }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <button onClick={() => void handleAdvance()} disabled={advBusy || !ids.length}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
+          {advBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>→</span>}
+          다음단계 ({ids.length}건)
+        </button>
+        {cleanConfirm ? (
+          <>
+            <span className="text-[11px] text-red-500 font-medium">{ids.length}건 삭제?</span>
+            <button onClick={() => void handleCleanup()} className="px-2.5 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-medium transition-colors">확인</button>
+            <button onClick={() => setCleanConfirm(false)} className="px-2.5 py-1.5 rounded-lg border border-border text-[11px] hover:bg-accent transition-colors">취소</button>
+          </>
+        ) : (
+          <button onClick={() => setCleanConfirm(true)} disabled={cleanBusy || !ids.length}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors">
+            {cleanBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            클린업 ({ids.length}건)
+          </button>
+        )}
+      </div>
+      {result && <p className={`text-[11px] ${result.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>{result}</p>}
+    </div>
+  )
+}
+
+// 콘텐츠 목록 밑 — 해당 단계 전체 다음단계로 / 클린업 (S2~6 용)
+function StageBulkBar({ stageContents, activeStage, onDone }: {
+  stageContents: ContentOut[]; activeStage: number | null; onDone: () => void
+}) {
+  const ids = stageContents.map((c) => c.id)
+  const [from, to] = STAGE_TRANSITION[activeStage ?? 0] ?? ["현재", "다음"]
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-1">
+      <StageAdvanceBar ids={ids} fromStatus={`${from} 전체 (${ids.length}건)`} toStatus={to} onDone={onDone} />
+      <StageControlBar stageContents={stageContents} onDone={onDone} showPrev={false} />
     </div>
   )
 }
@@ -931,10 +1025,6 @@ function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel, stageC
   const rawIds = stageContents.map((c) => c.id)
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">① 생성 — raw 콘텐츠 투입</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">시드·건별·CSV → raw 상태. 내부처리 없음(결정적).</p>
-      </div>
       <div className="flex gap-4 border-b border-amber-200 dark:border-amber-800/40">
         {CREATION_TABS.map((tab) => (
           <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)}
@@ -946,8 +1036,6 @@ function CreationTabsPanel({ summary, onRefresh, selectedContentId: _sel, stageC
       {activeTab === "seed" && <SampleSeedPanel summary={summary} onRefresh={onRefresh} />}
       {activeTab === "single" && <AddContentInlinePanel onRefresh={onRefresh} />}
       {activeTab === "bulk" && <BulkUploadEmbed onRefresh={onRefresh} />}
-      <StageAdvanceBar ids={rawIds} fromStatus="생성" toStatus="Enrich" onDone={onRefresh} />
-      <StageControlBar stageContents={stageContents} onDone={onRefresh} showPrev={false} />
     </div>
   )
 }
@@ -1080,7 +1168,9 @@ function buildBaseRows(detail: ContentDetail): BoostRow[] {
   }))
 }
 
-function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId: number | null; onRefresh: () => void }) {
+function EnrichBoostPanel({ selectedContentId, onRefresh, runAllSignal = 0, reloadSignal = 0 }: {
+  selectedContentId: number | null; onRefresh: () => void; runAllSignal?: number; reloadSignal?: number
+}) {
   const [rows, setRows] = useState<BoostRow[]>([])
   const [detail, setDetail] = useState<ContentDetail | null>(null)
   const [ragBusy, setRagBusy] = useState(false)
@@ -1094,13 +1184,19 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
   const [expandWikipedia, setExpandWikipedia] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 현재 선택 id 추적 — 비동기 작업 중 선택이 바뀌면 이전 콘텐츠 결과가 새 콘텐츠에 덮어쓰이지 않게 가드
+  const activeIdRef = useRef(selectedContentId)
+  useEffect(() => { activeIdRef.current = selectedContentId }, [selectedContentId])
+
   const loadDetail = useCallback(async () => {
     if (!selectedContentId) { setDetail(null); setRows([]); return }
+    const myId = selectedContentId
     try {
-      const d = await metadataApi.getContent(selectedContentId)
+      const d = await metadataApi.getContent(myId)
+      if (activeIdRef.current !== myId) return
       setDetail(d)
       setRows(buildBaseRows(d))
-    } catch { setDetail(null) }
+    } catch { if (activeIdRef.current === myId) setDetail(null) }
   }, [selectedContentId])
 
   useEffect(() => {
@@ -1112,14 +1208,15 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
 
   const runRag = async () => {
     if (!selectedContentId) return
+    const myId = selectedContentId
     setRagBusy(true); setError(null)
     try {
-      const rag = await pipelineTestApi.referenceExtract(selectedContentId)
+      const rag = await pipelineTestApi.referenceExtract(myId)
+      const freshDetail = await metadataApi.getContent(myId)
+      if (activeIdRef.current !== myId) return
       setWikipediaText(rag.wikipedia_text ?? null)
       setWikipediaUrl(rag.wikipedia_url ?? null)
       setRagDone(true)
-
-      const freshDetail = await metadataApi.getContent(selectedContentId)
       setDetail(freshDetail)
 
       setRows((prev) => {
@@ -1153,10 +1250,12 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
 
   const runAiTranslate = async () => {
     if (!selectedContentId) return
+    const myId = selectedContentId
     setTranslateBusy(true); setError(null)
     try {
-      await pipelineTestApi.runAiTask(selectedContentId, "translate_synopsis")
-      const freshDetail = await metadataApi.getContent(selectedContentId)
+      await pipelineTestApi.runAiTask(myId, "translate_synopsis")
+      const freshDetail = await metadataApi.getContent(myId)
+      if (activeIdRef.current !== myId) return
       setDetail(freshDetail)
       setTranslateDone(true)
       const koVal = freshDetail.metadata_record?.synopsis_ko || null
@@ -1175,10 +1274,12 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
 
   const runAiSynopsis = async () => {
     if (!selectedContentId) return
+    const myId = selectedContentId
     setShortSynopsisBusy(true); setError(null)
     try {
-      const r = await pipelineTestApi.runAiTask(selectedContentId, "short_synopsis")
-      const freshDetail = await metadataApi.getContent(selectedContentId)
+      const r = await pipelineTestApi.runAiTask(myId, "short_synopsis")
+      const freshDetail = await metadataApi.getContent(myId)
+      if (activeIdRef.current !== myId) return
       setDetail(freshDetail)
       setShortSynopsisDone(true)
       const val = r.result_preview ?? freshDetail.metadata_record?.short_synopsis ?? null
@@ -1203,14 +1304,41 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
     }
   }
 
+  // 헤더 "AI처리"(단건) → RAG 보완 → AI 번역 → AI 축약 순차 실행 (수동 버튼과 동일 효과)
+  const runAllSignalRef = useRef(runAllSignal)
+  useEffect(() => {
+    if (runAllSignal === runAllSignalRef.current) return
+    runAllSignalRef.current = runAllSignal
+    if (!selectedContentId) return
+    void (async () => {
+      await runRag()
+      await runAiTranslate()
+      await runAiSynopsis()
+      onRefresh()
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runAllSignal])
+
+  // bulk 처리 후 현재값만 재조회 (transient 추천값은 비움)
+  const reloadSignalRef = useRef(reloadSignal)
+  useEffect(() => {
+    if (reloadSignal === reloadSignalRef.current) return
+    reloadSignalRef.current = reloadSignal
+    setRagDone(false); setTranslateDone(false); setShortSynopsisDone(false)
+    void loadDetail()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadSignal])
+
   const applyRagRow = async (row: BoostRow) => {
     if (!selectedContentId || !row.ragUpdate) return
+    const myId = selectedContentId
     setRows((prev) => prev.map((r) => r.field === row.field ? { ...r, applying: true } : r))
     try {
-      await metadataApi.updateContent(selectedContentId, {
+      await metadataApi.updateContent(myId, {
         [row.ragUpdate.contentField]: row.ragUpdate.arg,
       } as Parameters<typeof metadataApi.updateContent>[1])
-      const freshDetail = await metadataApi.getContent(selectedContentId)
+      const freshDetail = await metadataApi.getContent(myId)
+      if (activeIdRef.current !== myId) return
       setDetail(freshDetail)
       setRows((prev) => prev.map((r) =>
         r.field === row.field
@@ -1362,129 +1490,407 @@ function EnrichBoostPanel({ selectedContentId, onRefresh }: { selectedContentId:
   )
 }
 
-function BatchRecallTrigger({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
-  const [title, setTitle] = useState("")
-  const [content, setContent] = useState<ContentDetail | null>(null)
-  const [recs, setRecs] = useState<RecommendationsOut | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [subBusy, setSubBusy] = useState<Record<string, boolean>>({})
-  const [lastRun, setLastRun] = useState<string | null>(null)
-  const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
+// 단계 기능 버튼 — 패널 타이틀 옆 배치용. primary 작업(Enrich/AI처리 등)만 단독 실행.
+type StagePrimary = { label: string; icon: ReactNode; className: string; run: (ids: number[]) => Promise<string> }
 
-  const fetchRecs = useCallback(async () => {
-    if (!selectedContentId) { setRecs(null); setTitle(""); setContent(null); return }
-    setLoading(true)
-    try {
-      const [c, r] = await Promise.all([metadataApi.getContent(selectedContentId), metadataApi.getRecommendations(selectedContentId)])
-      setTitle(c.title); setContent(c); setRecs(r)
-    } catch { setRecs(null); setContent(null) } finally { setLoading(false) }
-  }, [selectedContentId])
-
-  useEffect(() => { setLastRun(null); setAppliedFields(new Set()); fetchRecs() }, [fetchRecs])
-
-  const runSource = async (source: "tmdb" | "kmdb") => {
-    if (!selectedContentId) return
-    setSubBusy((b) => ({ ...b, [source]: true }))
-    try {
-      const r = await pipelineTestApi.enrichSource(selectedContentId, source)
-      setLastRun(`${source.toUpperCase()}: candidates ${r.candidates_upserted}`)
-      await fetchRecs()
-    } catch (e) { setLastRun(`${source}: ${e instanceof Error ? e.message : "오류"}`) }
-    finally { setSubBusy((b) => ({ ...b, [source]: false })) }
+function StagePrimaryButton({ ids, primary }: { ids: number[]; primary: StagePrimary }) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+  const n = ids.length
+  const handleRun = async () => {
+    if (!n) return
+    setBusy(true); setResult(null)
+    try { setResult(await primary.run(ids)) }
+    catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setBusy(false) }
   }
-
-  const recByField = (f: string): FieldRecommendation | null => {
-    if (!recs) return null
-    return [...recs.auto_fill, ...recs.conflicts].find((x) => x.field === f) ?? null
-  }
-  // 추천/missing 여부와 무관하게 항상 전체 필드 표시
-  const allFields = ALL_ENRICH_FIELDS
-
-
-  if (!selectedContentId) {
-    return (
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold">② 보완 — 외부 소스 보완</h3>
-        <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-          좌측 목록에서 콘텐츠를 선택하면 보완 필요 필드와 단계별 보완을 진행할 수 있습니다.
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">② 보완 — 외부 소스 보완</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">선택: <span className="font-medium text-foreground">#{selectedContentId} {title}</span>{loading && <RefreshCw className="inline h-3 w-3 ml-1 animate-spin opacity-50" />}</p>
-      </div>
-      {/* 보완 필요 필드 */}
-      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">보완 필요 필드</p>
-        {recs && recs.missing_fields.length === 0
-          ? <p className="text-xs text-emerald-600">✓ 보완 필요 필드 없음</p>
-          : <div className="flex flex-wrap gap-1.5">{recs?.missing_fields.map((f) => { const done = !!recByField(f); return <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${done ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>{ENRICH_FIELD_LABELS[f] ?? f} {done ? "✓" : ""}</span> })}</div>
-        }
-      </div>
-      {/* STEP A — 캐시 DB */}
-      <div className="rounded-lg border border-blue-200 dark:border-blue-800/40 bg-blue-50/40 dark:bg-blue-900/10 p-3 space-y-2">
-        <p className="text-[11px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">STEP A — 캐시 DB 보완 (status 불변)</p>
-        <div className="flex gap-2 flex-wrap">
-          {(["tmdb", "kmdb"] as const).map((src) => (
-            <button key={src} onClick={() => void runSource(src)} disabled={subBusy[src]}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
-              {subBusy[src] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Database className="h-3 w-3" />}
-              {src.toUpperCase()} 보완
-            </button>
-          ))}
-          {lastRun && <span className="text-[10px] text-blue-600 self-center">{lastRun}</span>}
-        </div>
-        <div className="rounded border border-border bg-background overflow-hidden">
-            <div className="grid grid-cols-[4.5rem_1fr_1fr_4rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
-              <div className="px-2 py-1">필드</div>
-              <div className="px-2 py-1 border-l border-border">현재값</div>
-              <div className="px-2 py-1 border-l border-border">보완값(소스)</div>
-              <div className="px-2 py-1 border-l border-border text-center">적용</div>
-            </div>
-            <div>
-              {allFields.map((f) => (
-                <EnrichFieldRow key={f} field={f} rec={recByField(f)} contentId={selectedContentId}
-                  currentValue={currentFieldValue(content, f)}
-                  applied={appliedFields.has(f)}
-                  onApplied={(field) => { setAppliedFields((s) => new Set(s).add(field)); void fetchRecs() }} />
-              ))}
-            </div>
-          </div>
-      </div>
-      <div className="flex items-start gap-2 flex-wrap">
-        <StageAdvanceBar ids={[selectedContentId]} fromStatus="생성" toStatus="Enrich" onDone={() => { onRefresh(); void fetchRecs() }} />
-        {stageContents.length >= 2 && (
-          <StageAdvanceBar ids={stageContents.map((c) => c.id)} fromStatus={`생성 전체 (${stageContents.length}건)`} toStatus="Enrich" onDone={onRefresh} />
-        )}
-      </div>
-      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
+    <div className="flex items-center gap-1.5">
+      {result && <span className={`text-[10px] ${result.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>{result}</span>}
+      <button onClick={() => void handleRun()} disabled={busy || !n}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-white text-[11px] font-medium disabled:opacity-50 transition-colors ${primary.className}`}>
+        {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : primary.icon}
+        {primary.label} ({n})
+      </button>
     </div>
   )
 }
 
-function AiProcessPanel({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
+// 단계 공용 액션바 — 이전단계로 / 다음단계로 / 클린업 (좌=전체, 중=단건 공용)
+function StageActionBar({ ids, onDone, onRevertDone, onAfterAdvance }: {
+  ids: number[]
+  onDone: () => void
+  onRevertDone?: () => void    // revert 성공 후: AUTO OFF + 이전 단계 포커싱
+  onAfterAdvance?: () => void  // advance 성공 후: 다음 단계 포커싱
+}) {
+  const [revBusy, setRevBusy] = useState(false)
+  const [advBusy, setAdvBusy] = useState(false)
+  const [cleanBusy, setCleanBusy] = useState(false)
+  const [cleanConfirm, setCleanConfirm] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+  const n = ids.length
+
+  const handleRevert = async () => {
+    if (!n) return
+    setRevBusy(true); setResult(null)
+    try {
+      const r = await pipelineTestApi.revert(ids)
+      setResult(`↩ ${r.reverted}건 이전단계`)
+      onDone()
+      onRevertDone?.()  // AUTO OFF + 이전 단계 포커싱
+    }
+    catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setRevBusy(false) }
+  }
+  const handleAdvance = async () => {
+    if (!n) return
+    setAdvBusy(true); setResult(null)
+    try {
+      const r = await pipelineTestApi.advance(ids)
+      setResult(`✓ ${r.advanced}건 다음단계`)
+      onDone()
+      onAfterAdvance?.()  // 다음 단계 포커싱
+    }
+    catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setAdvBusy(false) }
+  }
+  const handleCleanup = async () => {
+    if (!n) return
+    setCleanBusy(true); setResult(null); setCleanConfirm(false)
+    try { const r = await pipelineTestApi.cleanupStage(ids); setResult(`삭제 ${r.deleted}건`); onDone() }
+    catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setCleanBusy(false) }
+  }
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">③ AI처리 — LLM 태스크</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">RAG 보완 + AI 처리 (장르·무드·줄거리 축약·번역)</p>
-      </div>
-
-      <EnrichBoostPanel selectedContentId={selectedContentId} onRefresh={onRefresh} />
-
-      <div className="flex items-start gap-2 flex-wrap">
-        <StageAdvanceBar ids={selectedContentId ? [selectedContentId] : []} fromStatus="Enrich" toStatus="AI처리" onDone={onRefresh} />
-        {stageContents.length >= 2 && (
-          <StageAdvanceBar ids={stageContents.map((c) => c.id)} fromStatus={`Enrich 전체 (${stageContents.length}건)`} toStatus="AI처리" onDone={onRefresh} />
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button onClick={() => void handleRevert()} disabled={revBusy || !n}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors">
+          {revBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>↩</span>}
+          이전단계로 ({n}건)
+        </button>
+        <button onClick={() => void handleAdvance()} disabled={advBusy || !n}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
+          {advBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>→</span>}
+          다음단계로 ({n}건)
+        </button>
+        {cleanConfirm ? (
+          <>
+            <span className="text-[11px] text-red-500 font-medium">{n}건 삭제?</span>
+            <button onClick={() => void handleCleanup()} className="px-2.5 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-medium transition-colors">확인</button>
+            <button onClick={() => setCleanConfirm(false)} className="px-2.5 py-1.5 rounded-lg border border-border text-[11px] hover:bg-accent transition-colors">취소</button>
+          </>
+        ) : (
+          <button onClick={() => setCleanConfirm(true)} disabled={cleanBusy || !n}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors">
+            {cleanBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            클린업 ({n}건)
+          </button>
         )}
       </div>
-      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
+      {result && <p className={`text-[11px] ${result.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>{result}</p>}
     </div>
+  )
+}
+
+// S2(Enrich) 3단 콘솔 — 좌(목록+전체버튼) / 중(상세+필드테이블+단건버튼) / 우(추천 요약)
+function S2Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, autoRun, autoLog, onCloseAuto }: {
+  testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
+  onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
+  autoRun?: { stage: number; current: number; total: number; running: boolean } | null
+  autoLog?: AutoLogEntry[]; onCloseAuto?: () => void
+}) {
+  const [detail, setDetail] = useState<ContentDetail | null>(null)
+  const [recs, setRecs] = useState<RecommendationsOut | null>(null)
+  const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
+  const [metaRefresh, setMetaRefresh] = useState(0)
+
+  const refetch = useCallback(async () => {
+    if (selectedContentId === null) { setDetail(null); setRecs(null); return }
+    try {
+      const [c, r] = await Promise.all([
+        metadataApi.getContent(selectedContentId),
+        metadataApi.getRecommendations(selectedContentId).catch(() => null),
+      ])
+      setDetail(c); setRecs(r)
+    } catch { setDetail(null); setRecs(null) }
+  }, [selectedContentId])
+
+  useEffect(() => { setAppliedFields(new Set()); void refetch() }, [refetch])
+
+  const recByField = (f: string): FieldRecommendation | null =>
+    recs ? [...recs.auto_fill, ...recs.conflicts].find((x) => x.field === f) ?? null : null
+
+  const allRecs = recs ? [...recs.auto_fill, ...recs.conflicts] : []
+
+  // Enrich = TMDB·KMDB 단일 소스 회수(status 불변 sub-step). 진행은 "다음단계로"로만 — 전체 enrich 태스크(status=ai 강제)와 분리
+  const enrichPrimary = {
+    label: "Enrich", icon: <Zap className="h-3 w-3" />, className: "bg-blue-600 hover:bg-blue-700",
+    run: async (ids: number[]) => {
+      let ok = 0, fail = 0
+      for (const id of ids) {
+        try {
+          await pipelineTestApi.enrichSource(id, "tmdb")
+          await pipelineTestApi.enrichSource(id, "kmdb")
+          ok++
+        } catch { fail++ }
+      }
+      void refetch(); refreshTestSummary(); setMetaRefresh((n) => n + 1)
+      return `Enrich ${ok}/${ids.length}건 완료 (TMDB·KMDB)${fail ? ` · 실패 ${fail}` : ""}`
+    },
+  }
+
+  return (
+    <>
+      {/* 좌 — Enrich (외부 메타보강) */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">Enrich (외부 메타보강)</span>
+              {testContents.length > 0 && <span className="text-xs text-amber-600 dark:text-amber-400">{testContents.length}건</span>}
+            </div>
+            {testContents.length > 0 && (
+              <StagePrimaryButton ids={testContents.map((c) => c.id)} primary={enrichPrimary} />
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            {testContents.length > 0 && (
+              <StageActionBar ids={testContents.map((c) => c.id)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 중 — 콘텐츠 상세 + 필드 테이블 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+              {selectedContentId && <span className="text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>}
+            </div>
+            {selectedContentId !== null && (
+              <StagePrimaryButton ids={[selectedContentId]} primary={enrichPrimary} />
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
+            {selectedContentId !== null && (
+              <>
+                <div className="rounded border border-border bg-background overflow-hidden">
+                  <div className="grid grid-cols-[4.5rem_1fr_1fr_4rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
+                    <div className="px-2 py-1">필드</div>
+                    <div className="px-2 py-1 border-l border-border">현재값</div>
+                    <div className="px-2 py-1 border-l border-border">Enrich</div>
+                    <div className="px-2 py-1 border-l border-border text-center">적용</div>
+                  </div>
+                  <div>
+                    {ALL_ENRICH_FIELDS.map((f) => (
+                      <EnrichFieldRow key={f} field={f} rec={recByField(f)} contentId={selectedContentId}
+                        currentValue={currentFieldValue(detail, f)}
+                        applied={appliedFields.has(f)}
+                        onApplied={(field) => { setAppliedFields((s) => new Set(s).add(field)); void refetch() }} />
+                    ))}
+                  </div>
+                </div>
+                <StageActionBar ids={[selectedContentId]} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 우 — 추천 요약 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">추천 요약</span>
+          </div>
+          <div className="p-3 space-y-3">
+            {selectedContentId === null ? (
+              <p className="text-xs text-muted-foreground text-center py-4">콘텐츠를 선택하면 추천 요약이 표시됩니다</p>
+            ) : (
+              <>
+                <div>
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">보완 필요 필드</p>
+                  {recs && recs.missing_fields.length === 0
+                    ? <p className="text-xs text-emerald-600">✓ 보완 필요 필드 없음</p>
+                    : <div className="flex flex-wrap gap-1.5">{recs?.missing_fields.map((f) => { const done = !!recByField(f); return <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${done ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>{ENRICH_FIELD_LABELS[f] ?? f} {done ? "✓" : ""}</span> })}</div>
+                  }
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">추천 ({allRecs.length})</p>
+                  {allRecs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">추천 없음 — Enrich 실행 후 갱신됩니다</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {allRecs.map((r) => {
+                        const best = r.ai_synthesis ?? r.recommendations[0] ?? null
+                        return (
+                          <div key={r.field} className="rounded border border-border bg-muted/20 px-2.5 py-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium">{ENRICH_FIELD_LABELS[r.field] ?? r.field}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${r.status === "conflict" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"}`}>{r.status === "conflict" ? "충돌" : "자동"}</span>
+                            </div>
+                            {best && (
+                              <div className="mt-1 text-[11px] text-muted-foreground">
+                                <span className="text-foreground">{best.value}</span>
+                                <span className="ml-1.5 text-[10px] uppercase">{best.source_type}{r.ai_synthesis ? " · AI" : ""}</span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        {/* AUTO 진행 패널 — 우측 컬럼 하단 (S2 처리 중일 때만) */}
+        {autoRun && autoLog && autoRun.stage === 2 && (
+          <div className="mt-3">
+            <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto ?? (() => {})} />
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+// S3(AI처리) 3단 콘솔 — 좌(목록+전체버튼) / 중(상세+RAG/번역/축약 테이블+단건버튼) / 우(AI 결과 요약)
+function S3Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, autoRun, autoLog, onCloseAuto }: {
+  testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
+  onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
+  autoRun?: { stage: number; current: number; total: number; running: boolean } | null
+  autoLog?: AutoLogEntry[]; onCloseAuto?: () => void
+}) {
+  const [aiResults, setAiResults] = useState<ContentAIResult[]>([])
+  const [metaRefresh, setMetaRefresh] = useState(0)   // 메타 카드 전용
+  const [panelReload, setPanelReload] = useState(0)   // EnrichBoostPanel 재조회(bulk 전용)
+  const [aiRunSignal, setAiRunSignal] = useState(0)   // 단건 AI처리 순차 실행 트리거
+
+  const refetch = useCallback(async () => {
+    if (selectedContentId === null) { setAiResults([]); return }
+    try { setAiResults(await metadataApi.getAiResults(selectedContentId)) }
+    catch { setAiResults([]) }
+  }, [selectedContentId])
+
+  useEffect(() => { void refetch() }, [refetch])
+
+  // AI처리 = RAG 보완 → AI 번역 → AI 축약 순차 실행 (EnrichBoostPanel 3버튼과 동일 효과)
+  const aiPrimary = {
+    label: "AI처리", icon: <Zap className="h-3 w-3" />, className: "bg-purple-600 hover:bg-purple-700",
+    run: async (ids: number[]) => {
+      let ok = 0, fail = 0
+      for (const id of ids) {
+        try {
+          await pipelineTestApi.referenceExtract(id)
+          await pipelineTestApi.runAiTask(id, "translate_synopsis")
+          await pipelineTestApi.runAiTask(id, "short_synopsis")
+          ok++
+        } catch { fail++ }
+      }
+      void refetch(); refreshTestSummary(); setMetaRefresh((n) => n + 1); setPanelReload((n) => n + 1)
+      return `AI처리 ${ok}/${ids.length}건 완료 (RAG·번역·축약)${fail ? ` · 실패 ${fail}` : ""}`
+    },
+  }
+
+  return (
+    <>
+      {/* 좌 — AI처리 (LLM 태스크) */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">AI처리 (LLM 태스크)</span>
+              {testContents.length > 0 && <span className="text-xs text-amber-600 dark:text-amber-400">{testContents.length}건</span>}
+            </div>
+            {testContents.length > 0 && (
+              <StagePrimaryButton ids={testContents.map((c) => c.id)} primary={aiPrimary} />
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            {testContents.length > 0 && (
+              <StageActionBar ids={testContents.map((c) => c.id)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 중 — 콘텐츠 상세 + RAG/번역/축약 테이블 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+              {selectedContentId && <span className="text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>}
+            </div>
+            {selectedContentId !== null && (
+              <button onClick={() => setAiRunSignal((n) => n + 1)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-medium transition-colors">
+                <Zap className="h-3 w-3" />
+                AI처리 (1)
+              </button>
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
+            {selectedContentId !== null && (
+              <>
+                <EnrichBoostPanel selectedContentId={selectedContentId} runAllSignal={aiRunSignal} reloadSignal={panelReload} onRefresh={() => { void refetch(); refreshTestSummary(); setMetaRefresh((n) => n + 1) }} />
+                <StageActionBar ids={[selectedContentId]} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 우 — AI 결과 요약 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">AI 결과 요약</span>
+            {aiResults.length > 0 && <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">{aiResults.length}건</span>}
+          </div>
+          <div className="p-3 space-y-2">
+            {selectedContentId === null ? (
+              <p className="text-xs text-muted-foreground text-center py-4">콘텐츠를 선택하면 AI 결과가 표시됩니다</p>
+            ) : aiResults.length === 0 ? (
+              <p className="text-xs text-muted-foreground">AI 결과 없음 — AI처리 실행 후 갱신됩니다</p>
+            ) : (
+              aiResults.map((r) => (
+                <div key={r.id} className="rounded border border-border bg-muted/20 px-2.5 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium">{r.task_type}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {r.is_final && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">final</span>}
+                      {r.quality_score !== null && <span className="text-[10px] text-muted-foreground">{r.quality_score}점</span>}
+                    </div>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase text-muted-foreground">{r.engine}</span>
+                    <span className="text-[10px] text-muted-foreground">{new Date(r.processed_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                  {r.error_message && <div className="mt-0.5 text-[10px] text-red-500 truncate">{r.error_message}</div>}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        {/* AUTO 진행 패널 — 우측 컬럼 하단 (S3 처리 중일 때만) */}
+        {autoRun && autoLog && autoRun.stage === 3 && (
+          <div className="mt-3">
+            <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto ?? (() => {})} />
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -1837,6 +2243,173 @@ function BulkApproveButton({ stageContents, onRefresh, setResultMsg, setError }:
   )
 }
 
+// S4(검수) 중앙 단건 — 승인 / 반려 / 재검수
+function S4ReviewActionBar({ id, status, onDone }: { id: number; status: ContentStatus | null; onDone: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const act = async (fn: (ids: number[]) => Promise<ReviewActionResponse>, msg: string) => {
+    setBusy(true); setResult(null)
+    try { await fn([id]); setResult(msg); onDone() }
+    catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setBusy(false) }
+  }
+
+  const isRejected = status === "rejected"
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {result && <span className={`text-[10px] ${result.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>{result}</span>}
+      <button onClick={() => void act(pipelineTestApi.approve, "✓ 승인됨")} disabled={busy || isRejected}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[11px] font-medium disabled:opacity-50 transition-colors">
+        {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+        승인
+      </button>
+      <button onClick={() => void act(pipelineTestApi.reject, "✗ 반려됨")} disabled={busy || isRejected}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-[11px] font-medium hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors">
+        반려
+      </button>
+      <button onClick={() => void act(pipelineTestApi.reReview, "↻ 재검수 복귀")} disabled={busy || !isRejected}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800/40 text-amber-600 dark:text-amber-400 text-[11px] font-medium hover:bg-amber-50 dark:hover:bg-amber-900/10 disabled:opacity-50 transition-colors">
+        재검수
+      </button>
+    </div>
+  )
+}
+
+// S4(검수) 3단 콘솔 — 좌(목록+전체승인+이전/다음/클린업) / 중(상세+필드편집+단건결정) / 우(WebSearch)
+function S4Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, autoRun, autoLog, onCloseAuto }: {
+  testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
+  onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
+  autoRun?: { stage: number; current: number; total: number; running: boolean } | null
+  autoLog?: AutoLogEntry[]; onCloseAuto?: () => void
+}) {
+  const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
+  const [reviewTitle, setReviewTitle] = useState("")
+  const [useWebsearch, setUseWebsearch] = useState(false)
+  const [policyBusy, setPolicyBusy] = useState(false)
+  const [bulkResult, setBulkResult] = useState<string | null>(null)
+  const [metaRefresh, setMetaRefresh] = useState(0)
+
+  useEffect(() => { metadataApi.getEnrichPolicy().then((p) => setUseWebsearch(p.use_websearch)).catch(() => {}) }, [])
+
+  const fetchStatus = useCallback(async () => {
+    if (!selectedContentId) { setContentStatus(null); setReviewTitle(""); return }
+    try {
+      const c = await metadataApi.getContent(selectedContentId)
+      setContentStatus(c.status as ContentStatus)
+      setReviewTitle(c.title)
+    } catch { setContentStatus(null) }
+  }, [selectedContentId])
+
+  useEffect(() => { void fetchStatus() }, [fetchStatus])
+
+  const toggleWebsearch = async () => {
+    setPolicyBusy(true)
+    try { const p = await metadataApi.patchEnrichPolicy({ use_websearch: !useWebsearch }); setUseWebsearch(p.use_websearch) }
+    catch { /* ignore */ } finally { setPolicyBusy(false) }
+  }
+
+  const isRejected = contentStatus === "rejected"
+  const isApproved = contentStatus === "approved"
+
+  return (
+    <>
+      {/* 좌 — 검수 목록 + 전체 승인 + 단계 이동 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">검수</span>
+              {testContents.length > 0 && <span className="text-xs text-amber-600 dark:text-amber-400">{testContents.length}건</span>}
+            </div>
+            {testContents.length > 0 && (
+              <BulkApproveButton
+                stageContents={testContents}
+                onRefresh={refreshTestSummary}
+                setResultMsg={setBulkResult}
+                setError={() => {}}
+              />
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            {testContents.length > 0 && (
+              <div className="space-y-2">
+                {bulkResult && <p className="text-[11px] text-muted-foreground">{bulkResult}</p>}
+                {/* 이전/다음/클린업 */}
+                <StageActionBar ids={testContents.map((c) => c.id)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 중 — 콘텐츠 상세 + 필드 편집 + 단건 결정 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+              {selectedContentId && <span className="text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>}
+              {contentStatus && (
+                <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${
+                  isRejected ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  : isApproved ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                }`}>{STATUS_LABEL[contentStatus] ?? contentStatus}</span>
+              )}
+            </div>
+            {selectedContentId !== null && (
+              <S4ReviewActionBar id={selectedContentId} status={contentStatus} onDone={() => { void fetchStatus(); refreshTestSummary(); setMetaRefresh((n) => n + 1) }} />
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            {selectedContentId === null ? (
+              <p className="text-xs text-muted-foreground text-center py-4">콘텐츠를 선택하면 상세 및 필드 편집이 표시됩니다</p>
+            ) : (
+              <>
+                <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
+                <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchStatus} />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 우 — WebSearch */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">WebSearch</span>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <span className="text-[10px] text-muted-foreground">정책</span>
+              <button onClick={() => void toggleWebsearch()} disabled={policyBusy}
+                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${useWebsearch ? "bg-violet-600" : "bg-slate-300 dark:bg-slate-600"}`}>
+                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${useWebsearch ? "translate-x-3.5" : "translate-x-0.5"}`} />
+              </button>
+              <span className={`text-[10px] font-medium ${useWebsearch ? "text-violet-600" : "text-muted-foreground"}`}>{useWebsearch ? "ON" : "OFF"}</span>
+            </label>
+          </div>
+          <div className="p-3">
+            {!useWebsearch ? (
+              <p className="text-xs text-muted-foreground">WebSearch 정책이 OFF — 위 토글로 활성화 후 검색하세요.</p>
+            ) : (
+              <InlineWebSearch key={selectedContentId ?? 0} defaultQuery={reviewTitle} />
+            )}
+          </div>
+        </div>
+        {/* AUTO 진행 패널 — 우측 컬럼 하단 (S4 처리 중일 때만) */}
+        {autoRun && autoLog && autoRun.stage === 4 && (
+          <div className="mt-3">
+            <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={onCloseAuto ?? (() => {})} />
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 function TestReviewPanel({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
   const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
   const [acting, setActing] = useState(false)
@@ -1974,41 +2547,146 @@ function TestReviewPanel({ onRefresh, selectedContentId, stageContents }: { onRe
   )
 }
 
+// S5(승인) 콘솔 — 목록+검색+페이징+체크박스+승인시각+이전단계로
 function ApprovedStagePanel({ stageContents, onRefresh }: { stageContents: ContentOut[]; onRefresh: () => void }) {
+  const [search, setSearch] = useState("")
+  const [checked, setChecked] = useState<Set<number>>(new Set())
+  const [page, setPage] = useState(1)
+  const [revertBusy, setRevertBusy] = useState(false)
+  const [revertResult, setRevertResult] = useState<string | null>(null)
+  const PAGE_SIZE = 10
+
+  // search/page 초기화 when stageContents changes
+  useEffect(() => { setPage(1) }, [stageContents])
+  useEffect(() => { setChecked(new Set()) }, [stageContents])
+
+  const filtered = stageContents.filter((c) =>
+    !search.trim() || c.title.toLowerCase().includes(search.trim().toLowerCase()) || String(c.id).includes(search.trim())
+  )
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const allPageChecked = paginated.length > 0 && paginated.every((c) => checked.has(c.id))
+  const toggleAll = () => {
+    if (allPageChecked) setChecked((s) => { const n = new Set(s); paginated.forEach((c) => n.delete(c.id)); return n })
+    else setChecked((s) => { const n = new Set(s); paginated.forEach((c) => n.add(c.id)); return n })
+  }
+  const toggleOne = (id: number) => setChecked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const handleRevert = async () => {
+    const ids = [...checked]
+    if (!ids.length) return
+    setRevertBusy(true); setRevertResult(null)
+    try {
+      const r = await pipelineTestApi.revert(ids)
+      setRevertResult(`↩ ${r.reverted}건 검수 단계로 복귀`)
+      setChecked(new Set())
+      onRefresh()
+    } catch (e) { setRevertResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
+    finally { setRevertBusy(false) }
+  }
+
+  const fmtApproved = (dateStr: string) =>
+    new Date(dateStr).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">⑤ 승인</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          승인된 콘텐츠 — 실제 서비스 목록에 노출. 이전단계로 검수 단계 복귀 가능.
-        </p>
+    <div className="space-y-3">
+      {/* 헤더 + 검색 */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+          <input
+            type="text" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            placeholder="제목 또는 ID 검색"
+            className="w-full pl-7 pr-2.5 py-1.5 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
+          />
+        </div>
+        <span className="text-xs text-muted-foreground shrink-0">{filtered.length}건</span>
       </div>
-      {stageContents.length === 0 ? (
+
+      {/* 목록 테이블 */}
+      {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-          승인된 콘텐츠 없음
+          {search ? "검색 결과 없음" : "승인된 콘텐츠 없음"}
         </div>
       ) : (
         <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">승인 콘텐츠</span>
-            <span className="text-xs text-muted-foreground">{stageContents.length}건</span>
+          {/* 테이블 헤더 */}
+          <div className="grid grid-cols-[1.5rem_3rem_1fr_4.5rem_4rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border px-3 py-1.5 gap-2">
+            <div><input type="checkbox" checked={allPageChecked} onChange={toggleAll} className="h-3 w-3 rounded border-border" /></div>
+            <div>ID</div>
+            <div>제목</div>
+            <div>승인 시각</div>
+            <div>유형</div>
           </div>
-          <div className="divide-y divide-border max-h-48 overflow-y-auto">
-            {stageContents.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 px-3 py-2 text-xs">
-                <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  {STATUS_LABEL[c.status] ?? c.status}
-                </span>
-                <span className="text-muted-foreground shrink-0">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
-                <span className="font-medium truncate flex-1">{c.title}</span>
-                <span className="text-muted-foreground shrink-0">#{c.id}</span>
+          <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+            {paginated.map((c) => (
+              <div key={c.id}
+                onClick={() => toggleOne(c.id)}
+                className={`grid grid-cols-[1.5rem_3rem_1fr_4.5rem_4rem] items-center px-3 py-2 gap-2 text-xs cursor-pointer transition-colors ${checked.has(c.id) ? "bg-green-50 dark:bg-green-900/10" : "hover:bg-accent"}`}>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={checked.has(c.id)} onChange={() => toggleOne(c.id)} className="h-3 w-3 rounded border-border" />
+                </div>
+                <span className="text-muted-foreground">#{c.id}</span>
+                <span className="font-medium truncate">{c.title}</span>
+                <span className="text-muted-foreground text-[10px]">{fmtApproved(c.created_at)}</span>
+                <span className="text-[10px] text-muted-foreground">{TYPE_LABEL[c.content_type] ?? c.content_type}</span>
               </div>
             ))}
           </div>
         </div>
       )}
-      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
+
+      {/* 페이징 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-1">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+            className="px-2 py-1 text-xs rounded border border-border hover:bg-accent disabled:opacity-40 transition-colors">‹</button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <button key={p} onClick={() => setPage(p)}
+              className={`px-2 py-1 text-xs rounded border transition-colors ${p === page ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-accent"}`}>{p}</button>
+          ))}
+          <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+            className="px-2 py-1 text-xs rounded border border-border hover:bg-accent disabled:opacity-40 transition-colors">›</button>
+        </div>
+      )}
+
+      {/* 이전단계로 + 클린업 */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => void handleRevert()} disabled={revertBusy || checked.size === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-400 text-xs font-medium hover:bg-amber-50 dark:hover:bg-amber-900/10 disabled:opacity-50 transition-colors">
+          {revertBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>↩</span>}
+          이전단계로 ({checked.size}건)
+        </button>
+        <CleanupButton ids={[...checked]} onDone={() => { setChecked(new Set()); onRefresh() }} />
+        {revertResult && <p className={`text-[11px] ${revertResult.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>{revertResult}</p>}
+      </div>
     </div>
+  )
+}
+
+// S5 클린업 버튼 (confirm 패턴)
+function CleanupButton({ ids, onDone }: { ids: number[]; onDone: () => void }) {
+  const [confirm, setConfirm] = useState(false)
+  const [busy, setBusy] = useState(false)
+  if (!ids.length) return null
+  const handle = async () => {
+    setBusy(true); setConfirm(false)
+    try { await pipelineTestApi.cleanupStage(ids); onDone() }
+    catch { /* ignore */ } finally { setBusy(false) }
+  }
+  return confirm ? (
+    <>
+      <span className="text-[11px] text-red-500 font-medium">{ids.length}건 삭제?</span>
+      <button onClick={() => void handle()} className="px-2.5 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-medium transition-colors">확인</button>
+      <button onClick={() => setConfirm(false)} className="px-2.5 py-1.5 rounded-lg border border-border text-[11px] hover:bg-accent transition-colors">취소</button>
+    </>
+  ) : (
+    <button onClick={() => setConfirm(true)} disabled={busy}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors">
+      {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+      클린업 ({ids.length}건)
+    </button>
   )
 }
 
@@ -2017,6 +2695,55 @@ function StatusDot({ status }: { status: "ok" | "warning" | "error" }) {
     <span className={`inline-block w-2 h-2 rounded-full ${
       status === "ok" ? "bg-green-500" : status === "warning" ? "bg-yellow-500" : "bg-red-500"
     }`} />
+  )
+}
+
+type AutoLogEntry = { id: number; level: "info" | "success" | "skip" | "error"; text: string }
+
+function AutoRunPanel({ autoRun, autoLog, onClose }: {
+  autoRun: { stage: number; current: number; total: number; running: boolean }
+  autoLog: AutoLogEntry[]
+  onClose: () => void
+}) {
+  const pct = autoRun.total > 0 ? Math.round((autoRun.current / autoRun.total) * 100) : 0
+  const logRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+  }, [autoLog])
+  const levelColor: Record<AutoLogEntry["level"], string> = {
+    info: "text-slate-500 dark:text-slate-400",
+    success: "text-green-600 dark:text-green-400",
+    skip: "text-amber-600 dark:text-amber-400",
+    error: "text-red-600 dark:text-red-400",
+  }
+  return (
+    <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+      <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+          S{autoRun.stage} AUTO 처리 — {autoRun.current}/{autoRun.total}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${autoRun.running ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"}`}>
+            {autoRun.running ? "진행 중" : "완료"}
+          </span>
+          {!autoRun.running && (
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs">✕</button>
+          )}
+        </div>
+      </div>
+      <div className="px-4 pt-3">
+        <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+          <div className={`h-full rounded-full transition-all duration-300 ${autoRun.running ? "bg-blue-500" : "bg-green-500"}`} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div ref={logRef} className="p-3 max-h-48 overflow-y-auto font-mono text-[11px] space-y-0.5">
+        {autoLog.length === 0 ? (
+          <p className="text-slate-400 dark:text-slate-500">처리 대기 중…</p>
+        ) : (
+          autoLog.map((e) => <div key={e.id} className={levelColor[e.level]}>{e.text}</div>)
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -2060,20 +2787,90 @@ export default function PipelineMonitoringPage() {
   const [testContents, setTestContents] = useState<ContentOut[]>([])
   const [testContentsLoading, setTestContentsLoading] = useState(false)
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
-  const [contentTimeline, setContentTimeline] = useState<ContentTimeline | null>(null)
-  const [timelineLoading, setTimelineLoading] = useState(false)
+  const selectedContentIdRef = useRef<number | null>(null)
+  useEffect(() => { selectedContentIdRef.current = selectedContentId }, [selectedContentId])
 
-  const [stageAuto, setStageAuto] = useState<StageAutoPolicy>({ s1_auto: false, s2_auto: false, s3_auto: false, s4_auto: false, s5_auto: false, s6_auto: false })
+  const [stageAuto, setStageAuto] = useState<StageAutoPolicy>({ s1_auto: false, s2_auto: false, s3_auto: false, s4_auto: false, s5_auto: false, s6_auto: false, s4_quality_threshold: 90 })
   const [stageAutoBusy, setStageAutoBusy] = useState(false)
+  const [s4ThresholdModal, setS4ThresholdModal] = useState(false)
+  const [s4ThresholdInput, setS4ThresholdInput] = useState("90")
+
+  // AUTO 진행 상태 + 처리 LOG
+  const [autoRun, setAutoRun] = useState<{ stage: number; current: number; total: number; running: boolean } | null>(null)
+  const [autoLog, setAutoLog] = useState<AutoLogEntry[]>([])
+  const autoLogIdRef = useRef(0)
+  const autoPipelineRef = useRef(false)  // 헤드리스 AUTO 오케스트레이터 동시 실행 방지
+  // 오케스트레이터(runAutoPipeline)는 deps [pushLog,bumpSummary]로 1회 memo → refreshTestSummary를
+  // stale 캡처(최초 activeStage=null → 전체목록 로드). ref로 최신 클로저(현 activeStage 필터) 호출.
+  const refreshTestSummaryRef = useRef<(() => Promise<void>) | null>(null)
+  const s4ReviewedRef = useRef<Set<number>>(new Set())  // S4 AUTO에서 이미 검수(잔류 판정)한 id — 재검수 방지
+
+  // 루프 내 취소 판정용 최신값 ref (stale closure 방지)
+  const stageAutoRef = useRef(stageAuto)
+  useEffect(() => { stageAutoRef.current = stageAuto }, [stageAuto])
+  const activeStageRef = useRef(activeStage)
+  // 단계 전환 시 뷰(목록/상세)만 초기화 — autoRun/autoLog는 헤드리스 오케스트레이터가 소유하므로
+  // 단계 포커스를 옮겨도 진행 패널을 지우지 않는다 (지우면 setAutoRun((prev)=>prev&&...)가 null 고착).
+  useEffect(() => {
+    activeStageRef.current = activeStage
+    setTestContents([])
+    setSelectedContentId(null)
+  }, [activeStage])
+
+  // 임계값 변경 시 S4 검수 완료 마킹 초기화 — 새 기준으로 잔류 건 재평가 허용
+  // (단계 재진입으로는 clear하지 않음: "한번 검수한 건 재검수 안 함" 의도 유지)
+  useEffect(() => { s4ReviewedRef.current.clear() }, [stageAuto.s4_quality_threshold])
 
   useEffect(() => { metadataApi.getStageAutoPolicy().then(setStageAuto).catch(() => {}) }, [])
 
-  const toggleStageAuto = useCallback(async (stage: number, next: boolean) => {
-    const key = `s${stage}_auto` as keyof StageAutoPolicy
-    setStageAutoBusy(true)
-    try { const updated = await metadataApi.patchStageAutoPolicy({ [key]: next }); setStageAuto(updated) }
-    catch { /* ignore */ } finally { setStageAutoBusy(false) }
+  // revert 성공 시 이전 단계 AUTO 자동 OFF — 되돌린 콘텐츠가 재진행되지 않도록
+  const disablePrevStageAuto = useCallback(async () => {
+    const prev = (activeStageRef.current ?? 0) - 1
+    if (prev < 1 || prev > 4) return
+    const key = `s${prev}_auto` as keyof StageAutoPolicy
+    if (!(stageAutoRef.current[key] as boolean)) return  // 이미 OFF면 skip
+    try {
+      const updated = await metadataApi.patchStageAutoPolicy({ [key]: false })
+      setStageAuto(updated)
+    } catch { /* ignore */ }
   }, [])
+
+  // revert 성공 후: AUTO 로그/패널 CLEAR + AUTO OFF + 이전 단계 카드 포커싱
+  const handleRevertDone = useCallback(async () => {
+    // 이전단계로 되돌리면 직전 AUTO 처리 맥락이 무효 → 로그창 clear/reset.
+    setAutoRun(null)
+    setAutoLog([])
+    // AUTO 비활성화가 완료된 후에 단계 전환 — 먼저 전환하면 이전 단계 AUTO가 여전히 ON인 상태에서
+    // 콘텐츠가 로드되어 AUTO 러너가 즉시 작동(한 건 자동 진행) 하는 버그 방지
+    await disablePrevStageAuto()
+    setActiveStage((cur) => (cur !== null && cur > 1 ? cur - 1 : cur))
+  }, [disablePrevStageAuto])
+
+  // advance 성공 후: 다음 단계 카드 포커싱
+  const handleAfterAdvance = useCallback(() => {
+    setActiveStage((cur) => (cur !== null && cur < 5 ? cur + 1 : cur))
+  }, [])
+
+  const toggleStageAuto = useCallback(async (stage: number, next: boolean) => {
+    if (stage === 4) {
+      if (!next) {
+        // OFF → 즉시 처리
+        setStageAutoBusy(true)
+        try { const updated = await metadataApi.patchStageAutoPolicy({ s4_auto: false }); setStageAuto(updated) }
+        catch { /* ignore */ } finally { setStageAutoBusy(false) }
+      } else {
+        // ON → 팝업 표시
+        setS4ThresholdInput(String(stageAuto.s4_quality_threshold ?? 90))
+        setS4ThresholdModal(true)
+      }
+    } else {
+      // 일반 토글
+      const key = `s${stage}_auto` as keyof StageAutoPolicy
+      setStageAutoBusy(true)
+      try { const updated = await metadataApi.patchStageAutoPolicy({ [key]: next }); setStageAuto(updated) }
+      catch { /* ignore */ } finally { setStageAutoBusy(false) }
+    }
+  }, [stageAuto.s4_quality_threshold])
 
   const fetchPipeline = useCallback(async () => {
     setLoading(true)
@@ -2105,30 +2902,163 @@ export default function PipelineMonitoringPage() {
         ? r.items.filter((c) => contentBucket(c) === activeStage)
         : r.items
       setTestContents(filtered)
+      if (filtered.length === 0 || (selectedContentIdRef.current !== null && !filtered.some((c) => c.id === selectedContentIdRef.current))) {
+        setSelectedContentId(null)
+      }
     } catch {
       setTestContents([])
+      setSelectedContentId(null)
     } finally {
       setTestContentsLoading(false)
     }
   }, [activeStage])
 
-  const fetchTimeline = useCallback(async (id: number) => {
-    setTimelineLoading(true)
-    setContentTimeline(null)
-    try {
-      const t = await metadataApi.getTimeline(id)
-      setContentTimeline(t)
-    } catch {
-      setContentTimeline(null)
-    } finally {
-      setTimelineLoading(false)
-    }
-  }, [])
-
   const handleSelectContent = useCallback((id: number) => {
     setSelectedContentId(id)
-    fetchTimeline(id)
-  }, [fetchTimeline])
+  }, [])
+
+  // ── AUTO 공통 러너 ────────────────────────────────────
+  const pushLog = useCallback((level: AutoLogEntry["level"], text: string) => {
+    setAutoLog((prev) => [...prev.slice(-199), { id: autoLogIdRef.current++, level, text }])
+  }, [])
+
+  // 카드 수치 로컬 조정 (API 없이 즉시) — 건 이동 시 현 bucket-- 다음 bucket++
+  const bumpSummary = useCallback((from: number, to: number) => {
+    setTestSummary((prev) => prev ? {
+      ...prev,
+      by_stage: {
+        ...prev.by_stage,
+        [String(from)]: Math.max(0, (prev.by_stage?.[String(from)] ?? 1) - 1),
+        [String(to)]: (prev.by_stage?.[String(to)] ?? 0) + 1,
+      },
+    } : prev)
+  }, [])
+
+  // run-to-stable: activeStage 무관 헤드리스 연쇄 — S1→S2→S3→S4 순서대로 처리 대상이 있는 최저 단계를
+  // 한 패스 처리 후 전체 재조회·반복. 모든 활성 bucket이 빌 때(stable) 종료.
+  const runAutoPipeline = useCallback(async () => {
+    if (autoPipelineRef.current) return
+    autoPipelineRef.current = true
+
+    try {
+      while (anyAutoOn(stageAutoRef.current)) {
+        let allItems: ContentOut[]
+        try {
+          const r = await metadataApi.listContents({ size: 100 })
+          allItems = r.items
+        } catch {
+          break
+        }
+        const th = stageAutoRef.current.s4_quality_threshold ?? 90
+
+        const stageDefs: Array<{
+          stage: number
+          enabled: boolean
+          items: ContentOut[]
+          process: (c: ContentOut) => Promise<{ moved: boolean; level: AutoLogEntry["level"]; msg: string }>
+        }> = [
+          {
+            stage: 1, enabled: stageAutoRef.current.s1_auto,
+            items: allItems.filter((c) => contentBucket(c) === 1),
+            process: async (c) => {
+              await pipelineTestApi.advance([c.id])
+              return { moved: true, level: "success", msg: "보완 단계로 이동" }
+            },
+          },
+          {
+            stage: 2, enabled: stageAutoRef.current.s2_auto,
+            items: allItems.filter((c) => contentBucket(c) === 2),
+            process: async (c) => {
+              const res = await pipelineTestApi.enrichAutofill(c.id)
+              await pipelineTestApi.advance([c.id])
+              return { moved: true, level: "success", msg: `보완 ${res.filled_fields.length}필드 → AI 단계` }
+            },
+          },
+          {
+            stage: 3, enabled: stageAutoRef.current.s3_auto,
+            items: allItems.filter((c) => contentBucket(c) === 3),
+            process: async (c) => {
+              const res = await pipelineTestApi.aiAutofill(c.id)
+              await pipelineTestApi.advance([c.id])
+              return { moved: true, level: "success", msg: `AI처리(${Object.keys(res.ai_tasks).length}태스크) → 검수 단계` }
+            },
+          },
+          {
+            stage: 4, enabled: stageAutoRef.current.s4_auto,
+            items: allItems.filter((c) => contentBucket(c) === 4 && !s4ReviewedRef.current.has(c.id)),
+            process: async (c) => {
+              if ((c.quality_score ?? 0) >= th) {
+                await pipelineTestApi.approve([c.id])
+                return { moved: true, level: "success", msg: `승인 (${c.quality_score ?? 0}점 ≥ ${th})` }
+              }
+              s4ReviewedRef.current.add(c.id)
+              return { moved: false, level: "skip", msg: `검수 잔류 (${c.quality_score ?? 0}점 < ${th})` }
+            },
+          },
+        ]
+
+        const target = stageDefs.find((d) => d.enabled && d.items.length > 0)
+        if (!target) break  // stable: 모든 활성 bucket 비었거나 S4 전부 잔류
+
+        const { stage, items, process } = target
+        const stageKey = `s${stage}_auto` as keyof StageAutoPolicy
+        setAutoLog([])  // 단계 전환 시 로그 리셋 — 각 단계 콘솔 패널이 자기 단계 로그만 표시
+        setAutoRun({ stage, current: 0, total: items.length, running: true })
+
+        for (let i = 0; i < items.length; i++) {
+          // 현재 처리 중인 단계의 AUTO가 꺼지면 즉시 중단 — 다른 AUTO-ON 단계는 outer 루프에서 계속.
+          // anyAutoOn(전체)이 아니라 해당 단계 플래그를 봐야 S3만 OFF 시 S3가 멈춘다.
+          if (!stageAutoRef.current[stageKey]) {
+            pushLog("info", `⏸ S${stage} AUTO 중단 — ${i}/${items.length}건 처리 후 정지`)
+            break
+          }
+          const c = items[i]!
+          // 포커스한 단계를 처리 중이면 현재 건을 선택 — 목록 포커스 + 상세 패널이 처리 건 추종.
+          // 다른 단계를 보고 있으면 뷰를 건드리지 않음(헤드리스 독립).
+          if (activeStageRef.current === stage) setSelectedContentId(c.id)
+          let r: { moved: boolean; level: AutoLogEntry["level"]; msg: string }
+          try { r = await process(c) }
+          catch (e) { r = { moved: false, level: "error", msg: `처리 오류: ${e instanceof Error ? e.message : String(e)}` } }
+          pushLog(r.level, `[${i + 1}/${items.length}] ${c.title} — ${r.msg}`)
+          if (r.moved) {
+            bumpSummary(stage, stage + 1)
+            // 포커스한 단계면 이동 완료 건을 목록에서 즉시 제거(다음 단계로 사라짐).
+            if (activeStageRef.current === stage) setTestContents((prev) => prev.filter((x) => x.id !== c.id))
+            // 이동 목적지가 포커스한 단계면 그 단계 목록을 갱신(도착 건 표시).
+            else if (activeStageRef.current === stage + 1) void refreshTestSummaryRef.current?.()
+          }
+          // 절대값 set — revert 등으로 autoRun이 null이 돼도 처리 지속 시 패널 자연 복귀(null 고착 방지).
+          setAutoRun({ stage, current: i + 1, total: items.length, running: true })
+        }
+      }
+    } finally {
+      if (refreshTestSummaryRef.current) await refreshTestSummaryRef.current()
+      setAutoRun((prev) => prev && { ...prev, running: false })
+      autoPipelineRef.current = false
+    }
+  // refreshTestSummary는 아래 정의 — 클로저 캡처(effect 실행 시점엔 정의됨)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushLog, bumpSummary])
+
+  // AUTO-ON 단계(S1~S4)의 처리 대기 건수 합 — 값 기반 키.
+  // testSummary 객체 참조 대신 이 숫자에 의존해야 무한 재가동 방지(refreshTestSummary가 매번 새 객체 생성).
+  // 수동 advance/seed 등으로 AUTO-ON 단계 카운트가 변하면 키가 바뀌어 오케스트레이터 재가동.
+  const autoPendingKey = useMemo(() => {
+    const bs = testSummary?.by_stage ?? {}
+    let sum = 0
+    if (stageAuto.s1_auto) sum += bs["1"] ?? 0
+    if (stageAuto.s2_auto) sum += bs["2"] ?? 0
+    if (stageAuto.s3_auto) sum += bs["3"] ?? 0
+    if (stageAuto.s4_auto) sum += bs["4"] ?? 0
+    return sum
+  }, [testSummary, stageAuto])
+
+  // AUTO 활성화 또는 대기 건수 변동 시 헤드리스 오케스트레이터 가동 — activeStage 무관.
+  useEffect(() => {
+    if (!anyAutoOn(stageAuto) || autoPipelineRef.current) return
+    void runAutoPipeline()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageAuto, autoPendingKey])
 
   const refreshTestSummary = useCallback(async () => {
     if (!ENABLE_TEST) return
@@ -2138,6 +3068,9 @@ export default function PipelineMonitoringPage() {
     } catch {}
     await fetchTestContents()
   }, [fetchTestContents])
+
+  // 오케스트레이터가 최신 refreshTestSummary(현 activeStage 필터)를 호출하도록 ref 동기화 — stale 캡처 방지.
+  useEffect(() => { refreshTestSummaryRef.current = refreshTestSummary }, [refreshTestSummary])
 
   // Test Console 초기 summary 로드
   useEffect(() => {
@@ -2223,56 +3156,231 @@ export default function PipelineMonitoringPage() {
                   colorClass={s.colorClass}
                   active={activeStage === s.stage}
                   onClick={() => setActiveStage(activeStage === s.stage ? null : s.stage)}
-                  autoOn={stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy]}
-                  onToggleAuto={() => toggleStageAuto(s.stage, !stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy])}
+                  autoOn={s.stage === 4 ? stageAuto.s4_auto : (stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy] as boolean)}
+                  onToggleAuto={() => toggleStageAuto(s.stage, s.stage === 4 ? !stageAuto.s4_auto : !(stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy] as boolean))}
                   autoBusy={stageAutoBusy}
                   showAuto={s.stage !== 6}
                 />
               ))}
             </div>
 
-            {/* 좌(목록) / 우(선택 콘텐츠 작업) 마스터-디테일 */}
-            <div className="grid grid-cols-5 gap-4 items-start">
-              {/* 좌측 — 콘텐츠 목록(master) + 타임라인 */}
-              <div className="col-span-2 space-y-3">
-                <TestContentList
-                  contents={testContents}
-                  loading={testContentsLoading}
-                  selectedId={selectedContentId}
-                  onSelect={handleSelectContent}
-                />
-                <ContentPipelineTimeline
-                  timeline={contentTimeline}
-                  loading={timelineLoading}
-                />
-                <ProgressLog contentId={selectedContentId} />
+            {/* S4 AUTO 임계값 입력 팝업 */}
+            {s4ThresholdModal && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="bg-white dark:bg-slate-900 rounded-lg p-6 shadow-lg w-96">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">S4 검수 자동 승인 임계값</h3>
+                  <input
+                    type="number"
+                    value={s4ThresholdInput}
+                    onChange={(e) => setS4ThresholdInput(e.target.value)}
+                    min="0"
+                    max="100"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-white mb-4"
+                    placeholder="90"
+                  />
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">이 점수 이상의 콘텐츠는 자동으로 승인됩니다. (0~100)</p>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => setS4ThresholdModal(false)}
+                      className="px-4 py-2 rounded-md border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      취소
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const threshold = Number(s4ThresholdInput) || 90
+                        setStageAutoBusy(true)
+                        try {
+                          const updated = await metadataApi.patchStageAutoPolicy({
+                            s4_auto: true,
+                            s4_quality_threshold: threshold,
+                          })
+                          setStageAuto(updated)
+                          setS4ThresholdModal(false)
+                        } catch {
+                          // ignore
+                        } finally {
+                          setStageAutoBusy(false)
+                        }
+                      }}
+                      disabled={stageAutoBusy}
+                      className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      확인
+                    </button>
+                  </div>
+                </div>
               </div>
+            )}
 
-              {/* 우측 — 선택 콘텐츠 단계 작업 패널(detail) */}
-              <div className="col-span-3">
-                {activeStage !== null ? (
-                  <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
-                    {activeStage === 1 ? (
-                      <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
-                    ) : activeStage === 2 ? (
-                      <BatchRecallTrigger onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
-                    ) : activeStage === 3 ? (
-                      <AiProcessPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
-                    ) : activeStage === 4 ? (
-                      <TestReviewPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
-                    ) : activeStage === 5 ? (
+            {/* S1·S2: 3단 카드, S3~6: 2분할 (좌 목록 / 우 단계패널) */}
+            <div className={`grid gap-4 items-start ${activeStage === 6 ? "grid-cols-5" : "grid-cols-3"}`}>
+              {/* S1 — 3단 (좌 생성 / 중 목록 / 우 상세) */}
+              {activeStage === 1 && (
+                <>
+                  {/* 좌 — 콘텐츠 등록 */}
+                  <div className="col-span-1">
+                    <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+                      <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
+                        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 등록</span>
+                      </div>
+                      <div className="p-4">
+                        <CreationTabsPanel summary={testSummary} onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 중 — 콘텐츠 목록 */}
+                  <div className="col-span-1">
+                    <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+                      <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
+                        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 목록</span>
+                        {testContents.length > 0 && (
+                          <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">{testContents.length}건</span>
+                        )}
+                      </div>
+                      <div className="p-3 space-y-3">
+                        <TestContentList
+                          contents={testContents}
+                          loading={testContentsLoading}
+                          selectedId={selectedContentId}
+                          onSelect={handleSelectContent}
+                        />
+                        {testContents.length > 0 && (
+                          <S1BulkActionBar
+                            stageContents={testContents}
+                            activeStage={activeStage}
+                            onDone={refreshTestSummary}
+                            onAfterAdvance={handleAfterAdvance}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 우 — 콘텐츠 상세 (콘텐츠 없으면 숨김) */}
+                  {testContents.length > 0 && (
+                    <div className="col-span-1 space-y-3">
+                      <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+                        <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
+                          <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+                          {selectedContentId && (
+                            <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>
+                          )}
+                        </div>
+                        <div className="p-3 space-y-3">
+                          <SelectedContentMeta contentId={selectedContentId} />
+                          {selectedContentId !== null && (
+                            <S1BulkActionBar
+                              stageContents={testContents.filter((c) => c.id === selectedContentId)}
+                              activeStage={activeStage}
+                              onDone={refreshTestSummary}
+                              onDeleted={() => { setSelectedContentId(null); void refreshTestSummary() }}
+                              onAfterAdvance={handleAfterAdvance}
+                            />
+                          )}
+                        </div>
+                      </div>
+                      {/* AUTO 진행 패널 — 우측 컬럼 하단 (S1 처리 중일 때만) */}
+                      {autoRun && autoLog && autoRun.stage === 1 && (
+                        <AutoRunPanel autoRun={autoRun} autoLog={autoLog} onClose={() => setAutoRun(null)} />
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* S2 — Enrich 3단 콘솔 */}
+              {activeStage === 2 && (
+                <S2Console
+                  testContents={testContents}
+                  testContentsLoading={testContentsLoading}
+                  selectedContentId={selectedContentId}
+                  onSelect={handleSelectContent}
+                  refreshTestSummary={refreshTestSummary}
+                  onRevertDone={handleRevertDone}
+                  onAfterAdvance={handleAfterAdvance}
+                  autoRun={autoRun}
+                  autoLog={autoLog}
+                  onCloseAuto={() => setAutoRun(null)}
+                />
+              )}
+
+              {/* S3 — AI처리 3단 콘솔 */}
+              {activeStage === 3 && (
+                <S3Console
+                  testContents={testContents}
+                  testContentsLoading={testContentsLoading}
+                  selectedContentId={selectedContentId}
+                  onSelect={handleSelectContent}
+                  refreshTestSummary={refreshTestSummary}
+                  onRevertDone={handleRevertDone}
+                  onAfterAdvance={handleAfterAdvance}
+                  autoRun={autoRun}
+                  autoLog={autoLog}
+                  onCloseAuto={() => setAutoRun(null)}
+                />
+              )}
+
+              {/* S4 — 검수 3단 콘솔 */}
+              {activeStage === 4 && (
+                <S4Console
+                  testContents={testContents}
+                  testContentsLoading={testContentsLoading}
+                  selectedContentId={selectedContentId}
+                  onSelect={handleSelectContent}
+                  refreshTestSummary={refreshTestSummary}
+                  onRevertDone={handleRevertDone}
+                  onAfterAdvance={handleAfterAdvance}
+                  autoRun={autoRun}
+                  autoLog={autoLog}
+                  onCloseAuto={() => setAutoRun(null)}
+                />
+              )}
+
+              {/* S5 — 승인 전체 패널 (단독 col-span-3) */}
+              {activeStage === 5 && (
+                <div className="col-span-3">
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
+                      <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">승인</span>
+                      {testContents.length > 0 && <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">{testContents.length}건</span>}
+                    </div>
+                    <div className="p-4">
                       <ApprovedStagePanel stageContents={testContents} onRefresh={refreshTestSummary} />
-                    ) : activeStage === 6 ? (
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* S6 — 2분할 (좌 목록+메타+버튼 / 우 반려 패널) */}
+              {activeStage === 6 && (
+                <>
+                  <div className="col-span-2 space-y-3">
+                    <TestContentList
+                      contents={testContents}
+                      loading={testContentsLoading}
+                      selectedId={selectedContentId}
+                      onSelect={handleSelectContent}
+                    />
+                    <StageBulkBar stageContents={testContents} activeStage={activeStage} onDone={refreshTestSummary} />
+                    <SelectedContentMeta contentId={selectedContentId} />
+                    <SingleAdvanceDeleteBar
+                      contentId={selectedContentId}
+                      activeStage={activeStage}
+                      onDone={refreshTestSummary}
+                      onDeleted={() => { setSelectedContentId(null); void refreshTestSummary() }}
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
                       <RejectedPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
-                    ) : null}
+                    </div>
                   </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-amber-200 dark:border-amber-800/30 p-6 text-center text-xs text-amber-600/60 dark:text-amber-500/60">
-                    스테이지 카드를 클릭해 패널을 열어주세요
-                  </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
+
           </div>
         </div>
       )}

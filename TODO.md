@@ -4,10 +4,11 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-(없음)
+- [ ] dev-s4-auto-residual — S4 AUTO 잔류 유지+재검수 방지 (코드 완료, 타입체크 OK). 남음: 브라우저 E2E 확인 + verify.sh `s4-auto-residual` 엔트리 + plan index.json 기록
 
 ## Next (이번 마일스톤)
-(없음)
+- [ ] dev-stage-auto-autofill 회귀 가드 — enrich-autofill/ai-autofill 빈필드 보존 + S4 threshold 자동승인 pytest + verify.sh 엔트리
+- [ ] dev-auto-headless BE 회귀 pytest — enrich_content KMDB 한도 초과 시 graceful degrade(kmdb:daily_limit, 500 아님) 단위 테스트
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
@@ -16,6 +17,9 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-auto-headless** — AUTO 헤드리스 단계 자동 연쇄(뷰 비종속): run-to-stable runAutoPipeline + autoPendingKey 재트리거 + per-stage 취소 + 콘솔별 stage-게이트 패널 + 포커스 단계 뷰 동기화 + null-고착·stale-클로저·revert-clear 픽스 + BE KMDB graceful degrade + quality_score 완성도 기반 재계산(S2/S3 autofill+advance) + verify.sh `auto-headless`(12체크). plan: plans/dev-auto-headless (13 steps). PR #18 (2026-06-03)
+- [x] **dev-stage-auto-autofill** — 콘솔 AUTO 완성: S2 enrich-autofill/S3 ai-autofill(빈 필드만, 기존값 보존) + S4 quality_threshold 자동승인(0036) + AutoRunPanel/runAuto + seed 재귀 clean. ⚠ 전용 pytest/verify 미추가(후속) (2026-06-02)
+- [x] **dev-pipeline-console-3col** — S2~S5 단계별 3단 카드 재구성(목록/상세/요약), StageActionBar 공용화, 단계 이동 후 상세 자동 초기화 (2026-06-01)
 - [x] **dev-stage-bulk-buttons** — S2/S3/S4 개별+전체 다음단계 버튼 통일(2건↑ 전체 버튼 표시) (2026-06-01)
 - [x] **dev-seed-dedup** — 시드 멱등화 — 전체 카탈로그 중복검사 + skipped_in_pipeline/registered 리포트 + pytest 4건 (2026-06-01)
 - [x] **dev-s6-rejected-card** — S6 반려/실패 버킷 + RejectedPanel + 재검수 복귀 + bucket 6 분기 + pytest 5건 (2026-06-01)

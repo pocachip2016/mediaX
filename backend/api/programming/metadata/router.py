@@ -1393,6 +1393,7 @@ def patch_enrich_policy_route(body: EnrichPolicyPatch, db: Session = Depends(get
 class StageAutoPolicyOut(BaseModel):
     s1_auto: bool; s2_auto: bool; s3_auto: bool
     s4_auto: bool; s5_auto: bool; s6_auto: bool
+    s4_quality_threshold: float
     model_config = {"from_attributes": True}
 
 
@@ -1400,6 +1401,7 @@ class StageAutoPolicyPatch(BaseModel):
     s1_auto: Optional[bool] = None; s2_auto: Optional[bool] = None
     s3_auto: Optional[bool] = None; s4_auto: Optional[bool] = None
     s5_auto: Optional[bool] = None; s6_auto: Optional[bool] = None
+    s4_quality_threshold: Optional[float] = None
 
 
 @router.get("/ai-tasks/stage-auto-policy", response_model=StageAutoPolicyOut, summary="단계별 자동 실행 정책 조회")
@@ -1408,7 +1410,8 @@ def get_stage_auto_policy_route(db: Session = Depends(get_db)):
     row = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
     if not row:
         return StageAutoPolicyOut(s1_auto=False, s2_auto=False, s3_auto=False,
-                                  s4_auto=False, s5_auto=False, s6_auto=False)
+                                  s4_auto=False, s5_auto=False, s6_auto=False,
+                                  s4_quality_threshold=90.0)
     return row
 
 
@@ -1419,7 +1422,8 @@ def patch_stage_auto_policy_route(body: StageAutoPolicyPatch, db: Session = Depe
     if not row:
         row = StageAutoPolicy(id=1)
         db.add(row)
-    for field in ("s1_auto", "s2_auto", "s3_auto", "s4_auto", "s5_auto", "s6_auto"):
+    for field in ("s1_auto", "s2_auto", "s3_auto", "s4_auto", "s5_auto", "s6_auto",
+                  "s4_quality_threshold"):
         val = getattr(body, field)
         if val is not None:
             setattr(row, field, val)

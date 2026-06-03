@@ -232,6 +232,84 @@ def _calculate_quality_score(
     return round(float(total), 1), breakdown
 
 
+# 기본 메타 완성도 배점 (합 100) — 외부 매핑 성공 여부가 아니라 '핵심 필드가 채워졌는지' 기준
+_COMPLETENESS_WEIGHTS = {
+    "title": 10, "genre": 14, "cast": 12, "director": 12,
+    "country": 10, "production_year": 10, "runtime": 10,
+}  # synopsis(22)는 길이 tier로 별도 가산
+
+
+def recompute_quality_score(db: Session, content_id: int) -> float | None:
+    """콘텐츠의 **기본 메타 필드 완성도**(0~100) 기준으로 quality_score 재계산 → ContentMetadata 갱신.
+
+    설계 원칙: 외부 매핑(TMDB/KOBIS/KMDB) 성공 여부가 아니라 **핵심 메타가 실제로 채워졌는지**가 기준.
+    매핑이 없어도 대부분의 필드가 채워지면 임계값을 통과하도록 완성도 가중치를 둔다.
+    (AI 생성 경로의 _calculate_quality_score(외부매핑 20점 포함)와 다른 축 — 파이프라인 autofill 후 점수화 용도.)
+    score_breakdown은 resolve_metadata가 소스 출처맵으로 사용하므로 건드리지 않고 quality_score만 기록.
+
+    배점(합 100): synopsis 22(길이 tier) / genre 14 / cast 12 / director 12 /
+                  country 10 / production_year 10 / runtime 10 / title 10
+    """
+    from api.programming.metadata.models.content import Content, ContentMetadata
+    from api.programming.metadata.models.person import CreditRole
+
+    content = (
+        db.query(Content)
+        .filter(Content.id == content_id, Content.is_deleted.is_(False))
+        .first()
+    )
+    if not content:
+        return None
+    meta = content.metadata_record
+    if meta is None:
+        meta = ContentMetadata(content_id=content_id, quality_score=0.0)
+        db.add(meta)
+        db.flush()
+
+    w = _COMPLETENESS_WEIGHTS
+    score = 0.0
+
+    if content.title:
+        score += w["title"]
+
+    # synopsis — 길이 tier (최대 22)
+    synopsis = meta.ai_synopsis or meta.cp_synopsis or meta.final_synopsis or meta.synopsis_ko or ""
+    syn_len = len(synopsis)
+    if syn_len >= 200:
+        score += 22
+    elif syn_len >= 100:
+        score += 16
+    elif syn_len >= 50:
+        score += 8
+    elif syn_len > 0:
+        score += 4
+
+    # genre — meta 문자열 또는 ContentGenre 관계 존재
+    if (meta and (meta.final_genre or meta.ai_genre_primary or meta.cp_genre)) or len(content.genres) > 0:
+        score += w["genre"]
+
+    # cast / director — ContentCredit 관계
+    roles = {cc.role for cc in content.credits}
+    if CreditRole.actor in roles:
+        score += w["cast"]
+    if CreditRole.director in roles:
+        score += w["director"]
+
+    # Content 직접 필드
+    if content.country:
+        score += w["country"]
+    if content.production_year:
+        score += w["production_year"]
+    if content.runtime_minutes:
+        score += w["runtime"]
+
+    score = round(score, 1)
+    meta.quality_score = score
+    db.add(meta)
+    db.flush()
+    return score
+
+
 # ── 메타 생성 내부 함수 (엔진명 포함 반환) ─────────────────
 
 async def _generate_metadata_with_engine(

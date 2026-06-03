@@ -5318,9 +5318,76 @@ print('  ✓ 스키마 확장 확인')
     echo "=== PASS ==="
     ;;
 
+  auto-headless)
+    echo "=== auto-headless: AUTO 헤드리스 단계 자동 연쇄 (뷰 비종속) ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    PAGE="$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx"
+    [ -f "$PAGE" ] || { echo "FAIL: pipeline/page.tsx 없음"; exit 1; }
+    # 1) 오케스트레이터 + 헬퍼 존재
+    grep -q "runAutoPipeline" "$PAGE" || { echo "FAIL: runAutoPipeline 오케스트레이터 없음"; exit 1; }
+    grep -q "anyAutoOn"       "$PAGE" || { echo "FAIL: anyAutoOn 헬퍼 없음"; exit 1; }
+    grep -q "autoPipelineRef" "$PAGE" || { echo "FAIL: autoPipelineRef 가드 없음"; exit 1; }
+    echo "  ✓ runAutoPipeline + anyAutoOn + autoPipelineRef 존재"
+    # 2) 구 뷰 종속 4-effect 제거 — activeStage !== N 게이트 부재
+    if grep -q "activeStage !== [1234]" "$PAGE"; then echo "FAIL: 구 뷰종속 AUTO effect(activeStage !== N) 잔존"; exit 1; fi
+    echo "  ✓ 구 뷰종속 AUTO effect 제거됨 (activeStage !== N 부재)"
+    # 3) 트리거 effect가 runAutoPipeline 발화
+    grep -q "void runAutoPipeline()" "$PAGE" || { echo "FAIL: 트리거 effect의 runAutoPipeline 발화 없음"; exit 1; }
+    echo "  ✓ 단일 트리거 effect에서 runAutoPipeline 발화"
+    # 4) 콘솔별 AutoRunPanel — 처리 중인 단계(autoRun.stage === N)의 콘솔 우측 하단에만 표시 (해당 단계 전용)
+    for n in 1 2 3 4; do
+      grep -q "autoRun && autoLog && autoRun.stage === $n" "$PAGE" || { echo "FAIL: S$n 콘솔 stage-전용 패널 게이트 없음"; exit 1; }
+    done
+    echo "  ✓ 콘솔별 stage-전용 패널 게이트 (autoRun.stage === N)"
+    # 5) 회귀 가드 — activeStage 변경 시 autoRun 초기화 금지 (구 runAutoRef 모델 잔재 제거)
+    #    setAutoRun(null)이 단계전환 effect에 남으면 setAutoRun((prev)=>prev&&...)가 null 고착 → 패널 영구 미표시
+    if grep -q "runAutoRef" "$PAGE"; then echo "FAIL: 구 runAutoRef 잔존 — autoRun null 고착 회귀 위험"; exit 1; fi
+    echo "  ✓ runAutoRef 제거 (autoRun null 고착 회귀 가드)"
+    # 6) 대기 건수 변동 재트리거 — 수동 advance/seed로 AUTO-ON 단계 도착 시 오케스트레이터 재가동
+    grep -q "autoPendingKey" "$PAGE" || { echo "FAIL: autoPendingKey 재트리거 키 없음 — 수동 advance 후 AUTO 미동작 회귀"; exit 1; }
+    grep -q "stageAuto, autoPendingKey" "$PAGE" || { echo "FAIL: 트리거 effect deps에 autoPendingKey 없음"; exit 1; }
+    echo "  ✓ autoPendingKey 재트리거 (수동 advance 후 AUTO 가동)"
+    # 7) per-stage 취소 — 현재 처리 중 단계의 AUTO OFF 시 즉시 중단 (anyAutoOn 전체검사 아님)
+    grep -q "stageAutoRef.current\[stageKey\]" "$PAGE" || { echo "FAIL: per-stage 취소 검사(stageKey) 없음 — 단계별 OFF 미반영 회귀"; exit 1; }
+    if grep -q "break outer" "$PAGE"; then echo "FAIL: 구 'break outer'(anyAutoOn 전체 중단) 잔존"; exit 1; fi
+    echo "  ✓ per-stage AUTO OFF 즉시 중단 (stageKey 검사)"
+    # 8) 백엔드 graceful degrade — KMDB 일일 한도 초과 시 enrich_content가 500 대신 KMDB skip
+    ENRICH="$BACKEND/api/meta_core/enrich.py"
+    grep -q "except KmdbDailyLimitExceeded" "$ENRICH" || { echo "FAIL: enrich_content가 KmdbDailyLimitExceeded 미처리 — S2 autofill 500(Failed to fetch) 회귀"; exit 1; }
+    python3 -c "import ast; ast.parse(open('$ENRICH').read())" || { echo "FAIL: enrich.py 문법 오류"; exit 1; }
+    echo "  ✓ KMDB 한도 초과 graceful degrade (enrich_content)"
+    # 9) 포커스 단계 뷰 동기화 — 처리 중 건 포커스(상세 추종) + 이동 시 목록 제거 (activeStageRef === stage 게이트)
+    grep -q "if (activeStageRef.current === stage) setSelectedContentId" "$PAGE" || { echo "FAIL: 포커스 단계 처리 건 selectedContentId 추종 없음"; exit 1; }
+    grep -q "if (activeStageRef.current === stage) setTestContents" "$PAGE" || { echo "FAIL: 포커스 단계 이동 건 목록 제거 없음"; exit 1; }
+    echo "  ✓ 포커스 단계 뷰 동기화 (포커스+상세 추종 + 목록 제거)"
+    # 10) stale 클로저 회귀 가드 — 오케스트레이터가 ref로 최신 refreshTestSummary 호출 + 도착지 갱신
+    grep -q "refreshTestSummaryRef" "$PAGE" || { echo "FAIL: refreshTestSummaryRef 없음 — 오케스트레이터 stale 클로저로 목록 미갱신 회귀"; exit 1; }
+    grep -q "activeStageRef.current === stage + 1" "$PAGE" || { echo "FAIL: 도착지(stage+1) 포커스 단계 목록 갱신 없음"; exit 1; }
+    echo "  ✓ stale 클로저 방지 + 도착지 목록 갱신 (refreshTestSummaryRef)"
+    # 11) revert(이전단계로) 시 AUTO 로그/패널 clear — handleRevertDone에서 setAutoRun(null)+setAutoLog([])
+    awk '/const handleRevertDone = useCallback/,/}, \[disablePrevStageAuto\]\)/' "$PAGE" | grep -q "setAutoRun(null)" || { echo "FAIL: revert 시 AUTO 패널 clear(setAutoRun null) 없음"; exit 1; }
+    awk '/const handleRevertDone = useCallback/,/}, \[disablePrevStageAuto\]\)/' "$PAGE" | grep -q "setAutoLog(\[\])" || { echo "FAIL: revert 시 AUTO 로그 clear(setAutoLog) 없음"; exit 1; }
+    echo "  ✓ revert 시 AUTO 로그/패널 clear (handleRevertDone)"
+    # 12) quality_score 재계산 — S2/S3 autofill이 채운 필드 기준 점수 갱신(시드 0 고정 방지)
+    AIENG="$BACKEND/api/programming/metadata/ai_engine.py"
+    PROUTER="$BACKEND/api/test/pipeline_router.py"
+    grep -q "def recompute_quality_score" "$AIENG" || { echo "FAIL: recompute_quality_score 헬퍼 없음"; exit 1; }
+    grep -q "_COMPLETENESS_WEIGHTS" "$AIENG" || { echo "FAIL: 완성도 기반 배점(_COMPLETENESS_WEIGHTS) 없음"; exit 1; }
+    [ "$(grep -c "recompute_quality_score(db, req.content_id)" "$PROUTER")" -ge 2 ] || { echo "FAIL: enrich-autofill/ai-autofill 둘 다 재계산 호출 필요(2회)"; exit 1; }
+    grep -q "recompute_quality_score(db, cid)" "$PROUTER" || { echo "FAIL: advance 검수 진입 시 재계산 없음 — S4 stale score 회귀"; exit 1; }
+    python3 -c "import ast; ast.parse(open('$AIENG').read()); ast.parse(open('$PROUTER').read())" || { echo "FAIL: 문법 오류"; exit 1; }
+    echo "  ✓ quality_score 완성도 기반 재계산 (S2/S3 autofill + advance 검수진입, 외부매핑 비중 제외)"
+    # 5) typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps)"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless"
     exit 1
     ;;
 esac

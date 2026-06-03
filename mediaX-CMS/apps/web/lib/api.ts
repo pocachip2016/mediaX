@@ -1472,8 +1472,10 @@ export interface AdvanceResponse { advanced: number; skipped: number; results: R
 export interface ReviewActionResponse { processed: number; skipped: number; results: Record<number, string> }
 export interface EnrichSourceResponse { content_id: number; source: string; candidates_upserted: number; suggestions_created: number; sources_hit: string[]; sources_skipped: string[]; status_unchanged: string }
 export interface AiTaskResponse { content_id: number; task_name: string; status: string; engine: string | null; result_preview: string | null; status_unchanged: string }
+export interface EnrichAutofillResponse { content_id: number; enriched_sources: string[]; filled_fields: string[]; skipped_fields: string[]; status_unchanged: string }
+export interface AiAutofillResponse { content_id: number; rag_sources: string[]; ai_tasks: Record<string, string>; filled_fields: string[]; skipped_fields: string[]; status_unchanged: string }
 export interface EnrichPolicy { use_cache_db: boolean; confidence_threshold: number; use_websearch: boolean }
-export interface StageAutoPolicy { s1_auto: boolean; s2_auto: boolean; s3_auto: boolean; s4_auto: boolean; s5_auto: boolean; s6_auto: boolean }
+export interface StageAutoPolicy { s1_auto: boolean; s2_auto: boolean; s3_auto: boolean; s4_auto: boolean; s5_auto: boolean; s6_auto: boolean; s4_quality_threshold: number }
 export interface ReferenceExtractResponse {
   content_id: number; title_used: string; year_used: number | null
   wikidata_facts: Record<string, unknown>; wikidata_url: string | null
@@ -1523,6 +1525,14 @@ export const pipelineTestApi = {
   runAiTask: (content_id: number, task_name: string) =>
     requestTest<AiTaskResponse>("/api/test/pipeline/run-ai-task", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id, task_name }),
+    }),
+  enrichAutofill: (content_id: number) =>
+    requestTest<EnrichAutofillResponse>("/api/test/pipeline/enrich-autofill", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id }),
+    }),
+  aiAutofill: (content_id: number) =>
+    requestTest<AiAutofillResponse>("/api/test/pipeline/ai-autofill", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id }),
     }),
   listAiTasks: () =>
     requestTest<{ tasks: string[] }>("/api/test/pipeline/ai-tasks"),
