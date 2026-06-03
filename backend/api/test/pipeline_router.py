@@ -399,6 +399,10 @@ def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
         produce = _BUCKET_PRODUCE_STATUS.get(cur_bucket)
         if produce is not None:
             c.status = produce
+        # 검수(bucket 4) 진입 시 quality_score 재계산 — autofill 경로를 안 거쳐도 S4 임계값이 최신 완성도를 보게.
+        if cur_bucket + 1 == 4:
+            from api.programming.metadata.ai_engine import recompute_quality_score
+            recompute_quality_score(db, cid)
         results[cid] = f"bucket_{cur_bucket + 1}"
         advanced += 1
 

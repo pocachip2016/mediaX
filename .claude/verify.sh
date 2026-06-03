@@ -5374,8 +5374,9 @@ print('  ✓ 스키마 확장 확인')
     grep -q "def recompute_quality_score" "$AIENG" || { echo "FAIL: recompute_quality_score 헬퍼 없음"; exit 1; }
     grep -q "_COMPLETENESS_WEIGHTS" "$AIENG" || { echo "FAIL: 완성도 기반 배점(_COMPLETENESS_WEIGHTS) 없음"; exit 1; }
     [ "$(grep -c "recompute_quality_score(db, req.content_id)" "$PROUTER")" -ge 2 ] || { echo "FAIL: enrich-autofill/ai-autofill 둘 다 재계산 호출 필요(2회)"; exit 1; }
+    grep -q "recompute_quality_score(db, cid)" "$PROUTER" || { echo "FAIL: advance 검수 진입 시 재계산 없음 — S4 stale score 회귀"; exit 1; }
     python3 -c "import ast; ast.parse(open('$AIENG').read()); ast.parse(open('$PROUTER').read())" || { echo "FAIL: 문법 오류"; exit 1; }
-    echo "  ✓ quality_score 완성도 기반 재계산 (S2/S3 autofill 후, 외부매핑 비중 제외)"
+    echo "  ✓ quality_score 완성도 기반 재계산 (S2/S3 autofill + advance 검수진입, 외부매핑 비중 제외)"
     # 5) typecheck
     cd "$SCRIPT_DIR/../mediaX-CMS"
     TS_OUT=$(npm run typecheck 2>&1) || true
