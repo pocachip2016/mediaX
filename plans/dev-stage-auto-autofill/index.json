@@ -22,7 +22,7 @@
     { "step": 4, "name": "fe-auto-run-panel", "status": "completed", "summary": "AutoRunPanel(progress+log) + runAuto 배치 오케스트레이터. S1~S4 AUTO 자동 발화, S4 threshold modal, revert 시 AUTO OFF.", "completed_at": "2026-06-02" },
     { "step": 5, "name": "fe-api-wiring", "status": "completed", "summary": "api.ts enrichAutofill/aiAutofill 함수 + StageAutoPolicy.s4_quality_threshold 타입.", "completed_at": "2026-06-02" }
   ],
-  "followups": [
-    "전용 pytest(enrich-autofill/ai-autofill empty-only 보존 + S4 threshold 자동승인) + verify.sh 엔트리 추가로 회귀 가드 확보"
+  "followups_resolved": [
+    "회귀 가드 확보 (2026-06-03): tests/test_quality_score_recompute.py (recompute_quality_score 9케이스, mock 없음) + verify.sh `stage-auto-autofill-guard`(pytest + 빈필드보존/status불변/재계산 grep 가드). empty-only 보존은 monkeypatch pytest 대신 grep 가드로 대체(사용자 결정)."
   ]
 }
