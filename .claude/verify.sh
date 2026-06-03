@@ -5368,6 +5368,14 @@ print('  ✓ 스키마 확장 확인')
     awk '/const handleRevertDone = useCallback/,/}, \[disablePrevStageAuto\]\)/' "$PAGE" | grep -q "setAutoRun(null)" || { echo "FAIL: revert 시 AUTO 패널 clear(setAutoRun null) 없음"; exit 1; }
     awk '/const handleRevertDone = useCallback/,/}, \[disablePrevStageAuto\]\)/' "$PAGE" | grep -q "setAutoLog(\[\])" || { echo "FAIL: revert 시 AUTO 로그 clear(setAutoLog) 없음"; exit 1; }
     echo "  ✓ revert 시 AUTO 로그/패널 clear (handleRevertDone)"
+    # 12) quality_score 재계산 — S2/S3 autofill이 채운 필드 기준 점수 갱신(시드 0 고정 방지)
+    AIENG="$BACKEND/api/programming/metadata/ai_engine.py"
+    PROUTER="$BACKEND/api/test/pipeline_router.py"
+    grep -q "def recompute_quality_score" "$AIENG" || { echo "FAIL: recompute_quality_score 헬퍼 없음"; exit 1; }
+    grep -q "_COMPLETENESS_WEIGHTS" "$AIENG" || { echo "FAIL: 완성도 기반 배점(_COMPLETENESS_WEIGHTS) 없음"; exit 1; }
+    [ "$(grep -c "recompute_quality_score(db, req.content_id)" "$PROUTER")" -ge 2 ] || { echo "FAIL: enrich-autofill/ai-autofill 둘 다 재계산 호출 필요(2회)"; exit 1; }
+    python3 -c "import ast; ast.parse(open('$AIENG').read()); ast.parse(open('$PROUTER').read())" || { echo "FAIL: 문법 오류"; exit 1; }
+    echo "  ✓ quality_score 완성도 기반 재계산 (S2/S3 autofill 후, 외부매핑 비중 제외)"
     # 5) typecheck
     cd "$SCRIPT_DIR/../mediaX-CMS"
     TS_OUT=$(npm run typecheck 2>&1) || true

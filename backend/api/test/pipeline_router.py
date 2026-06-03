@@ -592,6 +592,11 @@ async def enrich_autofill(req: EnrichAutofillRequest, db: Session = Depends(get_
         db.commit()
         db.refresh(c)
 
+    # 5. quality_score 재계산 — 채워진 필드 기준(시드 0 고정 방지, S4 임계값 의미화)
+    from api.programming.metadata.ai_engine import recompute_quality_score
+    recompute_quality_score(db, req.content_id)
+    db.commit()
+
     return EnrichAutofillResponse(
         content_id=req.content_id,
         enriched_sources=result.sources_hit,
@@ -720,6 +725,11 @@ async def ai_autofill(req: AiAutofillRequest, db: Session = Depends(get_db)):
         db.add(c)
         db.commit()
         db.refresh(c)
+
+    # 6. quality_score 재계산 — RAG/AI태스크로 채워진 필드 기준(시드 0 고정 방지, S4 임계값 의미화)
+    from api.programming.metadata.ai_engine import recompute_quality_score
+    recompute_quality_score(db, req.content_id)
+    db.commit()
 
     return AiAutofillResponse(
         content_id=req.content_id,
