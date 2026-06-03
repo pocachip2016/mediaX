@@ -7,7 +7,7 @@
 - (없음)
 
 ## Next (이번 마일스톤)
-- [ ] dev-auto-headless BE 회귀 pytest — enrich_content KMDB 한도 초과 시 graceful degrade(kmdb:daily_limit, 500 아님) 단위 테스트
+- (없음)
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-auto-headless BE 회귀 pytest** — enrich_content KMDB 한도 초과 graceful degrade(kmdb:daily_limit, 500 아님) 단위 테스트 3건 + verify.sh `auto-headless-be`. KMDB 한도는 _fetch_kmdb_with_cache 1개만 monkeypatch로 시뮬레이션 (2026-06-03)
 - [x] **dev-stage-auto-autofill 회귀 가드** — recompute_quality_score 단위 테스트 9케이스(mock 없음) + verify.sh `stage-auto-autofill-guard`(pytest + 빈필드보존/status불변/재계산 grep 가드). empty-only는 grep 가드로 대체 (2026-06-03)
 - [x] **dev-s4-auto-residual** — S4 AUTO 잔류 유지(임계값 미만 미승인) + s4ReviewedRef 재검수 차단 + 임계값 변경 시 재평가. verify.sh `s4-auto-residual` + plan(plans/dev-s4-auto-residual). E2E: 잔류 3건 모두 점수 기준 정상 미달 확인 (2026-06-03)
 - [x] **dev-auto-headless** — AUTO 헤드리스 단계 자동 연쇄(뷰 비종속): run-to-stable runAutoPipeline + autoPendingKey 재트리거 + per-stage 취소 + 콘솔별 stage-게이트 패널 + 포커스 단계 뷰 동기화 + null-고착·stale-클로저·revert-clear 픽스 + BE KMDB graceful degrade + quality_score 완성도 기반 재계산(S2/S3 autofill+advance) + verify.sh `auto-headless`(12체크). plan: plans/dev-auto-headless (13 steps). PR #18 (2026-06-03)
