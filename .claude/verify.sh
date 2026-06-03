@@ -5385,6 +5385,22 @@ print('  ✓ 스키마 확장 확인')
     echo "=== PASS ==="
     ;;
 
+  stage-auto-autofill-guard)
+    echo "=== stage-auto-autofill-guard: 빈필드 보존 + quality_score 재계산 회귀 가드 ==="
+    cd "$BACKEND"
+    echo "--- pytest: recompute_quality_score 단위 ---"
+    python3 -m pytest tests/test_quality_score_recompute.py -q 2>&1 | tail -5
+    PROUTER="$BACKEND/api/test/pipeline_router.py"
+    echo "--- grep 가드: 빈필드 보존 계약 ---"
+    grep -q "rec.field not in empty" "$PROUTER" || { echo "FAIL: enrich-autofill 빈필드만 채움(rec.field not in empty) 회귀"; exit 1; }
+    grep -q "missing_key in empty" "$PROUTER" || { echo "FAIL: ai-autofill 빈필드만 채움(missing_key in empty) 회귀"; exit 1; }
+    [ "$(grep -c "recompute_quality_score(db, req.content_id)" "$PROUTER")" -ge 2 ] || { echo "FAIL: S2/S3 autofill 재계산 호출(2회) 회귀"; exit 1; }
+    grep -q "recompute_quality_score(db, cid)" "$PROUTER" || { echo "FAIL: advance 검수진입 재계산 회귀"; exit 1; }
+    grep -q "status_unchanged" "$PROUTER" || { echo "FAIL: autofill status 불변 계약 회귀"; exit 1; }
+    echo "  ✓ 빈필드 보존(enrich/ai) + status 불변 + 재계산(S2/S3/advance) 가드"
+    echo "=== PASS ==="
+    ;;
+
   s4-auto-residual)
     echo "=== s4-auto-residual: S4 AUTO 잔류 유지 + 재검수 방지 ==="
     PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
@@ -5409,7 +5425,7 @@ print('  ✓ 스키마 확장 확인')
 
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, s4-auto-residual"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, s4-auto-residual, stage-auto-autofill-guard"
     exit 1
     ;;
 esac
