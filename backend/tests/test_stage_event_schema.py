@@ -36,14 +36,14 @@ def test_stage_event_crud(db):
     content = Content(
         title="테스트 영화",
         content_type=ContentType.movie,
-        status=ContentStatus.processing,
+        status=ContentStatus.enriched,
     )
     db.add(content)
     db.flush()
 
     event = StageEvent(
         content_id=content.id,
-        stage=PipelineStage.S3_LLM_EXTRACT,
+        stage=PipelineStage.S6_LLM_EXTRACT,
         event_type=StageEventType.ENTERED,
         source="ollama",
         actor="system",
@@ -53,7 +53,7 @@ def test_stage_event_crud(db):
 
     fetched = db.query(StageEvent).filter_by(content_id=content.id).first()
     assert fetched is not None
-    assert fetched.stage      == PipelineStage.S3_LLM_EXTRACT
+    assert fetched.stage      == PipelineStage.S6_LLM_EXTRACT
     assert fetched.event_type == StageEventType.ENTERED
     assert fetched.source     == "ollama"
     assert fetched.actor      == "system"
@@ -65,7 +65,7 @@ def test_content_new_columns_nullable(db):
     content = Content(
         title="nullable 컬럼 테스트",
         content_type=ContentType.movie,
-        status=ContentStatus.waiting,
+        status=ContentStatus.raw,
     )
     db.add(content)
     db.commit()
@@ -82,22 +82,22 @@ def test_content_new_columns_nullable(db):
 # ── 4. backfill 매핑 정확성 ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize("status,expected_stage", [
-    (ContentStatus.waiting,    PipelineStage.S1_INTAKE),
-    (ContentStatus.processing, PipelineStage.S3_LLM_EXTRACT),
-    (ContentStatus.staging,    PipelineStage.S7_STAGING),
-    (ContentStatus.review,     PipelineStage.S8_REVIEW),
-    (ContentStatus.approved,   PipelineStage.S8_REVIEW),
-    (ContentStatus.rejected,   PipelineStage.S8_REVIEW),
+    (ContentStatus.raw,      PipelineStage.S1_INTAKE),
+    (ContentStatus.enriched, PipelineStage.S2_NORMALIZE),
+    (ContentStatus.ai,       PipelineStage.S6_LLM_EXTRACT),
+    (ContentStatus.review,   PipelineStage.S8_REVIEW),
+    (ContentStatus.approved, PipelineStage.S8_REVIEW),
+    (ContentStatus.rejected, PipelineStage.S8_REVIEW),
 ])
 def test_backfill_stage_mapping(db, status, expected_stage):
     # migration backfill 로직을 Python 레벨에서 재현
     STATUS_TO_STAGE = {
-        ContentStatus.waiting:    PipelineStage.S1_INTAKE,
-        ContentStatus.processing: PipelineStage.S3_LLM_EXTRACT,
-        ContentStatus.staging:    PipelineStage.S7_STAGING,
-        ContentStatus.review:     PipelineStage.S8_REVIEW,
-        ContentStatus.approved:   PipelineStage.S8_REVIEW,
-        ContentStatus.rejected:   PipelineStage.S8_REVIEW,
+        ContentStatus.raw:      PipelineStage.S1_INTAKE,
+        ContentStatus.enriched: PipelineStage.S2_NORMALIZE,
+        ContentStatus.ai:       PipelineStage.S6_LLM_EXTRACT,
+        ContentStatus.review:   PipelineStage.S8_REVIEW,
+        ContentStatus.approved: PipelineStage.S8_REVIEW,
+        ContentStatus.rejected: PipelineStage.S8_REVIEW,
     }
     content = Content(
         title=f"backfill test {status.value}",

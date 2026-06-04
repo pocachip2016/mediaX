@@ -29,7 +29,7 @@ def _job(db, cp="CP") -> ContentBatchJob:
 
 def _content(db, title, ctype=ContentType.movie, cp="CP", year=2023, parent_id=None) -> Content:
     c = Content(title=title, content_type=ctype, cp_name=cp,
-                production_year=year, status=ContentStatus.waiting,
+                production_year=year, status=ContentStatus.raw,
                 parent_id=parent_id)
     db.add(c)
     db.flush()

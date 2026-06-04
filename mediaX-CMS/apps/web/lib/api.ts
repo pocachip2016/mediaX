@@ -25,7 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── 타입 ──────────────────────────────────────────────────
 
-export type ContentStatus = "waiting" | "processing" | "staging" | "review" | "approved" | "rejected"
+export type ContentStatus = "raw" | "enriched" | "ai" | "review" | "approved" | "rejected"
 export type ContentType = "movie" | "series" | "season" | "episode"
 
 export interface ContentOut {
@@ -44,6 +44,7 @@ export interface ContentOut {
   parent_id?: number | null
   season_number?: number | null
   episode_number?: number | null
+  current_stage?: string | null   // 위치(stage) SSOT — 두 축(위치/완료) 중 위치
 }
 
 export interface MetadataOut {
@@ -53,6 +54,7 @@ export interface MetadataOut {
   cp_genre: string | null
   cp_tags: string[] | null
   ai_synopsis: string | null
+  short_synopsis: string | null
   ai_genre_primary: string | null
   ai_genre_secondary: string | null
   ai_mood_tags: string[] | null
@@ -64,6 +66,8 @@ export interface MetadataOut {
   score_breakdown: Record<string, number> | null
   ai_processed_at: string | null
   reviewed_at: string | null
+  synopsis_ko: string | null
+  synopsis_en: string | null
 }
 
 export interface PersonOut {
@@ -352,6 +356,17 @@ export const metadataApi = {
       body: JSON.stringify(data),
     }),
 
+  // 수동 필드 값 적용 — manual source 머지 후 resolve. WebSearch로 찾은 값 직접 입력용.
+  updateContent: (id: number, data: {
+    title?: string; synopsis?: string; cast?: string; directors?: string; genres?: string;
+    country?: string; runtime?: number; rating_age?: string; poster_url?: string; production_year?: number
+  }) =>
+    request<ContentDetail>(`/api/programming/metadata/contents/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
   triggerProcess: (id: number) =>
     request<{ task_id: string }>(`/api/programming/metadata/contents/${id}/process`, { method: "POST" }),
 
@@ -409,9 +424,11 @@ export const metadataApi = {
     request<PipelineStatus>("/api/programming/metadata/pipeline/status"),
 
   // ── 배치 업로드 ──────────────────────────────────────
-  uploadBatch: (formData: FormData) => {
+  uploadBatch: (formData: FormData, autoProcess?: boolean) => {
     const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-    return fetch(`${BASE_URL}/api/programming/metadata/upload/batch`, {
+    const url = new URL(`${BASE_URL}/api/programming/metadata/upload/batch`)
+    if (autoProcess !== undefined) url.searchParams.set("auto_process", String(autoProcess))
+    return fetch(url.toString(), {
       method: "POST",
       body: formData,
     }).then(async (res) => {
@@ -476,6 +493,12 @@ export const metadataApi = {
       body: JSON.stringify(data),
     }),
 
+  bulkProcessAi: (data: BulkActionConsolidatedRequest) =>
+    request<BulkActionResponse>("/api/programming/metadata/test/pipeline/process-ai", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   bulkDelete: (data: BulkActionConsolidatedRequest) =>
     request<BulkActionResponse>("/api/programming/metadata/bulk", {
       method: "DELETE",
@@ -507,6 +530,11 @@ export const metadataApi = {
       {
         method: "POST",
       }
+    ),
+
+  getAiResults: (contentId: number) =>
+    request<ContentAIResult[]>(
+      `/api/programming/metadata/contents/${contentId}/ai-results`
     ),
 
   partialReprocess: (contentId: number, fields?: string[]) =>
@@ -598,7 +626,35 @@ export const metadataApi = {
 
   getTimelineV2: (id: number) =>
     request<ContentTimelineV2>(`/api/programming/metadata/contents/${id}/timeline`),
+
+  getAiTaskSettings: () =>
+    request<AiTaskSetting[]>("/api/programming/metadata/ai-tasks/settings"),
+
+  patchAiTaskSetting: (taskName: string, enabled: boolean) =>
+    request<AiTaskSetting>(
+      `/api/programming/metadata/ai-tasks/settings/${taskName}?enabled=${enabled}`,
+      { method: "PATCH" }
+    ),
+
+  getEnrichPolicy: () =>
+    request<EnrichPolicy>("/api/programming/metadata/ai-tasks/enrich-policy"),
+  patchEnrichPolicy: (body: Partial<EnrichPolicy>) =>
+    request<EnrichPolicy>("/api/programming/metadata/ai-tasks/enrich-policy", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+  getStageAutoPolicy: () =>
+    request<StageAutoPolicy>("/api/programming/metadata/ai-tasks/stage-auto-policy"),
+  patchStageAutoPolicy: (body: Partial<StageAutoPolicy>) =>
+    request<StageAutoPolicy>("/api/programming/metadata/ai-tasks/stage-auto-policy", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+  websearchQuery: (query: string, num = 6) =>
+    request<WebSearchResultItem[]>("/api/programming/metadata/ai-tasks/websearch-query", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, num }),
+    }),
 }
+
+export interface WebSearchResultItem { title: string; url: string; domain: string; snippet: string; provider: string }
 
 // ── 타입: 메타 3분류 ──────────────────────────────────────────
 
@@ -1199,6 +1255,8 @@ export interface PipelineTestSeedResult {
   series_incomplete: number
   conflict: number
   total_root: number
+  skipped_in_pipeline: number
+  skipped_registered: number
 }
 
 export interface PipelineTestCleanup {
@@ -1208,6 +1266,7 @@ export interface PipelineTestCleanup {
 
 export interface PipelineTestStageSummary {
   by_status: Record<string, number>
+  by_stage: Record<string, number>   // 위치(bucket) 기준 — 카드 카운트용
   by_type: Record<string, number>
   total: number
   last_seeded_at: string | null
@@ -1332,6 +1391,25 @@ export interface GateAdvanceResponse {
   events: unknown[]
 }
 
+export interface AiTaskSetting {
+  task_name: string
+  enabled: boolean
+  updated_at?: string
+}
+
+export interface ContentAIResult {
+  id: number
+  content_id: number
+  engine: string
+  task_type: string
+  result_json: Record<string, unknown> | null
+  quality_score: number | null
+  is_final: boolean
+  error_message: string | null
+  input_hash: string | null
+  processed_at: string
+}
+
 export const pipelineApi = {
   getBoard: () =>
     request<PipelineBoardResponse>("/api/pipeline/board"),
@@ -1376,6 +1454,73 @@ function requestTest<T>(path: string, init?: RequestInit): Promise<T> {
   })
 }
 
+export interface PipelineEventLog {
+  id: number
+  content_id: number
+  stage: string
+  event_type: string
+  source: string | null
+  started_at: string
+  ended_at: string | null
+  latency_ms: number | null
+  error_text: string | null
+  actor: string
+}
+
+// ADR-009 response types
+export interface AdvanceResponse { advanced: number; skipped: number; results: Record<number, string> }
+export interface ReviewActionResponse { processed: number; skipped: number; results: Record<number, string> }
+export interface EnrichSourceResponse { content_id: number; source: string; candidates_upserted: number; suggestions_created: number; sources_hit: string[]; sources_skipped: string[]; status_unchanged: string }
+export interface AiTaskResponse { content_id: number; task_name: string; status: string; engine: string | null; result_preview: string | null; status_unchanged: string }
+export interface EnrichAutofillResponse { content_id: number; enriched_sources: string[]; filled_fields: string[]; skipped_fields: string[]; status_unchanged: string }
+export interface AiAutofillResponse { content_id: number; rag_sources: string[]; ai_tasks: Record<string, string>; filled_fields: string[]; skipped_fields: string[]; status_unchanged: string }
+export interface EnrichPolicy { use_cache_db: boolean; confidence_threshold: number; use_websearch: boolean }
+export interface StageAutoPolicy {
+  s1_auto: boolean; s2_auto: boolean; s3_auto: boolean
+  s4_auto: boolean; s5_auto: boolean; s6_auto: boolean
+  s4_quality_threshold: number
+  // ADR-010 워커 제어
+  auto_tick_enabled?: boolean
+  batch_size?: number
+  ai_concurrency?: number
+  ai_visibility_timeout?: number
+}
+
+export interface AutoBucketStatus {
+  pending: number
+  in_flight: number
+  held: number
+  skipped: number
+}
+
+export interface AutoWorkerStatus {
+  tick_enabled: boolean
+  s1_auto: boolean; s2_auto: boolean; s3_auto: boolean; s4_auto: boolean
+  buckets: Record<string, AutoBucketStatus>
+}
+
+export interface AutoLogEvent {
+  id: number
+  content_id: number
+  title: string
+  stage: string | null
+  event_type: string | null
+  actor: string
+  at: string | null
+}
+export interface ReferenceExtractResponse {
+  content_id: number; title_used: string; year_used: number | null
+  wikidata_facts: Record<string, unknown>; wikidata_url: string | null
+  wikipedia_text: string | null; wikipedia_url: string | null; wikipedia_lang: string | null
+  sources_hit: string[]; sources_skipped: string[]
+}
+
+export interface RevertResponse {
+  reverted: number
+  skipped: number
+  results: Record<number, string>
+}
+
 export const pipelineTestApi = {
   seed: () =>
     requestTest<PipelineTestSeedResult>("/api/test/pipeline/seed", { method: "POST" }),
@@ -1384,8 +1529,69 @@ export const pipelineTestApi = {
       `/api/test/pipeline/cleanup?dry_run=${dry_run}`,
       { method: "POST" }
     ),
+  cleanupStage: (ids: number[], dry_run = false) =>
+    requestTest<PipelineTestCleanup>(
+      `/api/test/pipeline/cleanup-stage?dry_run=${dry_run}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }
+    ),
+  revert: (ids: number[]) =>
+    requestTest<RevertResponse>("/api/test/pipeline/revert", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
   summary: () =>
     requestTest<PipelineTestStageSummary>("/api/test/pipeline/summary"),
+  events: (content_id?: number, limit = 30) => {
+    const q = new URLSearchParams()
+    if (content_id) q.set("content_id", String(content_id))
+    q.set("limit", String(limit))
+    return requestTest<PipelineEventLog[]>(`/api/test/pipeline/events?${q}`)
+  },
+  advance: (ids: number[]) =>
+    requestTest<AdvanceResponse>("/api/test/pipeline/advance", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  enrichSource: (content_id: number, source: "tmdb" | "kmdb") =>
+    requestTest<EnrichSourceResponse>("/api/test/pipeline/enrich-source", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id, source }),
+    }),
+  runAiTask: (content_id: number, task_name: string) =>
+    requestTest<AiTaskResponse>("/api/test/pipeline/run-ai-task", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id, task_name }),
+    }),
+  enrichAutofill: (content_id: number) =>
+    requestTest<EnrichAutofillResponse>("/api/test/pipeline/enrich-autofill", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id }),
+    }),
+  aiAutofill: (content_id: number) =>
+    requestTest<AiAutofillResponse>("/api/test/pipeline/ai-autofill", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id }),
+    }),
+  listAiTasks: () =>
+    requestTest<{ tasks: string[] }>("/api/test/pipeline/ai-tasks"),
+  referenceExtract: (content_id: number) =>
+    requestTest<ReferenceExtractResponse>("/api/test/pipeline/reference-extract", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content_id }),
+    }),
+  approve: (ids: number[]) =>
+    requestTest<ReviewActionResponse>("/api/test/pipeline/approve", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  reject: (ids: number[]) =>
+    requestTest<ReviewActionResponse>("/api/test/pipeline/reject", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  reReview: (ids: number[]) =>
+    requestTest<ReviewActionResponse>("/api/test/pipeline/re-review", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  resumeAuto: (ids: number[]) =>
+    requestTest<{ resumed: number; results: Record<number, string> }>("/api/test/pipeline/resume-auto", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  autoStatus: () =>
+    requestTest<AutoWorkerStatus>("/api/test/pipeline/auto-status"),
+  autoLog: (limit = 20) =>
+    requestTest<{ events: AutoLogEvent[] }>(`/api/test/pipeline/auto-log?limit=${limit}`),
 }
 
 // ── Distribution / Curation ───────────────────────────────

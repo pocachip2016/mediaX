@@ -22,7 +22,7 @@ async def bulk_reprocess(
     ids: list[int],
     reason: Optional[str] = None,
     sync_mode: bool = False,
-) -> "JobStatusOut":
+) -> "BulkActionResponse":
     """Bulk AI 재처리 — review/processing.error 상태만 처리"""
     from api.programming.metadata.schemas import JobStatusOut, BulkActionResponse
     from api.programming.metadata.service_content import trigger_ai_processing
@@ -33,7 +33,7 @@ async def bulk_reprocess(
 
     valid_ids = [
         c.id for c in contents
-        if c.status in [ContentStatus.review, ContentStatus.processing]
+        if c.status in [ContentStatus.review, ContentStatus.enriched]
     ]
     invalid_ids = [id for id in ids if id not in {c.id for c in valid_ids}]
 
@@ -58,15 +58,10 @@ async def bulk_reprocess(
     db.add(job)
     db.commit()
 
-    return JobStatusOut(
-        id=job.id,
-        status=job.status,
-        action_type="bulk_reprocess",
-        target_count=len(valid_ids),
-        completed_count=job.success_count,
-        failed_count=job.failed_count,
-        progress_percent=0 if job.status == "pending" else 100,
-        created_at=job.created_at,
+    return BulkActionResponse(
+        job_id=str(job.id),
+        ids_accepted=len(valid_ids),
+        ids_rejected=len(invalid_ids),
         errors=[f"ID {id} 상태 부적합" for id in invalid_ids] if invalid_ids else None,
     )
 
@@ -76,7 +71,7 @@ async def bulk_enrich(
     ids: list[int],
     reason: Optional[str] = None,
     sync_mode: bool = False,
-) -> "JobStatusOut":
+) -> "BulkActionResponse":
     """Bulk 외부 재매칭"""
     from api.programming.metadata.schemas import BulkActionResponse
     from api.programming.metadata.service_content import trigger_enrichment
@@ -121,37 +116,41 @@ async def bulk_process(
     ids: list[int],
     reason: Optional[str] = None,
     sync_mode: bool = False,
-) -> "JobStatusOut":
-    """Bulk 즉시 처리 (status=processed)"""
-    from api.programming.metadata.schemas import JobStatusOut
+) -> "BulkActionResponse":
+    """Bulk AI 처리 큐 등록 (raw/enriched 상태 콘텐츠 → AI 처리 태스크 디스패치)"""
+    from api.programming.metadata.schemas import BulkActionResponse
+    from api.programming.metadata.service_content import trigger_ai_processing
 
     contents = db.query(Content).filter(Content.id.in_(ids)).all()
     valid_ids = [c.id for c in contents]
     invalid_ids = [id for id in ids if id not in {c.id for c in contents}]
 
-    for c in contents:
-        c.status = ContentStatus.approved
-
     job = ContentBatchJob(
         job_name=f"bulk_process_{len(valid_ids)}_items",
-        status="done",
+        status="pending",
         total_count=len(valid_ids),
-        success_count=len(valid_ids),
         parse_mode="process",
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
-    return JobStatusOut(
-        id=job.id,
-        status="done",
-        action_type="bulk_process",
-        target_count=len(valid_ids),
-        completed_count=len(valid_ids),
-        failed_count=0,
-        progress_percent=100,
-        created_at=job.created_at,
+    if sync_mode:
+        for content_id in valid_ids:
+            trigger_ai_processing(content_id)
+        job.status = "done"
+        job.success_count = len(valid_ids)
+    else:
+        from workers.tasks.metadata import process_content_metadata
+        for content_id in valid_ids:
+            process_content_metadata.delay(content_id, False)  # auto_chain=False: enriched→ai only
+
+    db.commit()
+
+    return BulkActionResponse(
+        job_id=str(job.id),
+        ids_accepted=len(valid_ids),
+        ids_rejected=len(invalid_ids),
         errors=[f"ID {id} 없음" for id in invalid_ids] if invalid_ids else None,
     )
 
@@ -161,9 +160,9 @@ async def bulk_recall(
     ids: list[int],
     reason: Optional[str] = None,
     sync_mode: bool = False,
-) -> "JobStatusOut":
+) -> "BulkActionResponse":
     """Bulk 회수 — approved/rejected → review"""
-    from api.programming.metadata.schemas import JobStatusOut
+    from api.programming.metadata.schemas import BulkActionResponse
 
     contents = db.query(Content).filter(Content.id.in_(ids)).all()
     content_map = {c.id: c for c in contents}
@@ -189,15 +188,10 @@ async def bulk_recall(
     db.commit()
     db.refresh(job)
 
-    return JobStatusOut(
-        id=job.id,
-        status="done",
-        action_type="bulk_recall",
-        target_count=len(valid_ids),
-        completed_count=len(valid_ids),
-        failed_count=0,
-        progress_percent=100,
-        created_at=job.created_at,
+    return BulkActionResponse(
+        job_id=str(job.id),
+        ids_accepted=len(valid_ids),
+        ids_rejected=len(invalid_ids),
         errors=[f"ID {id} 상태 부적합" for id in invalid_ids] if invalid_ids else None,
     )
 
@@ -513,3 +507,25 @@ async def apply_external_fields(
         "source_id": source_id,
         "source_type": external.source_type.value if hasattr(external.source_type, "value") else str(external.source_type),
     }
+
+
+def get_enrich_policy(db):
+    """현재 EnrichPolicy 반환. 없으면 기본값 dict."""
+    from api.programming.metadata.models.external import EnrichPolicy
+    row = db.query(EnrichPolicy).filter(EnrichPolicy.id == 1).first()
+    if not row:
+        return {"use_cache_db": False, "confidence_threshold": 0.90, "use_websearch": False}
+    return {
+        "use_cache_db": row.use_cache_db,
+        "confidence_threshold": row.confidence_threshold,
+        "use_websearch": row.use_websearch,
+    }
+
+
+def get_stage_auto_policy(db) -> dict:
+    """현재 StageAutoPolicy 반환. 없으면 전부 False dict (자동 전이 없음)."""
+    from api.programming.metadata.models.external import StageAutoPolicy
+    row = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not row:
+        return {f"s{i}_auto": False for i in range(1, 7)}
+    return {f"s{i}_auto": getattr(row, f"s{i}_auto") for i in range(1, 7)}

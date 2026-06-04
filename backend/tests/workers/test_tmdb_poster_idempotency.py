@@ -17,7 +17,7 @@ def _make_content(db) -> Content:
     c = Content(
         title="테스트 영화",
         content_type=ContentType.movie,
-        status=ContentStatus.processing,
+        status=ContentStatus.enriched,
         production_year=2024,
         cp_name="Test CP",
     )

@@ -26,17 +26,24 @@ class ExternalSourceType(str, enum.Enum):
     kmdb = "kmdb"  # 한국영상자료원 KMDb
     omdb = "omdb"  # OMDb — IMDb 글로벌 보완 (Phase C)
     websearch = "websearch"    # WebSearch (Brave/SerpAPI/Gemini/Ollama+DDG) — Phase D
+    wikidata = "wikidata"      # Wikidata 구조화 fact (RAG)
+    wikipedia = "wikipedia"    # Wikipedia intro 텍스트 (RAG)
     manual = "manual"          # 수동 입력
     bulk_upload = "bulk_upload"  # CSV/Excel 일괄 업로드
 
 
 class AITaskType(str, enum.Enum):
-    synopsis = "synopsis"   # 시놉시스 생성
-    genre = "genre"         # 장르 분류
-    tagging = "tagging"     # 감성·태그 분류
-    rating = "rating"       # 시청등급 제안
-    entity = "entity"       # 엔티티 추출 (인물/키워드)
-    quality = "quality"     # 품질 평가
+    synopsis = "synopsis"               # 시놉시스 생성
+    genre = "genre"                     # 장르 분류
+    tagging = "tagging"                 # 감성·태그 분류
+    rating = "rating"                   # 시청등급 제안
+    entity = "entity"                   # 엔티티 추출 (인물/키워드)
+    quality = "quality"                 # 품질 평가
+    translate_synopsis = "translate_synopsis"   # 줄거리 ko↔en 번역 (Phase1)
+    short_synopsis = "short_synopsis"           # 줄거리 요약 (Phase1)
+    genre_normalized = "genre_normalized"       # 표준 장르 분류 (Phase1)
+    mood_tags = "mood_tags"                     # 감성 태그 분류 (Phase1)
+    keywords = "keywords"                       # 키워드 추출 (Phase1)
 
 
 class ExternalMetaSource(Base):
@@ -74,6 +81,59 @@ class ContentAIResult(Base):
     quality_score = Column(Float)       # 이 결과의 품질 스코어
     is_final = Column(Boolean, default=False, index=True)  # 현재 채택된 결과 여부
     error_message = Column(Text)        # 처리 실패 시 에러 메시지
+    input_hash = Column(String(64), index=True)  # SHA-256(content_id+task+input) — 캐시 키
     processed_at = Column(DateTime(timezone=True), server_default=func.now())
 
     content = relationship("Content", back_populates="ai_results")
+
+
+class AiTaskSetting(Base):
+    """
+    AI Task 항목별 on/off 설정 — ADR-007 B4
+    task_name = AITaskType value 문자열 (예: "translate_synopsis")
+    """
+    __tablename__ = "ai_task_settings"
+
+    task_name = Column(String(100), primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class EnrichPolicy(Base):
+    """
+    보완 단계 전역 정책 — ADR-008 (0032 마이그레이션에서 컬럼 rename)
+    단일 행(id=1).
+    use_cache_db  : 보완 시 내부 캐시 DB(TMDB/KMDB) 조회 여부
+    use_websearch : WebSearch 사용 여부
+    """
+    __tablename__ = "enrich_policy"
+
+    id = Column(Integer, primary_key=True, default=1)
+    use_cache_db = Column(Boolean, nullable=False, default=False)
+    confidence_threshold = Column(Float, nullable=False, default=0.90)
+    use_websearch = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StageAutoPolicy(Base):
+    """
+    단계별 자동 실행 정책 — ADR-009. 단일 행(id=1).
+    advance-out 정렬: s1=생성→보완, s2=보완→AI, s3=AI→검수, s4=검수→승인, s5=승인→게시.
+    전부 기본 False → 자동 전이 없음(단계별 수동 테스트 안전).
+    """
+    __tablename__ = "stage_auto_policy"
+
+    id = Column(Integer, primary_key=True, default=1)
+    s1_auto = Column(Boolean, nullable=False, default=False)
+    s2_auto = Column(Boolean, nullable=False, default=False)
+    s3_auto = Column(Boolean, nullable=False, default=False)
+    s4_auto = Column(Boolean, nullable=False, default=False)
+    s5_auto = Column(Boolean, nullable=False, default=False)
+    s6_auto = Column(Boolean, nullable=False, default=False)
+    s4_quality_threshold = Column(Float, nullable=False, default=90.0)  # S4 자동 승인 최소 quality_score
+    # AUTO 워커 제어 (ADR-010)
+    auto_tick_enabled = Column(Boolean, nullable=False, default=True, server_default="true")  # tick 마스터 스위치
+    batch_size = Column(Integer, nullable=False, default=20, server_default="20")  # 태스크당 처리 상한
+    ai_concurrency = Column(Integer, nullable=False, default=2, server_default="2")  # AI 동시 처리 상한
+    ai_visibility_timeout = Column(Integer, nullable=False, default=600, server_default="600")  # claim 재확보 임계(초)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

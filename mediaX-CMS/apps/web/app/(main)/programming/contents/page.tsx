@@ -28,7 +28,7 @@ type ContentRow = ContentOut & { enrichment?: Enrichment }
 const MOCK_CONTENTS: ContentRow[] = [
   { id: 1, title: "기생충", original_title: "Parasite", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2019, runtime_minutes: 132, country: "KR", created_at: "2026-04-01T09:00:00", quality_score: 96, poster_url: null,
     enrichment: { ai_fields: 0, sources: ["TMDB"], confidence: "high" } },
-  { id: 2, title: "오징어 게임 시즌2", original_title: "Squid Game S2", content_type: "series", status: "staging", cp_name: "넷플릭스", production_year: 2024, runtime_minutes: null, country: "KR", created_at: "2026-04-02T10:00:00", quality_score: 88, poster_url: null,
+  { id: 2, title: "오징어 게임 시즌2", original_title: "Squid Game S2", content_type: "series", status: "ai", cp_name: "넷플릭스", production_year: 2024, runtime_minutes: null, country: "KR", created_at: "2026-04-02T10:00:00", quality_score: 88, poster_url: null,
     enrichment: { ai_fields: 3, sources: ["TMDB", "AI"], confidence: "high" } },
   { id: 3, title: "서울의 봄", original_title: null, content_type: "movie", status: "approved", cp_name: "플러스엠", production_year: 2023, runtime_minutes: 141, country: "KR", created_at: "2026-04-03T11:00:00", quality_score: 91, poster_url: null,
     enrichment: { ai_fields: 1, sources: ["TMDB", "KOBIS"], confidence: "high" } },
@@ -36,7 +36,7 @@ const MOCK_CONTENTS: ContentRow[] = [
     enrichment: { ai_fields: 5, sources: ["AI"], confidence: "medium" } },
   { id: 5, title: "무빙", original_title: "Moving", content_type: "series", status: "approved", cp_name: "Disney+", production_year: 2023, runtime_minutes: null, country: "KR", created_at: "2026-04-05T13:00:00", quality_score: 93, poster_url: null,
     enrichment: { ai_fields: 0, sources: ["TMDB"], confidence: "high" } },
-  { id: 6, title: "외계+인 2부", original_title: null, content_type: "movie", status: "waiting", cp_name: "CJ ENM", production_year: 2024, runtime_minutes: 122, country: "KR", created_at: "2026-04-06T14:00:00", quality_score: null, poster_url: null },
+  { id: 6, title: "외계+인 2부", original_title: null, content_type: "movie", status: "raw", cp_name: "CJ ENM", production_year: 2024, runtime_minutes: 122, country: "KR", created_at: "2026-04-06T14:00:00", quality_score: null, poster_url: null },
   { id: 7, title: "헤어질 결심", original_title: "Decision to Leave", content_type: "movie", status: "approved", cp_name: "CJ ENM", production_year: 2022, runtime_minutes: 138, country: "KR", created_at: "2026-04-07T15:00:00", quality_score: 95, poster_url: null,
     enrichment: { ai_fields: 0, sources: ["TMDB", "KOBIS"], confidence: "high" } },
 ]
@@ -44,17 +44,17 @@ const MOCK_CONTENTS: ContentRow[] = [
 // ── 상수 ─────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<ContentStatus, string> = {
-  waiting: "대기", processing: "처리중", staging: "자동검토",
+  raw: "수신", enriched: "회수완료", ai: "AI처리완료",
   review: "검수", approved: "승인", rejected: "반려",
 }
 
 const STATUS_CLASS: Record<ContentStatus, string> = {
-  waiting:    "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  processing: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  staging:    "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-  review:     "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  approved:   "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-  rejected:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  raw:      "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  enriched: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  ai:       "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+  review:   "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  approved: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
 }
 
 const TYPE_LABEL: Record<ContentType, string> = {
@@ -77,8 +77,8 @@ const UI_GROUPS: Array<{ key: UiGroup | "all"; label: string }> = [
 ]
 
 function statusToUiGroup(status: ContentStatus): UiGroup {
-  if (status === "waiting" || status === "processing") return "processing"
-  if (status === "staging" || status === "review") return "review"
+  if (status === "raw" || status === "enriched") return "processing"
+  if (status === "ai" || status === "review") return "review"
   if (status === "approved") return "approved"
   return "rejected"
 }
@@ -166,6 +166,7 @@ export default function ContentsPage() {
     setLoading(true)
     try {
       const res = await metadataApi.listContents({
+        status: "approved",
         title: f.title || undefined,
         content_type: (f.content_type || undefined) as ContentType | undefined,
         cp_name: f.cp_name || undefined,
@@ -226,9 +227,9 @@ export default function ContentsPage() {
     () => items.filter((it) => selectedIds.has(it.id)),
     [items, selectedIds]
   )
-  const canApprove = selectedItems.length > 0 && selectedItems.every((it) => it.status === "staging" || it.status === "review")
+  const canApprove = selectedItems.length > 0 && selectedItems.every((it) => it.status === "ai" || it.status === "review")
   const canReject  = canApprove
-  const canRetryAI = selectedItems.length > 0 && selectedItems.every((it) => it.status === "review" || it.status === "processing")
+  const canRetryAI = selectedItems.length > 0 && selectedItems.every((it) => it.status === "review" || it.status === "enriched")
   const canRematch = selectedItems.length > 0
 
   // ── 삭제 핸들러 ──
@@ -512,7 +513,7 @@ export default function ContentsPage() {
                       <td className="px-4 py-3 text-sm">{item.production_year ?? "—"}</td>
                       <td className="px-4 py-3">
                         <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium", STATUS_CLASS[item.status])}>
-                          {item.status === "processing" && <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />}
+                          {item.status === "enriched" && <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />}
                           {STATUS_LABEL[item.status]}
                         </span>
                       </td>

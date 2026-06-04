@@ -28,10 +28,10 @@ class ContentType(str, enum.Enum):
 
 
 class ContentStatus(str, enum.Enum):
-    waiting = "waiting"        # CP 이메일 수신 후 대기
-    processing = "processing"  # AI 처리 중
-    staging = "staging"        # 에이전틱 검색 완료, 운영자 검토 대기
-    review = "review"          # 담당자 검수 대기 (70~89점)
+    raw = "raw"                # CP 수신 직후 초기 상태
+    enriched = "enriched"      # 외부 회수(Enrich+WebSearch) 완료
+    ai = "ai"                  # AI 처리 완료, 검수 직전
+    review = "review"          # 담당자 검수 대기
     approved = "approved"      # 등록 확정
     rejected = "rejected"      # 반려
 
@@ -47,10 +47,10 @@ class MetaSource(str, enum.Enum):
 class PipelineStage(str, enum.Enum):
     S1_INTAKE          = "s1_intake"
     S2_NORMALIZE       = "s2_normalize"
-    S3_LLM_EXTRACT     = "s3_llm_extract"
-    S4_SOURCE_MATCH    = "s4_source_match"
-    S5_GAP_DETECT      = "s5_gap_detect"
-    S6_WEBSEARCH_FILL  = "s6_websearch_fill"
+    S3_SOURCE_MATCH    = "s3_source_match"
+    S4_GAP_DETECT      = "s4_gap_detect"
+    S5_WEBSEARCH_FILL  = "s5_websearch_fill"
+    S6_LLM_EXTRACT     = "s6_llm_extract"
     S7_STAGING         = "s7_staging"
     S8_REVIEW          = "s8_review"
     S9_PUBLISH         = "s9_publish"
@@ -71,6 +71,7 @@ class StageEventType(str, enum.Enum):
     RETRIED      = "retried"
     GATE_OPENED  = "gate_opened"
     ADVANCED     = "advanced"
+    REJECTED     = "rejected"
 
 
 class FailureCode(str, enum.Enum):
@@ -97,7 +98,7 @@ class Content(Base):
     status = Column(
         Enum(ContentStatus, name="contentstatus"),
         nullable=False,
-        default=ContentStatus.waiting,
+        default=ContentStatus.raw,
         index=True,
     )
 
@@ -125,6 +126,11 @@ class Content(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     is_deleted = Column(Boolean, default=False, index=True)
     locked_fields = Column(JSON, default=list)  # List[str] — 잠금 필드 목록
+
+    # AUTO 워커 제어 (ADR-010)
+    auto_hold = Column(Boolean, nullable=False, default=False, server_default="false")  # revert/re-review 시 자동 진행 제외
+    auto_review_skipped_at = Column(DateTime(timezone=True), nullable=True)  # S4 잔류(임계값 미달) 영속 마킹
+    auto_claimed_at = Column(DateTime(timezone=True), nullable=True)  # claim/in-flight 마킹 (visibility timeout 기준)
 
     # Relationships
     metadata_record = relationship("ContentMetadata", back_populates="content", uselist=False)
@@ -213,6 +219,13 @@ class ContentMetadata(Base):
     # 업로드 확장 필드
     audio_channels = Column(String(20))              # "5.1CH", "Stereo", "Atmos"
     extra_metadata = Column(JSON)                    # CSV 미매핑 컬럼 흡수 {"헤더": "값"}
+
+    # AI Task 확장 메타 (ADR-007 Phase1 — AiTask 플러그인으로 채워짐)
+    synopsis_ko = Column(Text)          # 한국어 줄거리 (번역 또는 원본)
+    synopsis_en = Column(Text)          # 영어 줄거리 (번역 또는 원본)
+    short_synopsis = Column(Text)       # 2~3문장 요약
+    tagline = Column(Text)             # 홍보 한 줄 문구 (Phase2)
+    ai_keywords = Column(JSON)          # 추출 키워드 list[str]
 
     # 처리 이력
     ai_processed_at = Column(DateTime(timezone=True))

@@ -19,7 +19,7 @@ const MOCK_SUMMARY: AiReviewQueueSummary = {
 }
 
 const MOCK_ITEMS: AiReviewQueueRow[] = [
-  { content_id: 1, title: "기생충", content_type: "movie", input_type: "bulk", content_status: "staging",
+  { content_id: 1, title: "기생충", content_type: "movie", input_type: "bulk", content_status: "ai",
     metadata_status: "conflict", poster_status: "needs_selection", dam_match_count: 0,
     risk_level: "high", confidence: 0.42, updated_at: "2026-05-15T09:00:00" },
   { content_id: 2, title: "오징어 게임 시즌2", content_type: "series", input_type: "manual", content_status: "review",
@@ -28,7 +28,7 @@ const MOCK_ITEMS: AiReviewQueueRow[] = [
   { content_id: 3, title: "서울의 봄", content_type: "movie", input_type: "existing", content_status: "approved",
     metadata_status: "enhancement", poster_status: "external_only", dam_match_count: 2,
     risk_level: "medium", confidence: 0.81, updated_at: "2026-05-14T15:00:00" },
-  { content_id: 4, title: "범죄도시4", content_type: "movie", input_type: "bulk", content_status: "staging",
+  { content_id: 4, title: "범죄도시4", content_type: "movie", input_type: "bulk", content_status: "ai",
     metadata_status: "clean", poster_status: "poster_ok", dam_match_count: 0,
     risk_level: "low", confidence: 0.93, updated_at: "2026-05-13T11:00:00" },
   { content_id: 5, title: "무빙", content_type: "series", input_type: "existing", content_status: "approved",

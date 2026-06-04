@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from shared.config import settings
 from api.meta_core.gap import analyze_gap
 from api.meta_core.scoring import classify_match, compute_match_score, normalize_title
-from api.meta_core.clients.kmdb_client import KmdbApiKeyMissing, KmdbClient
+from api.meta_core.clients.kmdb_client import KmdbApiKeyMissing, KmdbClient, KmdbDailyLimitExceeded
 from api.meta_core.models.intelligence import FieldSuggestion, MatchEdge, MetadataCandidate
 from api.programming.metadata.models.content import Content
 from api.programming.metadata.models.external import ExternalSourceType
@@ -48,20 +48,33 @@ class EnrichResult:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def enrich_content(content_id: int, db: Session) -> EnrichResult:
-    """Gap 분석 후 외부 소스 호출 → candidate/suggestion 적재."""
+def enrich_content(
+    content_id: int, db: Session, *,
+    use_cache_db: bool = True,
+    only_sources: set[str] | None = None,
+) -> EnrichResult:
+    """Gap 분석 후 외부 소스 호출 → candidate/suggestion 적재.
+
+    use_cache_db=False 시 모든 소스 skip.
+    only_sources 지정 시 해당 소스만 강제 실행(gap·정책 무시) — 수동 sub-step용(ADR-009).
+    """
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise ValueError(f"Content {content_id} not found")
 
     result = EnrichResult(content_id=content_id)
-    gap_report = analyze_gap(content_id, db)
 
-    if gap_report.is_clean:
-        logger.info("[enrich] content_id=%d 갭 없음 — skip", content_id)
-        return result
-
-    needed_sources = _needed_sources(gap_report)
+    if only_sources is not None:
+        needed_sources = set(only_sources)
+    else:
+        if not use_cache_db:
+            logger.info("[enrich] content_id=%d use_cache_db=False → skip all sources", content_id)
+            return result
+        gap_report = analyze_gap(content_id, db)
+        if gap_report.is_clean:
+            logger.info("[enrich] content_id=%d 갭 없음 — skip", content_id)
+            return result
+        needed_sources = _needed_sources(gap_report)
 
     tmdb_key = settings.TMDB_API_KEY
     kmdb_key = settings.KMDB_API_KEY
@@ -92,6 +105,11 @@ def enrich_content(content_id: int, db: Session) -> EnrichResult:
                 result.sources_skipped.append("kmdb:no_result")
         except KmdbApiKeyMissing:
             result.sources_skipped.append("kmdb:no_key")
+        except KmdbDailyLimitExceeded:
+            # 일일 한도(500) 초과 — KMDB만 스킵하고 TMDB 등 나머지 enrich는 유지(graceful degrade).
+            # 잡지 않으면 enrich_content가 500을 던져 S2 autofill 전체가 'Failed to fetch'로 실패.
+            logger.warning("[enrich] content_id=%d KMDB 일일 한도 초과 — KMDB skip", content_id)
+            result.sources_skipped.append("kmdb:daily_limit")
 
     db.flush()
     logger.info(

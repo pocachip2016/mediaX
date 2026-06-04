@@ -22,7 +22,7 @@ from api.programming.metadata.models.image import ContentImage, ImageType
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
 def _content(db) -> Content:
-    c = Content(title="기생충", content_type=ContentType.movie, status=ContentStatus.staging)
+    c = Content(title="기생충", content_type=ContentType.movie, status=ContentStatus.ai)
     db.add(c)
     db.flush()
     return c

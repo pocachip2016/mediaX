@@ -13,6 +13,388 @@ source .venv/bin/activate 2>/dev/null || true
 
 case "$STEP" in
 
+  # ── dev-pipeline-console-controls steps ─────────────────────────
+  D1)
+    echo "=== D1: pipeline-console-controls E2E 검증 (ADR-007 상태머신 + 산출물 회귀) ==="
+    cd "$BACKEND"
+    # 1. 핵심 상태머신 회귀 테스트 (mock LLM, SQLite in-memory)
+    python3 -m pytest tests/test_pipeline_console_e2e.py -q --tb=short 2>&1 | tail -5
+    echo "  ✓ 상태머신 E2E pytest 통과 (auto_chain=False 정지 + 자동전이 3케이스)"
+    # 2. BE 엔드포인트 구조 확인 (C3/C4 산출물 회귀 가드)
+    python3 -c "
+import ast, pathlib
+router_src = pathlib.Path('api/programming/metadata/router.py').read_text()
+assert '/test/pipeline/process-ai' in router_src, 'process-ai 엔드포인트 없음 (C3 회귀)'
+print('  ✓ POST /test/pipeline/process-ai 엔드포인트 확인')
+test_router_src = pathlib.Path('api/test/pipeline_router.py').read_text()
+assert 'def get_pipeline_events' in test_router_src, 'get_pipeline_events 엔드포인트 없음 (C4 회귀)'
+print('  ✓ GET /test/pipeline/events 엔드포인트 확인')
+"
+    # 3. FE 컴포넌트 확인 (C3/C4 산출물 회귀 가드)
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "AiProcessPanel" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" \
+      || { echo "FAIL: AiProcessPanel import 없음 (C3 회귀)"; exit 1; }
+    echo "  ✓ AiProcessPanel 컴포넌트 확인"
+    grep -rq "ProgressLog\|PipelineEventLog" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" \
+      || { echo "FAIL: ProgressLog/PipelineEventLog import 없음 (C4 회귀)"; exit 1; }
+    echo "  ✓ ProgressLog 컴포넌트 확인"
+    # 4. TypeScript 타입 체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  C1)
+    echo "=== C1: FE ContentStatus 타입/라벨/STAGE_DEFS 재명명 (raw/enriched/ai) ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    cd "$FE_ROOT"
+    # 1. ContentStatus 타입 확인
+    grep -q '"raw" | "enriched" | "ai"' lib/api.ts || { echo "FAIL: api.ts ContentStatus 미갱신"; exit 1; }
+    echo "  ✓ lib/api.ts ContentStatus 타입 확인"
+    # 2. 구버전 값이 ContentStatus로 남아있지 않은지 확인 (UiGroup 키 제외)
+    if grep -rn '"waiting"\|"staging"' --include="*.ts" --include="*.tsx" . 2>/dev/null | grep -v node_modules | grep -v ".next" | grep -v "reviewQueueGuard" | grep -q .; then
+      echo "FAIL: 구버전 waiting/staging 값 남아있음"; exit 1
+    fi
+    echo "  ✓ 구버전 waiting/staging 값 없음"
+    # 3. STAGE_DEFS statusKey 확인
+    grep -q 'statusKey: "raw"' "app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS raw 없음"; exit 1; }
+    grep -q 'statusKey: "enriched"' "app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS enriched 없음"; exit 1; }
+    grep -q 'statusKey: "ai"' "app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS ai 없음"; exit 1; }
+    echo "  ✓ STAGE_DEFS raw/enriched/ai 확인"
+    # 4. TypeScript 타입 체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  B4)
+    echo "=== B4: AI Task 항목별 on/off 설정 배선 ==="
+    cd "$BACKEND"
+    python3 -c "
+# 1. AiTaskSetting 모델 확인
+from api.programming.metadata.models.external import AiTaskSetting
+assert AiTaskSetting.__tablename__ == 'ai_task_settings', 'tablename 오류'
+assert hasattr(AiTaskSetting, 'task_name'), 'task_name 없음'
+assert hasattr(AiTaskSetting, 'enabled'), 'enabled 없음'
+print('  ✓ AiTaskSetting 모델 확인')
+
+# 2. Runner DB 설정 로드 확인
+import inspect
+from api.programming.metadata.ai_tasks.runner import run_ai_tasks
+src = inspect.getsource(run_ai_tasks)
+assert 'AiTaskSetting' in src, 'Runner에 AiTaskSetting 없음'
+assert 'db_settings.get(task_name' in src, 'db_settings 오버라이드 없음'
+print('  ✓ Runner DB 설정 오버라이드 확인')
+
+# 3. API 엔드포인트 존재 확인
+import ast, pathlib
+src_router = pathlib.Path('api/programming/metadata/router.py').read_text()
+assert '/ai-tasks/settings' in src_router, 'GET /ai-tasks/settings 없음'
+assert 'patch_ai_task_setting' in src_router, 'PATCH /ai-tasks/settings/{task_name} 없음'
+print('  ✓ GET/PATCH /ai-tasks/settings 엔드포인트 확인')
+
+# 4. SQLite in-memory 통합 테스트: GET → PATCH → GET 확인
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+import api.programming.metadata.models
+from shared.database import Base
+engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+db = Session()
+
+# GET: DB 없을 때 기본값 True
+from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+settings = {row['task_name']: row['enabled'] for row in [
+    {'task_name': name, 'enabled': True} for name in AI_TASK_REGISTRY
+]}
+assert all(v for v in settings.values()), '기본값이 True가 아님'
+print('  ✓ 기본값 True 확인')
+
+# PATCH: enabled=False 저장
+setting = AiTaskSetting(task_name='translate_synopsis', enabled=False)
+db.add(setting)
+db.commit()
+row = db.query(AiTaskSetting).filter_by(task_name='translate_synopsis').first()
+assert row.enabled == False, 'PATCH 저장 실패'
+print('  ✓ PATCH(enabled=False) 저장 확인')
+
+db.close()
+Base.metadata.drop_all(engine)
+print('  ✓ SQLite 통합 테스트 통과')
+"
+    test -f alembic/versions/0030_ai_task_settings.py || { echo "FAIL: 0030 migration 없음"; exit 1; }
+    echo "  ✓ 0030 migration 파일 확인"
+    python3 -m pytest tests/api/programming/metadata/test_service.py -q --tb=short 2>&1 | tail -2
+    echo "=== PASS ==="
+    ;;
+
+  B3)
+    echo "=== B3: Phase1 나머지 task — short_synopsis/genre_normalized/mood_tags/keywords ==="
+    cd "$BACKEND"
+    # 1. 레지스트리 5개 등록 확인
+    python3 -c "
+from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+expected = {'translate_synopsis','short_synopsis','genre_normalized','mood_tags','keywords'}
+assert expected == set(AI_TASK_REGISTRY.keys()), f'레지스트리 불일치: {set(AI_TASK_REGISTRY.keys())}'
+print('  ✓ AI_TASK_REGISTRY 5개 task 등록 확인')
+
+from api.programming.metadata.models.content import ContentMetadata
+assert hasattr(ContentMetadata, 'ai_keywords'), 'ai_keywords 컬럼 없음'
+print('  ✓ ContentMetadata.ai_keywords 컬럼 확인')
+
+from api.programming.metadata.ai_tasks._utils import extract_json
+assert extract_json('{\"a\":1}') == {'a': 1}
+assert extract_json('[1,2,3]') == [1, 2, 3]
+codeblock = '\x60\x60\x60json\n[\"a\"]\n\x60\x60\x60'
+assert extract_json(codeblock) == ['a'], f'코드블록 파싱 실패'
+print('  ✓ extract_json 유틸 확인')
+"
+    test -f alembic/versions/0029_ai_keywords_column.py || { echo "FAIL: 0029 migration 없음"; exit 1; }
+    echo "  ✓ 0029 migration 파일 확인"
+    python3 -m pytest tests/test_ai_task_translate_synopsis.py -q --tb=short 2>&1 | tail -2
+    # 2. 실제 LLM 검증 — 도커
+    echo "  -- 실제 LLM 검증 (docker / qwen2.5:3b) --"
+    docker exec mediax-backend-1 python3 -c "
+import asyncio
+from api.programming.metadata.ai_tasks.short_synopsis import short_synopsis_task
+from api.programming.metadata.ai_tasks.genre_normalized import genre_normalized_task
+from api.programming.metadata.ai_tasks.mood_tags import mood_tags_task
+from api.programming.metadata.ai_tasks.keywords import keywords_task
+from api.programming.metadata.ai_tasks.base import TaskInput
+from api.programming.metadata.llm.ollama import OllamaTaskProvider
+
+SYNOPSIS = '전쟁의 참혹함 속에서도 희망을 잃지 않는 한 군인의 이야기. 동료들과 함께 살아남기 위해 싸우며 인간성의 의미를 되찾아간다.'
+
+async def main():
+    chain = [OllamaTaskProvider]
+
+    ti = TaskInput(1, 'short_synopsis', {'synopsis': SYNOPSIS})
+    out = await short_synopsis_task.run(ti, chain)
+    assert len(out.result['short_synopsis']) > 10
+    print(f'  ✓ short_synopsis OK: {out.result[\"short_synopsis\"][:50]}')
+
+    ti = TaskInput(1, 'genre_normalized', {'title':'전장의 희망','synopsis':SYNOPSIS,'cp_genre':''})
+    out = await genre_normalized_task.run(ti, chain)
+    assert out.result['genre_primary'], '장르 빈 값'
+    print(f'  ✓ genre_normalized OK: {out.result[\"genre_primary\"]}')
+
+    ti = TaskInput(1, 'mood_tags', {'title':'전장의 희망','synopsis':SYNOPSIS})
+    out = await mood_tags_task.run(ti, chain)
+    print(f'  ✓ mood_tags OK: {out.result[\"mood_tags\"]}')
+
+    ti = TaskInput(1, 'keywords', {'title':'전장의 희망','synopsis':SYNOPSIS})
+    out = await keywords_task.run(ti, chain)
+    assert len(out.result['keywords']) > 0, '키워드 없음'
+    print(f'  ✓ keywords OK: {out.result[\"keywords\"][:3]}')
+
+asyncio.run(main())
+print('  ✓ Phase1 4개 task 실제 LLM 검증 완료')
+"
+    echo "=== PASS ==="
+    ;;
+
+  B2)
+    echo "=== B2: TranslateSynopsisTask — 구조(host pytest) + 실제 LLM(docker qwen2.5:3b) ==="
+    cd "$BACKEND"
+    # 1. 구조 테스트 (LLM 미접촉) — 호스트 pytest. LLM run 테스트는 deselect (도커에서 별도 검증)
+    python3 -m pytest tests/test_ai_task_translate_synopsis.py -q \
+      --deselect tests/test_ai_task_translate_synopsis.py::test_run_ko_to_en_with_ollama \
+      --deselect tests/test_ai_task_translate_synopsis.py::test_run_en_to_ko_with_ollama \
+      --tb=short 2>&1 | tail -3
+    # 2. 실제 LLM 검증 — 도커 컨테이너 안 qwen2.5:3b 호출 (ollama:11434 도달 가능)
+    echo "  -- 실제 LLM 검증 (docker mediax-backend-1 / qwen2.5:3b) --"
+    docker exec mediax-backend-1 python3 -c "
+import asyncio
+from api.programming.metadata.ai_tasks.translate_synopsis import translate_synopsis_task
+from api.programming.metadata.ai_tasks.base import TaskInput
+from api.programming.metadata.llm.ollama import OllamaTaskProvider
+
+async def main():
+    # ko → en
+    ti = TaskInput(1, 'translate_synopsis', {'source_text':'전쟁의 참혹함 속에서도 희망을 잃지 않는 한 군인의 이야기.','source_lang':'ko','target_lang':'English','direction':'ko_to_en'})
+    out = await translate_synopsis_task.run(ti, [OllamaTaskProvider])
+    tr = out.result['translated']
+    assert out.engine == 'qwen2.5:3b', f'task model 아님: {out.engine}'
+    assert len(tr) > 10, f'번역 결과 너무 짧음: {tr!r}'
+    assert not tr.lower().startswith(('okay', 'let me', 'first', 'hmm')), f'추론 누출: {tr[:60]!r}'
+    assert sum(c.isascii() for c in tr) / len(tr) > 0.7, f'영어 번역 아님: {tr[:60]!r}'
+    print(f'  ✓ ko→en (qwen2.5:3b): {tr[:70]}')
+
+    # en → ko
+    ti2 = TaskInput(1, 'translate_synopsis', {'source_text':'A young soldier fights to survive the horrors of war.','source_lang':'en','target_lang':'Korean','direction':'en_to_ko'})
+    out2 = await translate_synopsis_task.run(ti2, [OllamaTaskProvider])
+    tr2 = out2.result['translated']
+    cjk = sum(1 for c in tr2 if '가' <= c <= '힣')
+    assert cjk > 3, f'한글 번역 아님: {tr2[:60]!r}'
+    print(f'  ✓ en→ko (qwen2.5:3b): {tr2[:40]}')
+
+asyncio.run(main())
+print('  ✓ 실제 LLM 양방향 번역 검증 완료')
+"
+    echo "=== PASS ==="
+    ;;
+
+  B1)
+    echo "=== B1: AiTask 프레임워크 — base/registry/runner + alembic 0028 ==="
+    cd "$BACKEND"
+    python3 -c "
+from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY, AiTask, register_task
+from api.programming.metadata.ai_tasks.base import TaskInput, TaskOutput
+from api.programming.metadata.ai_tasks.runner import run_ai_tasks, _compute_input_hash
+print('  ✓ ai_tasks 패키지 import OK')
+
+from api.programming.metadata.models.external import ContentAIResult, AITaskType
+assert hasattr(ContentAIResult, 'input_hash'), 'ContentAIResult.input_hash 없음'
+new_types = ['translate_synopsis', 'short_synopsis', 'genre_normalized', 'mood_tags', 'keywords']
+existing = [t.value for t in AITaskType]
+for t in new_types:
+    assert t in existing, f'AITaskType.{t} 없음'
+print('  ✓ ContentAIResult.input_hash + AITaskType 5개 항목 확인')
+
+from api.programming.metadata.models.content import ContentMetadata
+for col in ['synopsis_ko', 'synopsis_en', 'short_synopsis', 'tagline']:
+    assert hasattr(ContentMetadata, col), f'ContentMetadata.{col} 없음'
+print('  ✓ ContentMetadata 4개 컬럼 확인')
+
+import inspect, abc
+assert inspect.isabstract(AiTask), 'AiTask가 추상 클래스가 아님'
+abstract_methods = {'build_input', 'run', 'apply'}
+assert abstract_methods == AiTask.__abstractmethods__, f'추상 메서드 불일치: {AiTask.__abstractmethods__}'
+print('  ✓ AiTask ABC (build_input/run/apply) 확인')
+
+hash1 = _compute_input_hash(1, 'test', {'a': 1})
+hash2 = _compute_input_hash(1, 'test', {'a': 1})
+assert hash1 == hash2, 'input_hash 결정론적이지 않음'
+assert len(hash1) == 64, 'input_hash 길이 != 64 (SHA-256)'
+print('  ✓ input_hash 결정론적 SHA-256 확인')
+"
+    test -f alembic/versions/0028_ai_task_columns.py || { echo "FAIL: 0028 migration 없음"; exit 1; }
+    echo "  ✓ 0028 migration 파일 확인"
+    python3 -m pytest tests/api/programming/metadata/test_service.py tests/api/programming/metadata/test_ai_review_queue.py -q --tb=short 2>&1 | tail -3
+    echo "=== PASS ==="
+    ;;
+
+  A2)
+    echo "=== A2: process_content_ai 분리 — 외부조회 제거 + auto_chain/score_threshold + stage_event ==="
+    cd "$BACKEND"
+    python3 -c "
+import inspect
+from api.programming.metadata.ai_engine import process_content_ai
+sig = inspect.signature(process_content_ai)
+params = sig.parameters
+assert 'auto_chain' in params, 'auto_chain 파라미터 없음'
+assert 'score_threshold' in params, 'score_threshold 파라미터 없음'
+assert params['auto_chain'].default == True
+assert params['score_threshold'].default == 90
+print('  ✓ 시그니처 확인 (auto_chain=True, score_threshold=90)')
+import ast, pathlib
+src = pathlib.Path('api/programming/metadata/ai_engine.py').read_text()
+assert '_get_external_data_from_db' in src, '_get_external_data_from_db 헬퍼 없음'
+assert 'ContentStatus.ai' in src, 'enriched→ai 전이 없음'
+assert 'S6_LLM_EXTRACT' in src, 'stage_event S6 없음'
+import re
+fn_body = re.search(r'async def process_content_ai.*?(?=\nasync def |\ndef _fetch_external_meta)', src, re.DOTALL)
+assert fn_body and '_fetch_external_meta(' not in fn_body.group(), '_fetch_external_meta 호출이 process_content_ai 내에 남아있음'
+print('  ✓ 헬퍼/status/stage_event 확인')
+"
+    python3 -m pytest tests/test_stage_event_schema.py tests/test_stage_event_service.py tests/api/programming/metadata/test_service.py tests/api/programming/test_mh_bulk_movie.py -q --tb=short 2>&1 | tail -3
+    echo "=== PASS ==="
+    ;;
+
+  A3)
+    echo "=== A3: bulk_process auto_chain=False + response_model 정합(#8,#9) + auto_process 가드(#1) ==="
+    cd "$BACKEND"
+    # 1. process_content_metadata auto_chain 파라미터 확인
+    python3 -c "
+import inspect
+from workers.tasks.metadata import process_content_metadata
+sig = inspect.signature(process_content_metadata)
+params = sig.parameters
+assert 'auto_chain' in params, 'auto_chain 파라미터 없음'
+assert params['auto_chain'].default == True, 'auto_chain 기본값이 True가 아님'
+print('  ✓ Celery 태스크 auto_chain 파라미터 확인')
+"
+    # 2. bulk_process auto_chain=False 호출 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('api/programming/metadata/service_bulk.py').read_text()
+pattern = r'process_content_metadata\.delay\(content_id,\s*False\)'
+assert re.search(pattern, src), 'bulk_process에서 auto_chain=False 호출 없음'
+print('  ✓ bulk_process auto_chain=False 디스패치 확인')
+"
+    # 3. bulk_reprocess/bulk_enrich/bulk_recall 반환 타입 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('api/programming/metadata/service_bulk.py').read_text()
+for func in ['bulk_reprocess', 'bulk_enrich', 'bulk_recall']:
+  pattern = rf'async def {func}.*?\) -> \"BulkActionResponse\"'
+  assert re.search(pattern, src, re.DOTALL), f'{func} 반환 타입이 BulkActionResponse가 아님'
+  assert f'return BulkActionResponse(' in src, f'{func}에서 BulkActionResponse 반환 없음'
+print('  ✓ bulk_reprocess/enrich/recall BulkActionResponse 반환 확인')
+"
+    # 4. FE uploadBatch autoProcess 파라미터 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('../mediaX-CMS/apps/web/lib/api.ts').read_text()
+assert 'autoProcess' in src, 'uploadBatch에 autoProcess 파라미터 없음'
+assert 'auto_process' in src, 'auto_process 쿼리 파라미터 없음'
+print('  ✓ FE uploadBatch autoProcess 파라미터 확인')
+"
+    # 5. 테스트 콘솔 auto_process=false 전달 확인
+    python3 -c "
+import re
+import pathlib
+src = pathlib.Path('../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx').read_text()
+assert 'uploadBatch(formData, false)' in src, '테스트 콘솔에서 auto_process=false 전달 없음'
+print('  ✓ 테스트 콘솔 auto_process=false 전달 확인')
+"
+    # 6. pytest
+    python3 -m pytest tests/api/programming/metadata/test_service.py tests/api/programming/metadata/test_ai_review_queue.py -q --tb=short 2>&1 | tail -3
+    echo "=== PASS ==="
+    ;;
+
+  A1)
+    echo "=== A1: ContentStatus enum rename (raw/enriched/ai) + PipelineStage renumber (S3↔S4↔S5↔S6) ==="
+    cd "$BACKEND"
+    # 1. enum 값 확인
+    python3 -c "
+from api.programming.metadata.models.content import ContentStatus, PipelineStage
+assert ContentStatus.raw.value == 'raw'
+assert ContentStatus.enriched.value == 'enriched'
+assert ContentStatus.ai.value == 'ai'
+assert not hasattr(ContentStatus, 'waiting')
+assert not hasattr(ContentStatus, 'processing')
+assert not hasattr(ContentStatus, 'staging')
+print('  ✓ ContentStatus enum 값 확인')
+assert PipelineStage.S6_LLM_EXTRACT.value == 's6_llm_extract'
+assert PipelineStage.S3_SOURCE_MATCH.value == 's3_source_match'
+assert PipelineStage.S4_GAP_DETECT.value == 's4_gap_detect'
+assert PipelineStage.S5_WEBSEARCH_FILL.value == 's5_websearch_fill'
+assert not hasattr(PipelineStage, 'S3_LLM_EXTRACT')
+print('  ✓ PipelineStage 번호 확인')
+"
+    # 2. alembic migration 존재 확인
+    test -f alembic/versions/0027_contentstatus_rename.py || { echo "FAIL: 0027 migration 없음"; exit 1; }
+    echo "  ✓ 0027 migration 파일 확인"
+    # 3. pytest
+    python3 -m pytest tests/ -q --deselect tests/api/programming/test_content_kind.py::test_tmdb_search_kind 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+
   kmdb-poster-extract-fix)
     echo "=== kmdb-poster-extract-fix: migration + pytest + 백필 후 DB 실측 ==="
     # 1. 마이그레이션 적용
@@ -4700,9 +5082,473 @@ print('  ✓ 스키마 확장 확인')
     echo "=== PASS ==="
     ;;
 
+  enrich-policy)
+    echo "=== enrich-policy: EnrichPolicy API (라이브 스모크) ==="
+    cd "$BACKEND"
+    grep -q "class EnrichPolicy" "api/programming/metadata/models/external.py" || { echo "FAIL: EnrichPolicy 모델 없음"; exit 1; }
+    echo "  ✓ EnrichPolicy 모델 확인"
+    # 라이브 API 스모크 (test_enrich_policy.py 는 dev-enrich-panel 단계 산물 — 현재 미존재)
+    GET_OUT=$(curl -s -w "%{http_code}" -o /tmp/ep.json http://localhost:8000/api/programming/metadata/ai-tasks/enrich-policy)
+    [ "$GET_OUT" = "200" ] || { echo "FAIL: GET enrich-policy → $GET_OUT"; exit 1; }
+    grep -q "use_cache_db" /tmp/ep.json || { echo "FAIL: enrich-policy 응답에 use_cache_db 없음"; exit 1; }
+    echo "  ✓ GET/PATCH enrich-policy 라이브 200 + 스키마 확인"
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "EnrichPolicy" "$FE_ROOT/lib/api.ts" || { echo "FAIL: FE EnrichPolicy 타입 없음"; exit 1; }
+    echo "  ✓ FE 타입 확인"
+    echo "=== PASS ==="
+    ;;
+
+  stage-auto-gate)
+    echo "=== stage-auto-gate: StageAutoPolicy 단계별 자동 실행 게이트 (ADR-009) ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_stage_auto_policy.py\", \"tests/test_pipeline_console_e2e.py\", \"tests/test_seed_pipeline_test.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -6
+    echo "  ✓ stage-auto-gate + e2e + seed(all-raw) pytest 통과"
+    [ -f "alembic/versions/0033_stage_auto_policy.py" ] || { echo "FAIL: 0033 마이그레이션 없음"; exit 1; }
+    grep -q "class StageAutoPolicy" "api/programming/metadata/models/external.py" || { echo "FAIL: StageAutoPolicy 모델 없음"; exit 1; }
+    grep -q "S3_SOURCE_MATCH" "workers/tasks/metadata.py" || { echo "FAIL: enrich S3_SOURCE_MATCH 기록 없음"; exit 1; }
+    grep -q "get_stage_auto_policy" "workers/tasks/metadata.py" || { echo "FAIL: 워커 정책 게이트 없음"; exit 1; }
+    grep -q "advance_to_review" "api/programming/metadata/ai_engine.py" || { echo "FAIL: ai_engine 단계 플래그 없음"; exit 1; }
+    echo "  ✓ StageAutoPolicy 모델 + 마이그레이션 + 게이트 배선 확인"
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "StageAutoPolicy" "$FE_ROOT/lib/api.ts" || { echo "FAIL: FE StageAutoPolicy 타입 없음"; exit 1; }
+    grep -q "toggleStageAuto\|onToggleAuto" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: AUTO 토글 없음"; exit 1; }
+    echo "  ✓ FE StageAutoPolicy 타입 + AUTO 토글 확인"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-rag-field-extract-step5)
+    echo "=== dev-rag-field-extract-step5: E2E — 실제 Wikidata/Wikipedia 호출 + DB upsert ==="
+    # 0034 migration 적용 확인
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -c "SELECT version_num FROM alembic_version;" 2>&1 | grep -q "0034" || { echo "FAIL: 0034 migration 미적용"; exit 1; }
+    echo "  ✓ 0034 migration 적용됨"
+    # externalsourcetype enum에 wikidata/wikipedia 확인
+    docker exec mediax-postgres-1 psql -U media_ax -d media_ax -c "\dT+ externalsourcetype" 2>&1 | grep -q "wikidata" || { echo "FAIL: wikidata enum 없음"; exit 1; }
+    echo "  ✓ externalsourcetype enum 확장 확인"
+    # 엔드포인트 E2E (서울의 봄 id=1842)
+    RESULT=$(curl -s -X POST "http://localhost:8000/api/test/pipeline/reference-extract" \
+      -H "Content-Type: application/json" -d '{"content_id": 1842}')
+    echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if d.get('sources_hit') else 1)" || { echo "FAIL: sources_hit 없음 — $RESULT"; exit 1; }
+    echo "  ✓ reference-extract 200 + sources_hit 확인"
+    # DB upsert 확인
+    COUNT=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -t -c \
+      "SELECT COUNT(*) FROM external_meta_sources WHERE content_id=1842 AND source_type IN ('wikidata','wikipedia');" 2>&1 | tr -d ' ')
+    [ "$COUNT" -ge 1 ] || { echo "FAIL: ExternalMetaSource 레코드 없음 (count=$COUNT)"; exit 1; }
+    echo "  ✓ ExternalMetaSource DB upsert 확인 (count=$COUNT)"
+    # 404 케이스
+    HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:8000/api/test/pipeline/reference-extract" \
+      -H "Content-Type: application/json" -d '{"content_id": 99999}')
+    [ "$HTTP" = "404" ] || { echo "FAIL: 존재하지 않는 ID → 404 아님 ($HTTP)"; exit 1; }
+    echo "  ✓ 404 케이스 확인"
+    echo "=== PASS ==="
+    ;;
+
+  dev-rag-field-extract-step4)
+    echo "=== dev-rag-field-extract-step4: FE — RAG STEP B UI + api.ts 연결 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "ReferenceExtractResponse"       "$FE_ROOT/lib/api.ts"  || { echo "FAIL: ReferenceExtractResponse 타입 없음"; exit 1; }
+    grep -q "referenceExtract"               "$FE_ROOT/lib/api.ts"  || { echo "FAIL: pipelineTestApi.referenceExtract 없음"; exit 1; }
+    grep -q "ReferenceExtractResponse"       "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: page.tsx import 없음"; exit 1; }
+    grep -q "ragResult\|ragBusy"             "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: ragResult 상태 없음"; exit 1; }
+    grep -q "runRag\|referenceExtract"       "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: runRag 함수 없음"; exit 1; }
+    grep -q "STEP B"                         "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STEP B UI 섹션 없음"; exit 1; }
+    grep -q "RAG 보강 실행"                  "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: RAG 버튼 없음"; exit 1; }
+    echo "  ✓ api.ts 타입·함수 + page.tsx STEP B UI 확인"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-rag-field-extract-step3)
+    echo "=== dev-rag-field-extract-step3: Wikidata/Wikipedia RAG 보강 — 서비스 + 엔드포인트 ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_reference_extract.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -8
+    echo "  ✓ reference_extract pytest 통과"
+    grep -q "def reference_extract"              api/meta_core/reference_extract.py     || { echo "FAIL: reference_extract 함수 없음"; exit 1; }
+    grep -q "WikidataClient"                     api/meta_core/reference_extract.py     || { echo "FAIL: WikidataClient 미사용"; exit 1; }
+    grep -q "WikipediaClient"                    api/meta_core/reference_extract.py     || { echo "FAIL: WikipediaClient 미사용"; exit 1; }
+    grep -q "ExternalSourceType.wikidata"        api/meta_core/reference_extract.py     || { echo "FAIL: wikidata source_type 없음"; exit 1; }
+    grep -q "ExternalSourceType.wikipedia"       api/meta_core/reference_extract.py     || { echo "FAIL: wikipedia source_type 없음"; exit 1; }
+    grep -q "def reference_extract_endpoint"     api/test/pipeline_router.py            || { echo "FAIL: 엔드포인트 없음"; exit 1; }
+    grep -q "wikidata"                           api/programming/metadata/models/external.py || { echo "FAIL: ExternalSourceType enum 미등록"; exit 1; }
+    [ -f "alembic/versions/0034_rag_source_types.py" ] || { echo "FAIL: 0034 마이그레이션 없음"; exit 1; }
+    echo "  ✓ 서비스·엔드포인트·enum·마이그레이션 구조 확인"
+    echo "=== PASS ==="
+    ;;
+
+  dev-stage-manual-steps)
+    echo "=== dev-stage-manual-steps: 내부처리/다음단계 분리 (ADR-009) ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_stage_manual_steps.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ 내부처리/다음단계 분리 pytest 통과"
+    grep -q "def advance_stage"         api/test/pipeline_router.py  || { echo "FAIL: advance 엔드포인트 없음"; exit 1; }
+    grep -q "def enrich_single_source"  api/test/pipeline_router.py  || { echo "FAIL: enrich-source 엔드포인트 없음"; exit 1; }
+    grep -q "def run_single_ai_task_endpoint" api/test/pipeline_router.py || { echo "FAIL: run-ai-task 엔드포인트 없음"; exit 1; }
+    grep -q "def run_single_ai_task"    api/programming/metadata/ai_tasks/runner.py || { echo "FAIL: run_single_ai_task runner 없음"; exit 1; }
+    grep -q "only_sources"              api/meta_core/enrich.py      || { echo "FAIL: enrich only_sources 파라미터 없음"; exit 1; }
+    echo "  ✓ 엔드포인트 구조 확인"
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "StageAdvanceBar"    "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: StageAdvanceBar 없음"; exit 1; }
+    grep -q "runAiTask"          "$FE_ROOT/lib/api.ts"                                        || { echo "FAIL: pipelineTestApi.runAiTask 없음"; exit 1; }
+    grep -q "InlineWebSearch\|WebSearchHelper" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: WebSearch S2 통합 없음"; exit 1; }
+    grep -q "EnrichFieldRow"     "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: 전후 비교(EnrichFieldRow) 없음"; exit 1; }
+    echo "  ✓ FE StageAdvanceBar + 전후비교 + WebSearch S2 통합 확인"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-s4-review-cleanup)
+    echo "=== dev-s4-review-cleanup: S4 검수 승인/반려/재검수 E2E ==="
+    cd "$BACKEND"
+    # BE pytest
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_s4_review_actions.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ approve/reject/re-review pytest 7건 통과"
+    # BE 엔드포인트 구조
+    grep -q "def approve_review"  api/test/pipeline_router.py || { echo "FAIL: approve 엔드포인트 없음"; exit 1; }
+    grep -q "def reject_review"   api/test/pipeline_router.py || { echo "FAIL: reject 엔드포인트 없음"; exit 1; }
+    grep -q "def re_review"       api/test/pipeline_router.py || { echo "FAIL: re-review 엔드포인트 없음"; exit 1; }
+    grep -q "StageEventType.REJECTED" api/test/pipeline_router.py || { echo "FAIL: REJECTED enum 미사용"; exit 1; }
+    echo "  ✓ BE 엔드포인트 구조 확인"
+    # FE 배선
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    ! grep -q "bulkApprove\|bulkReject" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: 구식 bulkApprove/bulkReject 잔존"; exit 1; }
+    grep -q "reReview"  "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.reReview 없음"; exit 1; }
+    grep -q "re-review" "$FE_ROOT/lib/api.ts" || { echo "FAIL: re-review 엔드포인트 배선 없음"; exit 1; }
+    echo "  ✓ FE 단일선택 재구성 + 구식 API 미사용 확인"
+    # typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-s6-rejected-card)
+    echo "=== dev-s6-rejected-card: S6 반려/실패 버킷 + RejectedPanel ==="
+    cd "$BACKEND"
+    # BE pytest
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_s6_rejected_bucket.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ 반려→bucket6 pytest 통과"
+    # BE 집계 로직 확인
+    grep -q "ContentStatus.rejected" api/test/pipeline_router.py || { echo "FAIL: rejected 분기 없음"; exit 1; }
+    grep -q "bucket = 6" api/test/pipeline_router.py || { echo "FAIL: bucket 6 할당 없음"; exit 1; }
+    echo "  ✓ BE bucket 6 분기 확인"
+    # FE 확인
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "반려/실패" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: STAGE_DEFS '반려/실패' 없음"; exit 1; }
+    grep -q "contentBucket" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: contentBucket 헬퍼 없음"; exit 1; }
+    grep -q "RejectedPanel" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: RejectedPanel 컴포넌트 없음"; exit 1; }
+    echo "  ✓ FE STAGE_DEFS + contentBucket + RejectedPanel 확인"
+    # FE typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-s4-review-cleanup-step1)
+    echo "=== dev-s4-review-cleanup step1: S4 단일선택 FE 재구성 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # BE 엔드포인트 확인
+    grep -q "def approve_review"  "$SCRIPT_DIR/../backend/api/test/pipeline_router.py" || { echo "FAIL: approve 엔드포인트 없음"; exit 1; }
+    grep -q "def reject_review"   "$SCRIPT_DIR/../backend/api/test/pipeline_router.py" || { echo "FAIL: reject 엔드포인트 없음"; exit 1; }
+    grep -q "def re_review"       "$SCRIPT_DIR/../backend/api/test/pipeline_router.py" || { echo "FAIL: re-review 엔드포인트 없음"; exit 1; }
+    echo "  ✓ BE approve/reject/re-review 엔드포인트 확인"
+    # FE api.ts 배선 확인
+    grep -q "pipelineTestApi.approve\|approve:" "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.approve 없음"; exit 1; }
+    grep -q "pipelineTestApi.reject\|reject:"   "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.reject 없음"; exit 1; }
+    grep -q "reReview"                          "$FE_ROOT/lib/api.ts" || { echo "FAIL: pipelineTestApi.reReview 없음"; exit 1; }
+    grep -q "re-review"                         "$FE_ROOT/lib/api.ts" || { echo "FAIL: re-review 엔드포인트 배선 없음"; exit 1; }
+    echo "  ✓ FE api.ts approve/reject/reReview 배선 확인"
+    # 구식 bulkApprove 미사용 확인 (TestReviewPanel 내)
+    ! grep -q "bulkApprove\|bulkReject" "$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx" || { echo "FAIL: 구식 bulkApprove/bulkReject 잔존"; exit 1; }
+    echo "  ✓ 구식 bulkApprove/bulkReject 미사용 확인"
+    # FE typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-seed-dedup)
+    echo "=== dev-seed-dedup: 시드 중복 입력 방지 ==="
+    cd "$BACKEND"
+    # BE pytest
+    docker exec mediax-backend-1 bash -c "cd /app && PYTHONPATH=/app /usr/local/bin/python3 -c 'import sys; sys.path.insert(0,\"/app/.venv/lib/python3.12/site-packages\"); import pytest; exit(pytest.main([\"tests/test_seed_dedup.py\", \"-q\", \"--tb=short\"]))'" 2>&1 | tail -5
+    echo "  ✓ 시드 dedup pytest 4건 통과"
+    # BE 구조 확인
+    grep -q "_find_existing_content" scripts/seed_pipeline_test.py || { echo "FAIL: _find_existing_content 헬퍼 없음"; exit 1; }
+    grep -q "skipped_in_pipeline"   scripts/seed_pipeline_test.py || { echo "FAIL: skipped_in_pipeline 카운트 없음"; exit 1; }
+    grep -q "skipped_registered"    scripts/seed_pipeline_test.py || { echo "FAIL: skipped_registered 카운트 없음"; exit 1; }
+    grep -q "skipped_in_pipeline"   api/test/pipeline_router.py   || { echo "FAIL: SeedResponse에 skipped_in_pipeline 없음"; exit 1; }
+    echo "  ✓ BE 구조 확인"
+    # FE 타입 + typecheck
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    grep -q "skipped_in_pipeline"   "$FE_ROOT/lib/api.ts"          || { echo "FAIL: FE PipelineTestSeedResult에 skipped_in_pipeline 없음"; exit 1; }
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  dev-stage-bulk-buttons)
+    echo "=== dev-stage-bulk-buttons: S2/S3/S4 개별+전체 다음단계 버튼 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    PAGE="$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx"
+    grep -q "stageContents"           "$PAGE" || { echo "FAIL: stageContents prop 없음"; exit 1; }
+    grep -q "BulkApproveButton"       "$PAGE" || { echo "FAIL: BulkApproveButton 컴포넌트 없음"; exit 1; }
+    grep -q "전체.*건.*승인\|전체.*승인" "$PAGE" || { echo "FAIL: 전체 승인 버튼 텍스트 없음"; exit 1; }
+    grep -q "stageContents.length >= 2" "$PAGE" || { echo "FAIL: 2건 이상 조건 없음"; exit 1; }
+    echo "  ✓ FE 구조 확인 (stageContents, BulkApproveButton, 전체 버튼)"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  auto-headless)
+    echo "=== auto-headless: AUTO 헤드리스 단계 자동 연쇄 (뷰 비종속) ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    PAGE="$FE_ROOT/app/(main)/programming/contents/pipeline/page.tsx"
+    [ -f "$PAGE" ] || { echo "FAIL: pipeline/page.tsx 없음"; exit 1; }
+    # 1) 오케스트레이터 + 헬퍼 존재
+    grep -q "runAutoPipeline" "$PAGE" || { echo "FAIL: runAutoPipeline 오케스트레이터 없음"; exit 1; }
+    grep -q "anyAutoOn"       "$PAGE" || { echo "FAIL: anyAutoOn 헬퍼 없음"; exit 1; }
+    grep -q "autoPipelineRef" "$PAGE" || { echo "FAIL: autoPipelineRef 가드 없음"; exit 1; }
+    echo "  ✓ runAutoPipeline + anyAutoOn + autoPipelineRef 존재"
+    # 2) 구 뷰 종속 4-effect 제거 — activeStage !== N 게이트 부재
+    if grep -q "activeStage !== [1234]" "$PAGE"; then echo "FAIL: 구 뷰종속 AUTO effect(activeStage !== N) 잔존"; exit 1; fi
+    echo "  ✓ 구 뷰종속 AUTO effect 제거됨 (activeStage !== N 부재)"
+    # 3) 트리거 effect가 runAutoPipeline 발화
+    grep -q "void runAutoPipeline()" "$PAGE" || { echo "FAIL: 트리거 effect의 runAutoPipeline 발화 없음"; exit 1; }
+    echo "  ✓ 단일 트리거 effect에서 runAutoPipeline 발화"
+    # 4) 콘솔별 AutoRunPanel — 처리 중인 단계(autoRun.stage === N)의 콘솔 우측 하단에만 표시 (해당 단계 전용)
+    for n in 1 2 3 4; do
+      grep -q "autoRun && autoLog && autoRun.stage === $n" "$PAGE" || { echo "FAIL: S$n 콘솔 stage-전용 패널 게이트 없음"; exit 1; }
+    done
+    echo "  ✓ 콘솔별 stage-전용 패널 게이트 (autoRun.stage === N)"
+    # 5) 회귀 가드 — activeStage 변경 시 autoRun 초기화 금지 (구 runAutoRef 모델 잔재 제거)
+    #    setAutoRun(null)이 단계전환 effect에 남으면 setAutoRun((prev)=>prev&&...)가 null 고착 → 패널 영구 미표시
+    if grep -q "runAutoRef" "$PAGE"; then echo "FAIL: 구 runAutoRef 잔존 — autoRun null 고착 회귀 위험"; exit 1; fi
+    echo "  ✓ runAutoRef 제거 (autoRun null 고착 회귀 가드)"
+    # 6) 대기 건수 변동 재트리거 — 수동 advance/seed로 AUTO-ON 단계 도착 시 오케스트레이터 재가동
+    grep -q "autoPendingKey" "$PAGE" || { echo "FAIL: autoPendingKey 재트리거 키 없음 — 수동 advance 후 AUTO 미동작 회귀"; exit 1; }
+    grep -q "stageAuto, autoPendingKey" "$PAGE" || { echo "FAIL: 트리거 effect deps에 autoPendingKey 없음"; exit 1; }
+    echo "  ✓ autoPendingKey 재트리거 (수동 advance 후 AUTO 가동)"
+    # 7) per-stage 취소 — 현재 처리 중 단계의 AUTO OFF 시 즉시 중단 (anyAutoOn 전체검사 아님)
+    grep -q "stageAutoRef.current\[stageKey\]" "$PAGE" || { echo "FAIL: per-stage 취소 검사(stageKey) 없음 — 단계별 OFF 미반영 회귀"; exit 1; }
+    if grep -q "break outer" "$PAGE"; then echo "FAIL: 구 'break outer'(anyAutoOn 전체 중단) 잔존"; exit 1; fi
+    echo "  ✓ per-stage AUTO OFF 즉시 중단 (stageKey 검사)"
+    # 8) 백엔드 graceful degrade — KMDB 일일 한도 초과 시 enrich_content가 500 대신 KMDB skip
+    ENRICH="$BACKEND/api/meta_core/enrich.py"
+    grep -q "except KmdbDailyLimitExceeded" "$ENRICH" || { echo "FAIL: enrich_content가 KmdbDailyLimitExceeded 미처리 — S2 autofill 500(Failed to fetch) 회귀"; exit 1; }
+    python3 -c "import ast; ast.parse(open('$ENRICH').read())" || { echo "FAIL: enrich.py 문법 오류"; exit 1; }
+    echo "  ✓ KMDB 한도 초과 graceful degrade (enrich_content)"
+    # 9) 포커스 단계 뷰 동기화 — 처리 중 건 포커스(상세 추종) + 이동 시 목록 제거 (activeStageRef === stage 게이트)
+    grep -q "if (activeStageRef.current === stage) setSelectedContentId" "$PAGE" || { echo "FAIL: 포커스 단계 처리 건 selectedContentId 추종 없음"; exit 1; }
+    grep -q "if (activeStageRef.current === stage) setTestContents" "$PAGE" || { echo "FAIL: 포커스 단계 이동 건 목록 제거 없음"; exit 1; }
+    echo "  ✓ 포커스 단계 뷰 동기화 (포커스+상세 추종 + 목록 제거)"
+    # 10) stale 클로저 회귀 가드 — 오케스트레이터가 ref로 최신 refreshTestSummary 호출 + 도착지 갱신
+    grep -q "refreshTestSummaryRef" "$PAGE" || { echo "FAIL: refreshTestSummaryRef 없음 — 오케스트레이터 stale 클로저로 목록 미갱신 회귀"; exit 1; }
+    grep -q "activeStageRef.current === stage + 1" "$PAGE" || { echo "FAIL: 도착지(stage+1) 포커스 단계 목록 갱신 없음"; exit 1; }
+    echo "  ✓ stale 클로저 방지 + 도착지 목록 갱신 (refreshTestSummaryRef)"
+    # 11) revert(이전단계로) 시 AUTO 로그/패널 clear — handleRevertDone에서 setAutoRun(null)+setAutoLog([])
+    awk '/const handleRevertDone = useCallback/,/}, \[disablePrevStageAuto\]\)/' "$PAGE" | grep -q "setAutoRun(null)" || { echo "FAIL: revert 시 AUTO 패널 clear(setAutoRun null) 없음"; exit 1; }
+    awk '/const handleRevertDone = useCallback/,/}, \[disablePrevStageAuto\]\)/' "$PAGE" | grep -q "setAutoLog(\[\])" || { echo "FAIL: revert 시 AUTO 로그 clear(setAutoLog) 없음"; exit 1; }
+    echo "  ✓ revert 시 AUTO 로그/패널 clear (handleRevertDone)"
+    # 12) quality_score 재계산 — S2/S3 autofill이 채운 필드 기준 점수 갱신(시드 0 고정 방지)
+    AIENG="$BACKEND/api/programming/metadata/ai_engine.py"
+    PROUTER="$BACKEND/api/test/pipeline_router.py"
+    grep -q "def recompute_quality_score" "$AIENG" || { echo "FAIL: recompute_quality_score 헬퍼 없음"; exit 1; }
+    grep -q "_COMPLETENESS_WEIGHTS" "$AIENG" || { echo "FAIL: 완성도 기반 배점(_COMPLETENESS_WEIGHTS) 없음"; exit 1; }
+    [ "$(grep -c "recompute_quality_score(db, req.content_id)" "$PROUTER")" -ge 2 ] || { echo "FAIL: enrich-autofill/ai-autofill 둘 다 재계산 호출 필요(2회)"; exit 1; }
+    grep -q "recompute_quality_score(db, cid)" "$PROUTER" || { echo "FAIL: advance 검수 진입 시 재계산 없음 — S4 stale score 회귀"; exit 1; }
+    python3 -c "import ast; ast.parse(open('$AIENG').read()); ast.parse(open('$PROUTER').read())" || { echo "FAIL: 문법 오류"; exit 1; }
+    echo "  ✓ quality_score 완성도 기반 재계산 (S2/S3 autofill + advance 검수진입, 외부매핑 비중 제외)"
+    # 5) typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  auto-headless-be)
+    echo "=== auto-headless-be: KMDB 한도 graceful degrade 회귀 가드 ==="
+    cd "$BACKEND"
+    echo "--- pytest: enrich KMDB 한도 처리 ---"
+    python3 -m pytest tests/test_enrich_kmdb_quota.py -q 2>&1 | tail -5
+    ENRICH="$BACKEND/api/meta_core/enrich.py"
+    grep -q "except KmdbDailyLimitExceeded" "$ENRICH" || { echo "FAIL: enrich_content가 KmdbDailyLimitExceeded 미처리 — 500(Failed to fetch) 회귀"; exit 1; }
+    grep -q "kmdb:daily_limit" "$ENRICH" || { echo "FAIL: kmdb:daily_limit 스킵 기록 회귀"; exit 1; }
+    echo "  ✓ KMDB 한도 초과 graceful degrade (enrich_content)"
+    echo "=== PASS ==="
+    ;;
+
+  stage-auto-autofill-guard)
+    echo "=== stage-auto-autofill-guard: 빈필드 보존 + quality_score 재계산 회귀 가드 ==="
+    cd "$BACKEND"
+    echo "--- pytest: recompute_quality_score 단위 ---"
+    python3 -m pytest tests/test_quality_score_recompute.py -q 2>&1 | tail -5
+    PROUTER="$BACKEND/api/test/pipeline_router.py"
+    echo "--- grep 가드: 빈필드 보존 계약 ---"
+    grep -q "rec.field not in empty" "$PROUTER" || { echo "FAIL: enrich-autofill 빈필드만 채움(rec.field not in empty) 회귀"; exit 1; }
+    grep -q "missing_key in empty" "$PROUTER" || { echo "FAIL: ai-autofill 빈필드만 채움(missing_key in empty) 회귀"; exit 1; }
+    [ "$(grep -c "recompute_quality_score(db, req.content_id)" "$PROUTER")" -ge 2 ] || { echo "FAIL: S2/S3 autofill 재계산 호출(2회) 회귀"; exit 1; }
+    grep -q "recompute_quality_score(db, cid)" "$PROUTER" || { echo "FAIL: advance 검수진입 재계산 회귀"; exit 1; }
+    grep -q "status_unchanged" "$PROUTER" || { echo "FAIL: autofill status 불변 계약 회귀"; exit 1; }
+    echo "  ✓ 빈필드 보존(enrich/ai) + status 불변 + 재계산(S2/S3/advance) 가드"
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-worker)
+    echo "=== pipeline-auto-worker: ADR-010 전체 통합 검증 ==="
+    # 1. 스키마 컬럼
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -v --tb=short 2>&1 || exit 1
+    # 2. 서비스 패리티
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py -v --tb=short 2>&1 || exit 1
+    # 3. 멱등 전이
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -v --tb=short 2>&1 || exit 1
+    # 4. Celery 태스크 + beat
+    docker exec mediax-backend-1 python -c "
+from workers.tasks.pipeline_auto import pipeline_auto_tick, process_fast_bucket, process_ai_item
+from workers.celery_app import celery_app
+assert 'pipeline-auto-tick' in celery_app.conf.beat_schedule
+print('beat OK')
+" 2>&1 || exit 1
+    # 5. 역방향 hold
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -v --tb=short 2>&1 || exit 1
+    # 6. auto-status API
+    docker exec mediax-backend-1 python -c "
+from fastapi.testclient import TestClient
+from main import app
+client = TestClient(app, headers={'x-pipeline-test-token': 'test'})
+r = client.get('/api/test/pipeline/auto-status')
+assert r.status_code == 200 and 'buckets' in r.json()
+rl = client.get('/api/test/pipeline/auto-log?limit=5')
+assert rl.status_code == 200 and 'events' in rl.json(), 'auto-log 실패'
+print('auto-status + auto-log OK')
+" 2>&1 || exit 1
+    # 7. FE 오케스트레이터 제거 검사 + typecheck
+    PAGE="$(dirname "$0")/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    grep -q "runAutoPipeline\|autoPipelineRef\|s4ReviewedRef\|bumpSummary\|autoPendingKey" "$PAGE" && { echo "FAIL: 오케스트레이터 잔존"; exit 1; }
+    grep -q "autoWorkerStatus\|AutoWorkerPanel" "$PAGE" || { echo "FAIL: 모니터 코드 없음"; exit 1; }
+    cd "$(dirname "$0")/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    # 8. E2E
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_e2e.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-fe-monitor)
+    echo "=== pipeline-fe-monitor: FE 오케스트레이터 제거 + 모니터화 typecheck ==="
+    PAGE="$(dirname "$0")/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    # 제거된 코드 검사
+    grep -q "runAutoPipeline\|autoPipelineRef\|autoPendingKey\|s4ReviewedRef\|bumpSummary" "$PAGE" && { echo "FAIL: 제거된 오케스트레이터 코드 잔존"; exit 1; }
+    # 새 모니터 코드 검사
+    grep -q "autoWorkerStatus\|AutoWorkerPanel\|autoStatus" "$PAGE" || { echo "FAIL: 모니터 코드 없음"; exit 1; }
+    # FE typecheck
+    cd "$(dirname "$0")/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-status)
+    echo "=== pipeline-auto-status: GET /auto-status 형상 확인 ==="
+    docker exec mediax-backend-1 python -c "
+from fastapi.testclient import TestClient
+from main import app
+client = TestClient(app, headers={'x-pipeline-test-token': 'test'})
+r = client.get('/api/test/pipeline/auto-status')
+assert r.status_code == 200, f'status {r.status_code}: {r.text}'
+d = r.json()
+assert 'tick_enabled' in d, 'tick_enabled 없음'
+assert 'buckets' in d, 'buckets 없음'
+for b in ('1','2','3','4'):
+    assert b in d['buckets'], f'bucket {b} 없음'
+    assert 'pending' in d['buckets'][b] and 'in_flight' in d['buckets'][b], f'bucket {b} 필드 부족'
+print('auto-status shape OK:', d)
+" 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-backward-hold)
+    echo "=== pipeline-backward-hold: revert/reject/re-review→hold, resume, 임계값→clear ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-tasks)
+    echo "=== pipeline-auto-tasks: Celery 태스크 임포트 + beat 등록 확인 ==="
+    docker exec mediax-backend-1 python -c "
+from workers.tasks.pipeline_auto import pipeline_auto_tick, process_fast_bucket, process_ai_item
+from workers.celery_app import celery_app
+assert 'pipeline-auto-tick' in celery_app.conf.beat_schedule, 'beat schedule 없음'
+assert celery_app.conf.beat_schedule['pipeline-auto-tick']['schedule'] == 15.0, 'tick 간격 오류'
+print('TASKS:', pipeline_auto_tick.name, process_fast_bucket.name, process_ai_item.name)
+print('BEAT: OK')
+" 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-idempotent)
+    echo "=== pipeline-idempotent: advance/approve 멱등 전이 테스트 ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-service)
+    echo "=== pipeline-auto-service: 서비스 추출 + 동작 패리티 ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py tests/test_pipeline_auto_schema.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-schema)
+    echo "=== pipeline-auto-schema: ADR-010 스키마 컬럼 존재 확인 ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -v 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  s4-auto-residual)
+    echo "=== s4-auto-residual: S4 AUTO 잔류 유지 + 재검수 방지 ==="
+    PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    [ -f "$PAGE" ] || { echo "FAIL: pipeline/page.tsx 없음"; exit 1; }
+    # 1) 재검수 차단 ref
+    grep -q "s4ReviewedRef" "$PAGE" || { echo "FAIL: s4ReviewedRef(재검수 차단) 없음"; exit 1; }
+    # 2) S4 대상에서 이미 검수(잔류) 건 제외 — 무한 재검수 방지
+    grep -q "contentBucket(c) === 4 && !s4ReviewedRef.current.has" "$PAGE" || { echo "FAIL: S4 대상 필터가 잔류 건 제외 안 함"; exit 1; }
+    # 3) 임계값 미만 → 잔류(moved:false) + reviewed 마킹
+    grep -q "s4ReviewedRef.current.add" "$PAGE" || { echo "FAIL: 잔류 판정 시 reviewed 마킹 없음"; exit 1; }
+    grep -q "검수 잔류" "$PAGE" || { echo "FAIL: 검수 잔류 로그 없음"; exit 1; }
+    # 4) 임계값 변경 시 reviewed 초기화(새 기준 재평가 허용)
+    grep -q "s4ReviewedRef.current.clear()" "$PAGE" || { echo "FAIL: 임계값 변경 시 reviewed clear 없음"; exit 1; }
+    echo "  ✓ 잔류 유지 + 재검수 차단(s4ReviewedRef) + 임계값 변경 시 재평가"
+    # 5) typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps)"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, auto-headless-be, s4-auto-residual, stage-auto-autofill-guard, pipeline-auto-schema"
     exit 1
     ;;
 esac

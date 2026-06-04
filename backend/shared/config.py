@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # Ollama
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.2:3b"
+    # AI Task(번역/요약/분류) 전용 경량 instruct 모델 — reasoning 모델(qwen3) 회피
+    OLLAMA_TASK_MODEL: str = "qwen2.5:3b"
 
     # Multi-provider LLM
     AI_ENGINE: str = "gemini"      # gemini | groq | ollama

@@ -47,7 +47,9 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    # 컨테이너 기동 시 DB 마이그레이션을 먼저 적용(멱등) — 모델-DB 스키마 괴리로 인한
+    # "column does not exist" 재발 차단. 이미 head면 no-op.
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./backend:/app
     ports:
@@ -72,7 +74,29 @@ services:
   worker:
     build: ./backend
     restart: unless-stopped
-    command: celery -A workers.celery_app worker --loglevel=info -Q design.high,design.normal,design.brand_check,design.cdn,ingest,analytics,metadata
+    command: celery -A workers.celery_app worker --loglevel=info -Q design.high,design.normal,design.brand_check,design.cdn,ingest,analytics,metadata,pipeline_fast
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONPATH=/app
+      - TZ=Asia/Seoul
+    # backend가 마이그레이션을 끝내고 healthy가 된 뒤에 기동 — worker가 옛 스키마로
+    # 쿼리하는 타이밍 race 제거.
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      backend:
+        condition: service_healthy
+
+  worker-ai:
+    build: ./backend
+    restart: unless-stopped
+    # ADR-010: AI 단계 전용 워커 — concurrency 2(ai_concurrency 기본값) + pipeline_ai 큐 전용
+    command: celery -A workers.celery_app worker --loglevel=info -Q pipeline_ai --concurrency=2
     volumes:
       - ./backend:/app
     env_file:
@@ -81,8 +105,12 @@ services:
       - PYTHONPATH=/app
       - TZ=Asia/Seoul
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      backend:
+        condition: service_healthy
 
   beat:
     build: ./backend

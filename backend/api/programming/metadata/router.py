@@ -41,6 +41,7 @@ import csv
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from shared.database import get_db
@@ -63,7 +64,7 @@ from api.programming.metadata.schemas import (
     MappedExternalItem, PaginatedMappedItems,
     BulkActionConsolidatedRequest, BulkActionResponse, JobStatusOut,
     UndoActionRequest, UndoActionOut,
-    PromoteAIResultOut, ApplyExternalFieldsRequest,
+    PromoteAIResultOut, ApplyExternalFieldsRequest, ContentAIResultOut,
     ContentChangelogOut, LockFieldsRequest,
     EnrichPreviewRequest, EnrichPreviewOut, BatchPreviewOut, SourceSearchOut, CreateFromSourcesRequest, CreateFromSourcesOut,
     PosterCandidateOut, PosterRecommendResponse, PosterSelectRequest,
@@ -347,9 +348,10 @@ async def batch_upload(
     cp_name: Optional[str] = Form(None),
     created_by: Optional[str] = Form(None),
     dry_run: Optional[bool] = Query(False, description="건강성 검사만 수행 (job 생성 스킵)"),
+    auto_process: Optional[bool] = Query(True, description="False면 AI 처리 큐 등록 스킵 (테스트 콘솔용)"),
     db: Session = Depends(get_db),
 ):
-    """CSV/엑셀 배치 업로드 → 파싱 후 Content(waiting) 생성 + AI 처리 큐 등록"""
+    """CSV/엑셀 배치 업로드 → 파싱 후 Content(raw) 생성. auto_process=True면 AI 처리 큐 등록"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
@@ -487,7 +489,7 @@ async def batch_upload(
     # 비어있는 행 제거
     rows = [r for r in rows if r.get("title")]
 
-    result = service.process_batch_rows(db, job, rows)
+    result = service.process_batch_rows(db, job, rows, auto_process=bool(auto_process))
     db.refresh(job)
     return BatchJobOut.model_validate(job)
 
@@ -1150,14 +1152,16 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
     )
     audit_staging = (
         db.query(ContentAuditLog)
-        .filter(ContentAuditLog.content_id == content_id,
-                ContentAuditLog.new_value.contains("staging"))
+        .filter(
+            ContentAuditLog.content_id == content_id,
+            ContentAuditLog.new_value.in_(["ai", "staging"]),  # staging: pre-migration records
+        )
         .order_by(ContentAuditLog.at)
         .first()
     )
 
     STATUS_ORDER = [
-        ContentStatus.waiting, ContentStatus.processing, ContentStatus.staging,
+        ContentStatus.raw, ContentStatus.enriched, ContentStatus.ai,
         ContentStatus.review, ContentStatus.approved, ContentStatus.rejected,
     ]
     current = c.status
@@ -1171,7 +1175,7 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
         if stage_idx == 0:
             return "done"
         STAGE_STATUSES = {
-            1: [ContentStatus.staging, ContentStatus.review,
+            1: [ContentStatus.ai, ContentStatus.review,
                 ContentStatus.approved, ContentStatus.rejected],
             2: [ContentStatus.review, ContentStatus.approved, ContentStatus.rejected],
             3: [ContentStatus.approved, ContentStatus.rejected],
@@ -1187,9 +1191,9 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
 
     def _current_stage_idx() -> int:
         mapping = {
-            ContentStatus.waiting: 0,
-            ContentStatus.processing: 1,
-            ContentStatus.staging: 3,
+            ContentStatus.raw: 0,
+            ContentStatus.enriched: 1,
+            ContentStatus.ai: 3,
             ContentStatus.review: 3,
             ContentStatus.approved: 4,
             ContentStatus.rejected: 4,
@@ -1255,3 +1259,241 @@ def api_get_timeline(content_id: int, db: Session = Depends(get_db)):
         "intake_channel": c.intake_channel.value if c.intake_channel else None,
         "pipeline_stages": [s.model_dump() for s in pipeline_stages],
     }
+
+
+# ── AI Task 설정 (ADR-007 B4) ─────────────────────────────
+
+@router.get("/ai-tasks/settings", summary="AI Task 항목별 on/off 설정 조회")
+def get_ai_task_settings(db: Session = Depends(get_db)):
+    """등록된 모든 AI Task의 enabled 설정을 반환. DB에 없는 task는 기본값 True."""
+    from api.programming.metadata.models.external import AiTaskSetting
+    from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+
+    db_settings = {
+        row.task_name: row.enabled
+        for row in db.query(AiTaskSetting).all()
+    }
+    return [
+        {
+            "task_name": name,
+            "enabled": db_settings.get(name, True),
+        }
+        for name in AI_TASK_REGISTRY
+    ]
+
+
+@router.patch("/ai-tasks/settings/{task_name}", summary="AI Task on/off 토글")
+def patch_ai_task_setting(task_name: str, enabled: bool, db: Session = Depends(get_db)):
+    """특정 AI Task의 enabled 설정을 변경. DB에 없으면 신규 생성."""
+    from api.programming.metadata.models.external import AiTaskSetting
+    from api.programming.metadata.ai_tasks import AI_TASK_REGISTRY
+
+    if task_name not in AI_TASK_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"AI Task '{task_name}' not found")
+
+    setting = db.query(AiTaskSetting).filter(AiTaskSetting.task_name == task_name).first()
+    if setting:
+        setting.enabled = enabled
+    else:
+        setting = AiTaskSetting(task_name=task_name, enabled=enabled)
+        db.add(setting)
+    db.commit()
+    return {"task_name": task_name, "enabled": enabled}
+
+
+# ── AI 처리 결과 조회 ─────────────────────────────────────────────────
+
+@router.get("/contents/{content_id}/ai-results", response_model=list[ContentAIResultOut], summary="AI 처리 결과 조회")
+def get_ai_results(content_id: int, db: Session = Depends(get_db)):
+    """특정 콘텐츠의 AI 처리 결과 목록 (최신순)"""
+    from api.programming.metadata.models.external import ContentAIResult
+
+    results = db.query(ContentAIResult).filter(
+        ContentAIResult.content_id == content_id
+    ).order_by(ContentAIResult.processed_at.desc()).all()
+    return results
+
+
+@router.post("/test/pipeline/process-ai", response_model=BulkActionResponse, summary="AI 처리 일괄 트리거")
+def trigger_process_ai(req: BulkActionConsolidatedRequest, db: Session = Depends(get_db)):
+    """TEST_PIPELINE enriched 상태 콘텐츠 AI 처리 (Celery)"""
+    from api.programming.metadata.models import Content
+    from workers.tasks.ai_processing import process_content_ai_task
+
+    if not req.ids:
+        return BulkActionResponse(job_id="", ids_accepted=0, ids_rejected=0)
+
+    contents = db.query(Content).filter(Content.id.in_(req.ids)).all()
+    if not contents:
+        raise HTTPException(status_code=404, detail="No contents found")
+
+    job_id = f"bulk_ai_{len(req.ids)}_{int(datetime.utcnow().timestamp())}"
+    accepted, rejected = 0, 0
+
+    for content in contents:
+        if content.status.value == "enriched":
+            process_content_ai_task.delay(content.id)
+            accepted += 1
+        else:
+            rejected += 1
+
+    return BulkActionResponse(
+        job_id=job_id,
+        ids_accepted=accepted,
+        ids_rejected=rejected,
+    )
+
+
+# ── EnrichPolicy (보완 전역 정책) ─────────────────────────────────────────────
+
+class EnrichPolicyOut(BaseModel):
+    use_cache_db: bool
+    confidence_threshold: float
+    use_websearch: bool
+    model_config = {"from_attributes": True}
+
+
+class EnrichPolicyPatch(BaseModel):
+    use_cache_db: Optional[bool] = None
+    confidence_threshold: Optional[float] = None
+    use_websearch: Optional[bool] = None
+
+
+@router.get("/ai-tasks/enrich-policy", response_model=EnrichPolicyOut, summary="보완 전역 정책 조회")
+def get_enrich_policy_route(db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import EnrichPolicy
+    row = db.query(EnrichPolicy).filter(EnrichPolicy.id == 1).first()
+    if not row:
+        return EnrichPolicyOut(use_cache_db=False, confidence_threshold=0.90, use_websearch=False)
+    return row
+
+
+@router.patch("/ai-tasks/enrich-policy", response_model=EnrichPolicyOut, summary="보완 전역 정책 수정")
+def patch_enrich_policy_route(body: EnrichPolicyPatch, db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import EnrichPolicy
+    row = db.query(EnrichPolicy).filter(EnrichPolicy.id == 1).first()
+    if not row:
+        row = EnrichPolicy(id=1)
+        db.add(row)
+    if body.use_cache_db is not None:
+        row.use_cache_db = body.use_cache_db
+    if body.confidence_threshold is not None:
+        if not (0.0 <= body.confidence_threshold <= 1.0):
+            raise HTTPException(status_code=422, detail="confidence_threshold must be 0.0~1.0")
+        row.confidence_threshold = body.confidence_threshold
+    if body.use_websearch is not None:
+        row.use_websearch = body.use_websearch
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ── StageAutoPolicy (단계별 자동 실행 정책) ───────────────────────────────────
+
+class StageAutoPolicyOut(BaseModel):
+    s1_auto: bool; s2_auto: bool; s3_auto: bool
+    s4_auto: bool; s5_auto: bool; s6_auto: bool
+    s4_quality_threshold: float
+    # ADR-010 워커 제어 필드
+    auto_tick_enabled: bool = True
+    batch_size: int = 20
+    ai_concurrency: int = 2
+    ai_visibility_timeout: int = 600
+    model_config = {"from_attributes": True}
+
+
+class StageAutoPolicyPatch(BaseModel):
+    s1_auto: Optional[bool] = None; s2_auto: Optional[bool] = None
+    s3_auto: Optional[bool] = None; s4_auto: Optional[bool] = None
+    s5_auto: Optional[bool] = None; s6_auto: Optional[bool] = None
+    s4_quality_threshold: Optional[float] = None
+    # ADR-010 워커 제어 필드
+    auto_tick_enabled: Optional[bool] = None
+    batch_size: Optional[int] = None
+    ai_concurrency: Optional[int] = None
+    ai_visibility_timeout: Optional[int] = None
+
+
+@router.get("/ai-tasks/stage-auto-policy", response_model=StageAutoPolicyOut, summary="단계별 자동 실행 정책 조회")
+def get_stage_auto_policy_route(db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import StageAutoPolicy
+    row = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not row:
+        return StageAutoPolicyOut(s1_auto=False, s2_auto=False, s3_auto=False,
+                                  s4_auto=False, s5_auto=False, s6_auto=False,
+                                  s4_quality_threshold=90.0)
+    return row
+
+
+@router.patch("/ai-tasks/stage-auto-policy", response_model=StageAutoPolicyOut, summary="단계별 자동 실행 정책 수정")
+def patch_stage_auto_policy_route(body: StageAutoPolicyPatch, db: Session = Depends(get_db)):
+    from api.programming.metadata.models.external import StageAutoPolicy
+    row = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not row:
+        row = StageAutoPolicy(id=1)
+        db.add(row)
+    old_threshold = row.s4_quality_threshold
+    for field in ("s1_auto", "s2_auto", "s3_auto", "s4_auto", "s5_auto", "s6_auto",
+                  "s4_quality_threshold",
+                  "auto_tick_enabled", "batch_size", "ai_concurrency", "ai_visibility_timeout"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(row, field, val)
+    # 임계값 변경 시 S4 잔류 마킹 초기화 → 새 기준으로 재평가 허용 (ADR-010)
+    if body.s4_quality_threshold is not None and body.s4_quality_threshold != old_threshold:
+        from api.programming.metadata.models.content import Content
+        db.query(Content).filter(
+            Content.auto_review_skipped_at.isnot(None),
+            Content.is_deleted.is_(False),
+        ).update({"auto_review_skipped_at": None}, synchronize_session=False)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ── WebSearch 수동 검색 헬퍼 ──────────────────────────────────────────────────
+
+class WebSearchQueryRequest(BaseModel):
+    query: str
+    num: int = 6
+
+
+class WebSearchResultItem(BaseModel):
+    title: str
+    url: str
+    domain: str
+    snippet: str
+    provider: str
+
+
+@router.post("/ai-tasks/websearch-query", response_model=list[WebSearchResultItem],
+             summary="보완 수동 웹검색 헬퍼")
+async def post_websearch_query(body: WebSearchQueryRequest, db: Session = Depends(get_db)):
+    from api.meta_core.web_search import search_with_fallback
+    from api.meta_core.web_search.errors import BulkQuotaError, QuotaExhaustedError
+    from api.programming.metadata.service_bulk import get_enrich_policy
+    import urllib.parse
+
+    policy = get_enrich_policy(db)
+    if not policy["use_websearch"]:
+        raise HTTPException(status_code=403, detail="websearch-disabled: use_websearch 정책이 off 상태입니다")
+
+    query = body.query.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="query is required")
+
+    try:
+        results, provider = await search_with_fallback(query, db, num=body.num)
+    except (BulkQuotaError, QuotaExhaustedError) as e:
+        raise HTTPException(status_code=429, detail=f"quota-exhausted: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"websearch failed: {e}")
+
+    items = []
+    for r in results:
+        domain = getattr(r, "source_domain", None) or urllib.parse.urlparse(r.url).netloc or r.url
+        items.append(WebSearchResultItem(
+            title=r.title or "", url=r.url or "", domain=domain,
+            snippet=r.snippet or "", provider=provider,
+        ))
+    return items

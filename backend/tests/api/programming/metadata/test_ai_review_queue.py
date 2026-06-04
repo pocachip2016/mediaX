@@ -155,7 +155,7 @@ def _make_content(db, title: str) -> Content:
         title=title,
         content_type=ContentType.movie,
         cp_name="TestCP",
-        status=ContentStatus.waiting,
+        status=ContentStatus.raw,
     )
     db.add(c)
     db.flush()
@@ -411,7 +411,7 @@ def test_endpoint_query_params_passthrough(api_client):
         title="conflict-content",
         content_type=ContentType.movie,
         cp_name="TestCP",
-        status=ContentStatus.waiting,
+        status=ContentStatus.raw,
     )
     db.add(c)
     db.commit()

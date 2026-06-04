@@ -27,7 +27,7 @@ def _make_content(db, title="테스트 영화") -> Content:
     c = Content(
         title=title,
         content_type=ContentType.movie,
-        status=ContentStatus.staging,
+        status=ContentStatus.ai,
     )
     db.add(c)
     db.flush()
@@ -158,7 +158,7 @@ def test_batch_returns_all_contents(db):
 
 def test_batch_filter_by_content_type(db):
     _make_content(db, title="영화A")
-    series = Content(title="시리즈A", content_type=ContentType.series, status=ContentStatus.staging)
+    series = Content(title="시리즈A", content_type=ContentType.series, status=ContentStatus.ai)
     db.add(series)
     db.commit()
 
@@ -176,7 +176,7 @@ def test_content_not_found_raises(db):
 def _make_series_with_meta(db, synopsis="A" * 60, genre="드라마", poster_url="http://img/p.jpg"):
     from api.programming.metadata.models.image import ContentImage, ImageType
     series = Content(title="시리즈X", content_type=ContentType.series,
-                     production_year=2023, country="KR", status=ContentStatus.staging)
+                     production_year=2023, country="KR", status=ContentStatus.ai)
     db.add(series); db.flush()
     meta = ContentMetadata(content_id=series.id, cp_synopsis=synopsis,
                            ai_genre_primary=genre, quality_score=0.0)
@@ -191,7 +191,7 @@ def test_episode_gap_excludes_inheritable_fields(db):
     """에피소드가 시리즈 메타(시놉시스/장르/포스터)를 상속받을 수 있으면 해당 갭 미보고."""
     series = _make_series_with_meta(db)
     episode = Content(title="시리즈X E01", content_type=ContentType.episode,
-                      parent_id=series.id, status=ContentStatus.staging)
+                      parent_id=series.id, status=ContentStatus.ai)
     db.add(episode); db.flush()
 
     report = analyze_gap(episode.id, db)
@@ -210,7 +210,7 @@ def test_season_gap_excludes_inheritable_fields(db):
     """시즌도 동일하게 상속 가능 필드 갭 제외."""
     series = _make_series_with_meta(db)
     season = Content(title="시리즈X 시즌1", content_type=ContentType.season,
-                     parent_id=series.id, status=ContentStatus.staging)
+                     parent_id=series.id, status=ContentStatus.ai)
     db.add(season); db.flush()
 
     report = analyze_gap(season.id, db)
@@ -233,7 +233,7 @@ def test_movie_gap_unaffected_by_inheritance(db):
 def test_orphan_episode_still_reports_all_gaps(db):
     """parent 없는 고아 episode 는 상속 불가 → 갭 그대로 보고."""
     episode = Content(title="고아 에피소드", content_type=ContentType.episode,
-                      parent_id=None, status=ContentStatus.staging)
+                      parent_id=None, status=ContentStatus.ai)
     db.add(episode); db.flush()
 
     report = analyze_gap(episode.id, db)

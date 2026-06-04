@@ -26,7 +26,7 @@ def client(db):
 
 @pytest.fixture
 def content(db):
-    obj = Content(title="테스트 영화", content_type="movie", status="waiting")
+    obj = Content(title="테스트 영화", content_type="movie", status="raw")
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -35,7 +35,7 @@ def content(db):
 
 @pytest.fixture
 def content2(db):
-    obj = Content(title="두번째 영화", content_type="movie", status="waiting")
+    obj = Content(title="두번째 영화", content_type="movie", status="raw")
     db.add(obj)
     db.commit()
     db.refresh(obj)

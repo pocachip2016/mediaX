@@ -1,0 +1,28 @@
+{
+  "project": "mediaX",
+  "phase": "dev-stage-auto-autofill",
+  "description": "파이프라인 콘솔 AUTO 모드 완성 — S2(보완)/S3(AI)에서 '빈 필드만 채우는' autofill 엔드포인트 + S4 품질 임계값 기반 자동 승인. dev-stage-manual-steps(ADR-009)의 AUTO 공존 설계를 실제 동작으로 구현. 단발 커밋(a854413)으로 진행된 기존 작업을 stepwise 기록에 사후 동기화.",
+  "status": "completed",
+  "post_hoc": true,
+  "source_commit": "a854413",
+  "decisions": {
+    "autofill_empty_only": "enrich-autofill/ai-autofill은 빈 필드만 채우고 기존값·conflict는 보존, status 불변(내부처리). advance와 분리된 AUTO 보조 액션.",
+    "s2_autofill": "POST /test/pipeline/enrich-autofill {ids} — tmdb+kmdb enrich 후 빈 필드만 채움.",
+    "s3_autofill": "POST /test/pipeline/ai-autofill {ids} — wikidata/wikipedia RAG + recommendations로 빈 필드 채움 + translate/short_synopsis 태스크 실행.",
+    "s4_threshold": "stage_auto_policy.s4_quality_threshold(default 90.0) 추가 + migration 0036 + GET/PATCH 배선. quality_score >= threshold 시 S4 자동 승인.",
+    "seed_recursive_clean": "seed clean_by_ids가 FK 삭제 전 하위(season/episode) id를 재귀 수집하도록 보강.",
+    "fe_auto_run": "AutoRunPanel(progress+log) + runAuto 배치 오케스트레이터. S1~S4 AUTO 자동 발화, S4 threshold modal, revert 시 AUTO OFF.",
+    "verify_gap": "단발 커밋으로 진행되어 전용 pytest/verify.sh 엔트리 미추가. 회귀 가드 부재는 후속 보강 대상."
+  },
+  "steps": [
+    { "step": 0, "name": "be-enrich-autofill", "status": "completed", "summary": "POST /test/pipeline/enrich-autofill — S2 AUTO: tmdb+kmdb enrich 후 빈 필드만 채움(conflict/기존값 보존), status 불변. EnrichAutofillRequest/Response.", "completed_at": "2026-06-02" },
+    { "step": 1, "name": "be-ai-autofill", "status": "completed", "summary": "POST /test/pipeline/ai-autofill — S3 AUTO: wikidata/wikipedia RAG + recs를 빈 필드에 채움 + translate/short_synopsis 태스크, status 불변. AiAutofillRequest/Response.", "completed_at": "2026-06-02" },
+    { "step": 2, "name": "be-s4-quality-threshold", "status": "completed", "summary": "stage_auto_policy.s4_quality_threshold(default 90.0) + migration 0036 + GET/PATCH 배선. DB 0036 적용 확인됨(컬럼 존재).", "completed_at": "2026-06-02" },
+    { "step": 3, "name": "be-seed-recursive-clean", "status": "completed", "summary": "seed clean_by_ids가 FK 삭제 전 하위(season/episode) id 재귀 수집하도록 보강.", "completed_at": "2026-06-02" },
+    { "step": 4, "name": "fe-auto-run-panel", "status": "completed", "summary": "AutoRunPanel(progress+log) + runAuto 배치 오케스트레이터. S1~S4 AUTO 자동 발화, S4 threshold modal, revert 시 AUTO OFF.", "completed_at": "2026-06-02" },
+    { "step": 5, "name": "fe-api-wiring", "status": "completed", "summary": "api.ts enrichAutofill/aiAutofill 함수 + StageAutoPolicy.s4_quality_threshold 타입.", "completed_at": "2026-06-02" }
+  ],
+  "followups_resolved": [
+    "회귀 가드 확보 (2026-06-03): tests/test_quality_score_recompute.py (recompute_quality_score 9케이스, mock 없음) + verify.sh `stage-auto-autofill-guard`(pytest + 빈필드보존/status불변/재계산 grep 가드). empty-only 보존은 monkeypatch pytest 대신 grep 가드로 대체(사용자 결정)."
+  ]
+}

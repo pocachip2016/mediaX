@@ -54,12 +54,14 @@ def record_stage_event(
     )
     db.add(event)
 
-    # current_stage + status 동기 갱신
+    # 두 축 분리(ADR): 위치(current_stage)와 완료(status)를 분리한다.
+    #   - ENTERED/ADVANCED = 위치만 이동(status 불변) — "다음단계로"
+    #   - COMPLETED        = 그 단계 작업 완료 → status 점프 — 명시적 "처리완료"
     content = db.get(Content, content_id)
     if content:
         content.current_stage = stage
         new_status = derive_status_from_stage(stage)
-        if new_status and event_type in (StageEventType.ENTERED, StageEventType.COMPLETED, StageEventType.ADVANCED):
+        if new_status and event_type == StageEventType.COMPLETED:
             content.status = new_status
         if event_type == StageEventType.FAILED and error:
             content.failure_code = FailureCode.SYSTEM_ERROR
@@ -70,13 +72,13 @@ def record_stage_event(
 
 # S3 이후 stage는 status를 바꾸지 않는 것이 많으므로 None 반환
 _STAGE_TO_STATUS: dict[PipelineStage, Optional[ContentStatus]] = {
-    PipelineStage.S1_INTAKE:         ContentStatus.waiting,
-    PipelineStage.S2_NORMALIZE:      ContentStatus.processing,
-    PipelineStage.S3_LLM_EXTRACT:    ContentStatus.processing,
-    PipelineStage.S4_SOURCE_MATCH:   ContentStatus.processing,
-    PipelineStage.S5_GAP_DETECT:     ContentStatus.processing,
-    PipelineStage.S6_WEBSEARCH_FILL: ContentStatus.processing,
-    PipelineStage.S7_STAGING:        ContentStatus.staging,
+    PipelineStage.S1_INTAKE:         ContentStatus.raw,
+    PipelineStage.S2_NORMALIZE:      ContentStatus.enriched,
+    PipelineStage.S3_SOURCE_MATCH:   ContentStatus.enriched,
+    PipelineStage.S4_GAP_DETECT:     ContentStatus.enriched,
+    PipelineStage.S5_WEBSEARCH_FILL: ContentStatus.enriched,
+    PipelineStage.S6_LLM_EXTRACT:    ContentStatus.ai,    # ADR-007: S6(WebSearch) 이후 실행
+    PipelineStage.S7_STAGING:        ContentStatus.ai,
     PipelineStage.S8_REVIEW:         ContentStatus.review,
     PipelineStage.S9_PUBLISH:        ContentStatus.approved,
 }
@@ -99,8 +101,8 @@ def advance_gate(
     # stub: gate_id → next_stage 매핑은 Step 4(board-api)에서 구현
     _GATE_NEXT: dict[str, PipelineStage] = {
         "GATE_1": PipelineStage.S2_NORMALIZE,
-        "GATE_2": PipelineStage.S4_SOURCE_MATCH,
-        "GATE_3": PipelineStage.S6_WEBSEARCH_FILL,
+        "GATE_2": PipelineStage.S3_SOURCE_MATCH,
+        "GATE_3": PipelineStage.S5_WEBSEARCH_FILL,
         "GATE_4": PipelineStage.S7_STAGING,
         "GATE_5": PipelineStage.S8_REVIEW,
         "GATE_6": PipelineStage.S9_PUBLISH,
@@ -124,9 +126,9 @@ def get_gate_pending(db: Session, gate_id: str) -> list[Content]:
     """Gate 대기 중 Content 목록 (Step 4에서 board API와 연결)."""
     _GATE_STAGE: dict[str, PipelineStage] = {
         "GATE_1": PipelineStage.S1_INTAKE,
-        "GATE_2": PipelineStage.S3_LLM_EXTRACT,
-        "GATE_3": PipelineStage.S5_GAP_DETECT,
-        "GATE_4": PipelineStage.S6_WEBSEARCH_FILL,
+        "GATE_2": PipelineStage.S6_LLM_EXTRACT,
+        "GATE_3": PipelineStage.S4_GAP_DETECT,
+        "GATE_4": PipelineStage.S5_WEBSEARCH_FILL,
         "GATE_5": PipelineStage.S7_STAGING,
         "GATE_6": PipelineStage.S8_REVIEW,
     }

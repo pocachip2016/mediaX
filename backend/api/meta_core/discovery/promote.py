@@ -106,7 +106,7 @@ def promote_seed(
         original_title=seed.original_title,
         content_type=seed.content_type or "movie",
         production_year=seed.production_year,
-        status="waiting",
+        status="raw",
     )
     db.add(content)
     db.flush()  # content.id 확보

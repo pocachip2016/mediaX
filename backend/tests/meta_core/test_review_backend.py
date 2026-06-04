@@ -43,7 +43,7 @@ def client(db):
 
 
 def _content(db) -> Content:
-    c = Content(title="기생충", content_type=ContentType.movie, status=ContentStatus.staging)
+    c = Content(title="기생충", content_type=ContentType.movie, status=ContentStatus.ai)
     db.add(c)
     db.flush()
     return c

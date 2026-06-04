@@ -556,15 +556,25 @@ def daily_new_releases(target_date: str | None = None) -> dict:
 
 _TMDB_DAILY_LIMIT = 40_000
 _TMDB_QUOTA_THRESHOLD = 2_000   # 잔여 < 2000이면 스킵 (연도 1개 ≈ 최대 1500 calls)
-_TMDB_BACKFILL_START_YEAR = 1990
+# movie/tv 백필 하한 분리: TV 방송은 1950년 이전 콘텐츠가 사실상 없음 → 빈 run 회피
+_TMDB_MOVIE_BACKFILL_START_YEAR = 1900
+_TMDB_TV_BACKFILL_START_YEAR = 1950
+
+
+def _next_backfill_year(done_years: set[int], start_year: int, current_year: int) -> int | None:
+    """current_year부터 start_year까지 역순으로 첫 미완료 연도 반환 (없으면 None)."""
+    for y in range(current_year, start_year - 1, -1):
+        if y not in done_years:
+            return y
+    return None
 
 
 @celery_app.task(name="workers.tasks.tmdb_cache.tmdb_quota_backfill_tick")
 def tmdb_quota_backfill_tick() -> dict:
-    """매일 08:30 KST Beat — 최신 연도부터 역순으로 미백필 연도 1개 트리거.
+    """매일 08:30 KST Beat — movie/tv 각각 최신 연도부터 역순으로 미백필 연도 1개 트리거.
 
-    - TmdbSyncLog(completed) 기준으로 중복 연도 스킵
-    - movie + tv 모두 완료된 연도만 done으로 간주
+    - TmdbSyncLog(completed) 기준으로 종류별 중복 연도 스킵 (movie/tv 독립 진행)
+    - movie 하한 1900, tv 하한 1950 (TV는 1950년 이전 콘텐츠가 사실상 없음)
     - QuotaManager("tmdb") 잔여 < 2000이면 해당 일 스킵
     """
     from shared.quota_manager import QuotaManager
@@ -604,23 +614,31 @@ def tmdb_quota_backfill_tick() -> dict:
     finally:
         db.close()
 
-    done_years = movie_done & tv_done   # movie + tv 모두 완료된 연도만 done
-
     current_year = date.today().year
-    target_year = None
-    for y in range(current_year, _TMDB_BACKFILL_START_YEAR - 1, -1):
-        if y not in done_years:
-            target_year = y
-            break
+    movie_year = _next_backfill_year(movie_done, _TMDB_MOVIE_BACKFILL_START_YEAR, current_year)
+    tv_year = _next_backfill_year(tv_done, _TMDB_TV_BACKFILL_START_YEAR, current_year)
 
-    if target_year is None:
-        logger.info("[tmdb-tick] 모든 연도(%d~%d) 백필 완료", _TMDB_BACKFILL_START_YEAR, current_year)
+    if movie_year is None and tv_year is None:
+        logger.info(
+            "[tmdb-tick] 모든 연도 백필 완료 (movie %d~%d, tv %d~%d)",
+            _TMDB_MOVIE_BACKFILL_START_YEAR, current_year,
+            _TMDB_TV_BACKFILL_START_YEAR, current_year,
+        )
         return {"skipped": True, "reason": "all_done"}
 
-    logger.info("[tmdb-tick] quota=%d → year=%d 백필 트리거 (movie+tv)", remaining, target_year)
-    backfill_movies.delay(year_from=target_year, year_to=target_year)
-    backfill_tv.delay(year_from=target_year, year_to=target_year)
-    return {"triggered_year": target_year, "remaining": remaining}
+    triggered: dict = {"remaining": remaining}
+    if movie_year is not None:
+        backfill_movies.delay(year_from=movie_year, year_to=movie_year)
+        triggered["movie_year"] = movie_year
+    if tv_year is not None:
+        backfill_tv.delay(year_from=tv_year, year_to=tv_year)
+        triggered["tv_year"] = tv_year
+
+    logger.info(
+        "[tmdb-tick] quota=%d → movie_year=%s tv_year=%s 백필 트리거",
+        remaining, movie_year, tv_year,
+    )
+    return triggered
 
 
 # ── TMDB 포스터 → ContentImage 동기화 ────────────────────────────────────────────

@@ -41,7 +41,7 @@ function flattenItems(items: StagingItem[], depth = 0): FlatRow[] {
 
 function applyFilter(rows: FlatRow[], filter: FilterKey): FlatRow[] {
   if (filter === "all") return rows
-  if (filter === "pending") return rows.filter((r) => r.item.content.status === "staging")
+  if (filter === "pending") return rows.filter((r) => r.item.content.status === "ai")
   if (filter === "inherited") return rows.filter((r) => r.isInherited)
   if (filter === "conflict") return rows.filter((r) => r.hasConflict)
   return rows

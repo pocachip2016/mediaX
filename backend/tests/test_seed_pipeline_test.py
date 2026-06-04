@@ -36,7 +36,7 @@ def test_complete_movies_have_full_metadata(db):
     movies = (
         db.query(Content)
         .filter(Content.cp_name == CP, Content.content_type == ContentType.movie,
-                Content.status == ContentStatus.staging)
+                Content.status == ContentStatus.ai)
         .all()
     )
     # 완전 영화 3 + 충돌 영화 2 = staging 5건
@@ -65,7 +65,7 @@ def test_incomplete_movies_have_empty_fields(db):
     incomplete = (
         db.query(Content)
         .filter(Content.cp_name == CP, Content.content_type == ContentType.movie,
-                Content.status == ContentStatus.waiting)
+                Content.status == ContentStatus.raw)
         .all()
     )
     assert len(incomplete) == 5

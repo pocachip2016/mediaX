@@ -232,6 +232,84 @@ def _calculate_quality_score(
     return round(float(total), 1), breakdown
 
 
+# 기본 메타 완성도 배점 (합 100) — 외부 매핑 성공 여부가 아니라 '핵심 필드가 채워졌는지' 기준
+_COMPLETENESS_WEIGHTS = {
+    "title": 10, "genre": 14, "cast": 12, "director": 12,
+    "country": 10, "production_year": 10, "runtime": 10,
+}  # synopsis(22)는 길이 tier로 별도 가산
+
+
+def recompute_quality_score(db: Session, content_id: int) -> float | None:
+    """콘텐츠의 **기본 메타 필드 완성도**(0~100) 기준으로 quality_score 재계산 → ContentMetadata 갱신.
+
+    설계 원칙: 외부 매핑(TMDB/KOBIS/KMDB) 성공 여부가 아니라 **핵심 메타가 실제로 채워졌는지**가 기준.
+    매핑이 없어도 대부분의 필드가 채워지면 임계값을 통과하도록 완성도 가중치를 둔다.
+    (AI 생성 경로의 _calculate_quality_score(외부매핑 20점 포함)와 다른 축 — 파이프라인 autofill 후 점수화 용도.)
+    score_breakdown은 resolve_metadata가 소스 출처맵으로 사용하므로 건드리지 않고 quality_score만 기록.
+
+    배점(합 100): synopsis 22(길이 tier) / genre 14 / cast 12 / director 12 /
+                  country 10 / production_year 10 / runtime 10 / title 10
+    """
+    from api.programming.metadata.models.content import Content, ContentMetadata
+    from api.programming.metadata.models.person import CreditRole
+
+    content = (
+        db.query(Content)
+        .filter(Content.id == content_id, Content.is_deleted.is_(False))
+        .first()
+    )
+    if not content:
+        return None
+    meta = content.metadata_record
+    if meta is None:
+        meta = ContentMetadata(content_id=content_id, quality_score=0.0)
+        db.add(meta)
+        db.flush()
+
+    w = _COMPLETENESS_WEIGHTS
+    score = 0.0
+
+    if content.title:
+        score += w["title"]
+
+    # synopsis — 길이 tier (최대 22)
+    synopsis = meta.ai_synopsis or meta.cp_synopsis or meta.final_synopsis or meta.synopsis_ko or ""
+    syn_len = len(synopsis)
+    if syn_len >= 200:
+        score += 22
+    elif syn_len >= 100:
+        score += 16
+    elif syn_len >= 50:
+        score += 8
+    elif syn_len > 0:
+        score += 4
+
+    # genre — meta 문자열 또는 ContentGenre 관계 존재
+    if (meta and (meta.final_genre or meta.ai_genre_primary or meta.cp_genre)) or len(content.genres) > 0:
+        score += w["genre"]
+
+    # cast / director — ContentCredit 관계
+    roles = {cc.role for cc in content.credits}
+    if CreditRole.actor in roles:
+        score += w["cast"]
+    if CreditRole.director in roles:
+        score += w["director"]
+
+    # Content 직접 필드
+    if content.country:
+        score += w["country"]
+    if content.production_year:
+        score += w["production_year"]
+    if content.runtime_minutes:
+        score += w["runtime"]
+
+    score = round(score, 1)
+    meta.quality_score = score
+    db.add(meta)
+    db.flush()
+    return score
+
+
 # ── 메타 생성 내부 함수 (엔진명 포함 반환) ─────────────────
 
 async def _generate_metadata_with_engine(
@@ -326,33 +404,79 @@ async def generate_metadata_ollama(
 
 # ── Celery 태스크용 AI 처리 ───────────────────────────────
 
-async def process_content_ai(content_id: int, db: Session):
+def _get_external_data_from_db(
+    content_id: int, db: Session
+) -> tuple[dict | None, dict | None]:
+    """enrich 단계에서 저장된 KOBIS/TMDB ExternalMetaSource raw_json 조회."""
+    from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
+    kobis = (
+        db.query(ExternalMetaSource)
+        .filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == ExternalSourceType.kobis,
+        )
+        .first()
+    )
+    tmdb = (
+        db.query(ExternalMetaSource)
+        .filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+        )
+        .first()
+    )
+    return (kobis.raw_json if kobis else None, tmdb.raw_json if tmdb else None)
+
+
+async def process_content_ai(
+    content_id: int,
+    db: Session,
+    *,
+    auto_chain: bool = True,
+    advance_to_review: bool = True,
+    auto_approve: bool = True,
+    score_threshold: int = 90,
+):
     """
-    Celery 태스크에서 호출 — 저장된 콘텐츠 AI 처리 후 DB 업데이트.
-    품질 스코어 기준 status 자동 설정:
-      90+   → approved
-      70~89 → review
-      <70   → review (AI 보강 제안)
-    ContentAIResult에 사용된 엔진 기록.
+    AI 처리 단계 (ADR-007 ③단계) — enrich 완료 후 호출.
+
+    status 전이:
+      enriched → ai  (항상)
+      auto_chain=True 일 때만 ai 이후 자동 전이 (단계별 게이트, ADR-009):
+        advance_to_review(검수 s3) False → ai 에 머무름
+        advance_to_review True:
+          auto_approve(승인 s4) True & score ≥ threshold → approved
+          그 외 → review
+
+    외부 메타 조회 없음 — enrich 단계에서 저장된 ExternalMetaSource 활용.
     """
     from api.programming.metadata.models import (
         Content, ContentMetadata, ContentStatus,
-        ContentAIResult, AITaskType, ExternalSourceType,
+        ContentAIResult, AITaskType,
     )
+    from api.programming.metadata.models.content import PipelineStage, StageEventType
+    from api.programming.metadata.stage_events import record_stage_event
 
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise ValueError(f"Content {content_id} not found")
 
-    # status → processing
-    content.status = ContentStatus.processing
-    db.commit()
+    if content.status != ContentStatus.enriched:
+        logger.warning(
+            "[ai] content_id=%d status=%s (expected enriched) — proceeding anyway",
+            content_id, content.status,
+        )
+
+    record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT,
+                       StageEventType.ENTERED, actor="system")
 
     meta = content.metadata_record
     if not meta:
         meta = ContentMetadata(content_id=content_id)
         db.add(meta)
         db.flush()
+
+    kobis_match, tmdb_match = _get_external_data_from_db(content_id, db)
 
     req = AIGenerateRequest(
         title=content.title,
@@ -363,7 +487,7 @@ async def process_content_ai(content_id: int, db: Session):
 
     result, used_engine = await _generate_metadata_with_engine(req, db)
 
-    # ContentMetadata 업데이트
+    # ContentMetadata 업데이트 (외부 데이터는 DB에서 로드한 값 활용)
     meta.ai_synopsis = result.synopsis
     meta.ai_genre_primary = result.genre_primary
     meta.ai_genre_secondary = result.genre_secondary
@@ -371,21 +495,15 @@ async def process_content_ai(content_id: int, db: Session):
     meta.ai_rating_suggestion = result.rating_suggestion
     meta.quality_score = result.quality_score
     meta.score_breakdown = {}
-    meta.tmdb_data = result.tmdb_match
+    meta.tmdb_data = tmdb_match
     meta.ai_processed_at = datetime.utcnow()
 
-    if result.kobis_match and result.kobis_match.get("movieCd"):
-        _upsert_external_source(db, content_id, ExternalSourceType.kobis,
-                                result.kobis_match["movieCd"], result.kobis_match)
-    if result.tmdb_match and result.tmdb_match.get("id"):
-        _upsert_external_source(db, content_id, ExternalSourceType.tmdb,
-                                str(result.tmdb_match["id"]), result.tmdb_match)
+    # enriched → ai
+    content.status = ContentStatus.ai
 
-    # 품질 스코어 기반 status 결정
-    if result.quality_score >= 90:
-        content.status = ContentStatus.approved
-    else:
-        content.status = ContentStatus.review
+    record_stage_event(db, content_id, PipelineStage.S6_LLM_EXTRACT,
+                       StageEventType.COMPLETED, actor="system",
+                       payload={"score": result.quality_score, "engine": used_engine})
 
     # 기존 is_final 레코드 해제
     db.query(ContentAIResult).filter(
@@ -409,6 +527,13 @@ async def process_content_ai(content_id: int, db: Session):
         is_final=True,
         processed_at=datetime.utcnow(),
     ))
+
+    # ai 이후 자동 전이 — 단계별 게이트(advance_to_review=검수 s3, auto_approve=승인 s4)
+    if auto_chain and advance_to_review:
+        if auto_approve and result.quality_score >= score_threshold:
+            content.status = ContentStatus.approved
+        else:
+            content.status = ContentStatus.review
 
     db.commit()
     db.refresh(meta)

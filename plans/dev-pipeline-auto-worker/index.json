@@ -1,0 +1,31 @@
+{
+  "project": "mediaX",
+  "phase": "dev-pipeline-auto-worker",
+  "description": "파이프라인 진행 엔진을 FE 브라우저 루프에서 Celery 백엔드 워커로 이관. 단계 병행(bucket별 독립 태스크 + 큐 분리), AI 단계 per-item fan-out 수평확장 + 백프레셔, 동시성 안전(SKIP LOCKED claim + claim 마킹 + 멱등 전이), 역방향(revert)=auto_hold. 콘솔은 모니터로 전환. ADR-010.",
+  "status": "completed",
+  "adr": "docs/dev/dev-pipeline-auto-worker/adr-010-pipeline-auto-worker.md",
+  "decisions": {
+    "engine_backend": "pipeline_auto_tick Beat(15s)가 진행 구동. AUTO 토글=stage_auto_policy PATCH로 워커 제어. 전체 off=kill switch.",
+    "stage_parallel": "tick이 AUTO-ON bucket마다 처리 태스크 개별 dispatch. 빠른 단계(1/2/4)=pipeline_fast 큐, AI(3)=pipeline_ai 전용 큐. batch cap 20.",
+    "ai_horizontal": "AI 단계는 per-item fan-out(process_ai_item). pipeline_ai concurrency 상한(ai_concurrency, 기본 2). QuotaManager 재사용.",
+    "concurrency_safety": "SELECT FOR UPDATE SKIP LOCKED claim + auto_claimed_at 마킹(visibility timeout 재claim) + advance/approve 멱등(txn 내 선조건 재확인, 실제 전이만 StageEvent). bucket single-flight 락 폐기.",
+    "backward_hold": "revert/re-review=auto_hold true(claim 제외). POST /resume-auto로 해제. S4 잔류=auto_review_skipped_at 영속, 임계값 변경 시 clear.",
+    "console_monitor": "FE runAutoPipeline/autoPipelineRef/bumpSummary/s4ReviewedRef/autoPendingKey 제거. AutoRunPanel=GET /auto-status 폴링. 수동 단건 유지.",
+    "async_in_worker": "추출 서비스 함수를 워커에서 asyncio.run으로 호출. 엔드포인트는 기존 await 유지."
+  },
+  "followups_resolved": [
+    "운영 중 발견 픽스(2026-06-04): (1) worker/beat/worker-ai 컨테이너 재생성 필요 — Celery 핫리로드 불가. (2) bucket4 quality_score는 metadata_record 경유(AttributeError 회귀가드). (3) bucket4 잔류건 claim 제외(무한 churn 방지). (4) auto_hold는 워커만 차단·수동(user) 액션은 hold 해제하고 진행(S1 다음단계 미동작 픽스).",
+    "UX 복원(2026-06-04): FE→서버 이관으로 사라진 UX 3종 복원 — (a) GET /auto-log + AutoWorkerPanel 처리건별 스크롤 로그(3줄), (b) 4초 폴링으로 현 단계 목록 silent 갱신 → advance 시 목록에서 자동 제거, (c) 선택 건 상세 표시 유지. 잔류 배지 추가."
+  ],
+  "steps": [
+    { "step": 0, "name": "adr-design", "status": "completed", "summary": "ADR-010 작성 — 백엔드 워커 이관/단계 병행+큐 분리/AI per-item 백프레셔/SKIP LOCKED+claim 마킹+멱등 전이/auto_hold/콘솔 모니터화 확정. 신규 컬럼·정책 필드·엔드포인트 정의. doc-only.", "completed_at": "2026-06-04" },
+    { "step": 1, "name": "schema-migration", "status": "completed", "summary": "Content 3컬럼(auto_hold/auto_review_skipped_at/auto_claimed_at) + StageAutoPolicy 4컬럼(auto_tick_enabled/batch_size/ai_concurrency/ai_visibility_timeout) + alembic 0037 + Docker DB 직접 적용 + pytest 4 pass. verify.sh pipeline-auto-schema 등록.", "completed_at": "2026-06-04" },
+    { "step": 2, "name": "extract-auto-service", "status": "completed", "summary": "pipeline_auto_service.py 신설 — claim_bucket(SKIP LOCKED+auto_hold+visibility_timeout)/advance_one/approve_one(멱등)/enrich_autofill_one/ai_autofill_one(asyncio.run 래핑). advance/approve/enrich-autofill/ai-autofill 엔드포인트 서비스 호출로 리팩터. 구 ai_autofill 죽은코드 제거. 17 tests pass.", "completed_at": "2026-06-04" },
+    { "step": 3, "name": "idempotent-transition", "status": "completed", "summary": "advance_one/approve_one에 FOR UPDATE + auto_hold/not_in_review/already_approved/terminal 선조건 체크. 7 tests pass (단건전이/순차2회/hold차단/approve정상/2회→already_approved/wrong_bucket/claim_hold제외).", "completed_at": "2026-06-04" },
+    { "step": 4, "name": "celery-tasks", "status": "completed", "summary": "workers/tasks/pipeline_auto.py 신설 — process_fast_bucket(pipeline_fast 큐, bucket 1/2/4 batch) + process_ai_item(pipeline_ai 큐, AI per-item fan-out) + pipeline_auto_tick(Beat 15s, bucket별 dispatch). celery_app.py: include/beat_schedule/task_routes 등록. docker-compose: worker에 pipeline_fast 큐 추가 + worker-ai 서비스(pipeline_ai, concurrency=2) 신설. 임포트+beat 등록 확인.", "completed_at": "2026-06-04" },
+    { "step": 5, "name": "backward-hold", "status": "completed", "summary": "revert/reject/re-review에 auto_hold=True+auto_claimed_at=None set. POST /resume-auto 엔드포인트 추가(hold 해제). threshold 변경 시 auto_review_skipped_at bulk clear. 5 tests pass.", "completed_at": "2026-06-04" },
+    { "step": 6, "name": "auto-status-api", "status": "completed", "summary": "GET /test/pipeline/auto-status 신설 — tick_enabled/s1~s4_auto/buckets(pending/in_flight/held/skipped). 200 + shape 확인.", "completed_at": "2026-06-04" },
+    { "step": 7, "name": "fe-console-monitor", "status": "completed", "summary": "FE 오케스트레이터(runAutoPipeline/autoPipelineRef/bumpSummary/s4ReviewedRef/autoPendingKey/anyAutoOn) 제거. auto-status 10초 폴링(autoWorkerStatus). AutoRunPanel→AutoWorkerPanel(pending/in_flight/held 표시). S1~S4 콘솔 workerStatus prop. api.ts AutoWorkerStatus/AutoBucketStatus 타입 + resumeAuto/autoStatus 함수 추가. typecheck 에러 0.", "completed_at": "2026-06-04" },
+    { "step": 8, "name": "e2e-verify", "status": "completed", "summary": "E2E 6케이스(S1→S2/S2→S3/S3→S4/S4→approved/동시 claim 중복 0/revert-hold-resume 사이클) + verify.sh pipeline-auto-worker 통합 8단계 검증 엔트리. 전체 PASS.", "completed_at": "2026-06-04" }
+  ]
+}

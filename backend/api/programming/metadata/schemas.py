@@ -55,6 +55,7 @@ class ContentOut(BaseModel):
     parent_id: Optional[int] = None
     season_number: Optional[int] = None
     episode_number: Optional[int] = None
+    current_stage: Optional[str] = None   # 위치(stage) — 두 축(위치/완료) 중 위치 SSOT
 
     model_config = {"from_attributes": True}
 
@@ -122,6 +123,8 @@ class MetadataOut(BaseModel):
     score_breakdown: Optional[dict[str, Any]]
     ai_processed_at: Optional[datetime]
     reviewed_at: Optional[datetime]
+    synopsis_ko: Optional[str] = None   # 번역 결과 (한국어)
+    synopsis_en: Optional[str] = None   # 번역 결과 (영어)
 
     model_config = {"from_attributes": True}
 
@@ -883,3 +886,19 @@ class PaginatedAiReviewQueue(BaseModel):
     total: int
     page: int
     size: int
+
+
+class ContentAIResultOut(BaseModel):
+    """AI 처리 결과 (content_ai_results)"""
+    id: int
+    content_id: int
+    engine: str
+    task_type: str
+    result_json: Optional[dict[str, Any]] = None
+    quality_score: Optional[float] = None
+    is_final: bool
+    error_message: Optional[str] = None
+    input_hash: Optional[str] = None
+    processed_at: datetime
+
+    model_config = {"from_attributes": True}

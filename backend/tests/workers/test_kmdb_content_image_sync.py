@@ -9,7 +9,7 @@ from api.programming.metadata.models.content import Content, ContentType, Conten
 
 def _make_content(db, content_id: int, title: str = "테스트 영화") -> Content:
     c = Content(id=content_id, title=title, content_type=ContentType.movie,
-                status=ContentStatus.staging)
+                status=ContentStatus.ai)
     db.add(c)
     db.flush()
     return c

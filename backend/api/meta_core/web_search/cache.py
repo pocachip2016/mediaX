@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from api.meta_core.web_search.base import WebSearchResult
@@ -13,7 +13,7 @@ def cache_get(query: str, provider: str, db: Session) -> list[WebSearchResult] |
     Returns list of WebSearchResult if found and not expired, else None.
     """
     query_hash = hashlib.sha256(query.encode()).hexdigest()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     cached = (
         db.query(WebSearchCache)
@@ -24,7 +24,12 @@ def cache_get(query: str, provider: str, db: Session) -> list[WebSearchResult] |
         .first()
     )
 
-    if cached and cached.expires_at > now:
+    # expires_at가 naive로 저장된 레거시 행 대비 — UTC aware로 정규화 후 비교
+    cached_expiry = cached.expires_at if cached else None
+    if cached_expiry is not None and cached_expiry.tzinfo is None:
+        cached_expiry = cached_expiry.replace(tzinfo=timezone.utc)
+
+    if cached and cached_expiry > now:
         if cached.results_json:
             return [
                 WebSearchResult(
@@ -52,7 +57,8 @@ def cache_put(
     Updates existing entry if found, else creates new.
     """
     query_hash = hashlib.sha256(query.encode()).hexdigest()
-    expires_at = datetime.utcnow() + timedelta(days=ttl_days)
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=ttl_days)
 
     existing = (
         db.query(WebSearchCache)
@@ -77,15 +83,16 @@ def cache_put(
     if existing:
         existing.results_json = results_json
         existing.expires_at = expires_at
-        existing.cached_at = datetime.utcnow()
+        existing.fetched_at = now
     else:
         db.add(
             WebSearchCache(
                 query_hash=query_hash,
+                query=query,
                 source=provider,
                 results_json=results_json,
                 expires_at=expires_at,
-                cached_at=datetime.utcnow(),
+                fetched_at=now,
             )
         )
 
