@@ -131,4 +131,9 @@ class StageAutoPolicy(Base):
     s5_auto = Column(Boolean, nullable=False, default=False)
     s6_auto = Column(Boolean, nullable=False, default=False)
     s4_quality_threshold = Column(Float, nullable=False, default=90.0)  # S4 자동 승인 최소 quality_score
+    # AUTO 워커 제어 (ADR-010)
+    auto_tick_enabled = Column(Boolean, nullable=False, default=True, server_default="true")  # tick 마스터 스위치
+    batch_size = Column(Integer, nullable=False, default=20, server_default="20")  # 태스크당 처리 상한
+    ai_concurrency = Column(Integer, nullable=False, default=2, server_default="2")  # AI 동시 처리 상한
+    ai_visibility_timeout = Column(Integer, nullable=False, default=600, server_default="600")  # claim 재확보 임계(초)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

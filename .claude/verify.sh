@@ -5413,6 +5413,117 @@ print('  ✓ 스키마 확장 확인')
     echo "=== PASS ==="
     ;;
 
+  pipeline-auto-worker)
+    echo "=== pipeline-auto-worker: ADR-010 전체 통합 검증 ==="
+    # 1. 스키마 컬럼
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -v --tb=short 2>&1 || exit 1
+    # 2. 서비스 패리티
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py -v --tb=short 2>&1 || exit 1
+    # 3. 멱등 전이
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -v --tb=short 2>&1 || exit 1
+    # 4. Celery 태스크 + beat
+    docker exec mediax-backend-1 python -c "
+from workers.tasks.pipeline_auto import pipeline_auto_tick, process_fast_bucket, process_ai_item
+from workers.celery_app import celery_app
+assert 'pipeline-auto-tick' in celery_app.conf.beat_schedule
+print('beat OK')
+" 2>&1 || exit 1
+    # 5. 역방향 hold
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -v --tb=short 2>&1 || exit 1
+    # 6. auto-status API
+    docker exec mediax-backend-1 python -c "
+from fastapi.testclient import TestClient
+from main import app
+client = TestClient(app, headers={'x-pipeline-test-token': 'test'})
+r = client.get('/api/test/pipeline/auto-status')
+assert r.status_code == 200 and 'buckets' in r.json()
+rl = client.get('/api/test/pipeline/auto-log?limit=5')
+assert rl.status_code == 200 and 'events' in rl.json(), 'auto-log 실패'
+print('auto-status + auto-log OK')
+" 2>&1 || exit 1
+    # 7. FE 오케스트레이터 제거 검사 + typecheck
+    PAGE="$(dirname "$0")/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    grep -q "runAutoPipeline\|autoPipelineRef\|s4ReviewedRef\|bumpSummary\|autoPendingKey" "$PAGE" && { echo "FAIL: 오케스트레이터 잔존"; exit 1; }
+    grep -q "autoWorkerStatus\|AutoWorkerPanel" "$PAGE" || { echo "FAIL: 모니터 코드 없음"; exit 1; }
+    cd "$(dirname "$0")/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    # 8. E2E
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_e2e.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-fe-monitor)
+    echo "=== pipeline-fe-monitor: FE 오케스트레이터 제거 + 모니터화 typecheck ==="
+    PAGE="$(dirname "$0")/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    # 제거된 코드 검사
+    grep -q "runAutoPipeline\|autoPipelineRef\|autoPendingKey\|s4ReviewedRef\|bumpSummary" "$PAGE" && { echo "FAIL: 제거된 오케스트레이터 코드 잔존"; exit 1; }
+    # 새 모니터 코드 검사
+    grep -q "autoWorkerStatus\|AutoWorkerPanel\|autoStatus" "$PAGE" || { echo "FAIL: 모니터 코드 없음"; exit 1; }
+    # FE typecheck
+    cd "$(dirname "$0")/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-status)
+    echo "=== pipeline-auto-status: GET /auto-status 형상 확인 ==="
+    docker exec mediax-backend-1 python -c "
+from fastapi.testclient import TestClient
+from main import app
+client = TestClient(app, headers={'x-pipeline-test-token': 'test'})
+r = client.get('/api/test/pipeline/auto-status')
+assert r.status_code == 200, f'status {r.status_code}: {r.text}'
+d = r.json()
+assert 'tick_enabled' in d, 'tick_enabled 없음'
+assert 'buckets' in d, 'buckets 없음'
+for b in ('1','2','3','4'):
+    assert b in d['buckets'], f'bucket {b} 없음'
+    assert 'pending' in d['buckets'][b] and 'in_flight' in d['buckets'][b], f'bucket {b} 필드 부족'
+print('auto-status shape OK:', d)
+" 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-backward-hold)
+    echo "=== pipeline-backward-hold: revert/reject/re-review→hold, resume, 임계값→clear ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-tasks)
+    echo "=== pipeline-auto-tasks: Celery 태스크 임포트 + beat 등록 확인 ==="
+    docker exec mediax-backend-1 python -c "
+from workers.tasks.pipeline_auto import pipeline_auto_tick, process_fast_bucket, process_ai_item
+from workers.celery_app import celery_app
+assert 'pipeline-auto-tick' in celery_app.conf.beat_schedule, 'beat schedule 없음'
+assert celery_app.conf.beat_schedule['pipeline-auto-tick']['schedule'] == 15.0, 'tick 간격 오류'
+print('TASKS:', pipeline_auto_tick.name, process_fast_bucket.name, process_ai_item.name)
+print('BEAT: OK')
+" 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-idempotent)
+    echo "=== pipeline-idempotent: advance/approve 멱등 전이 테스트 ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-service)
+    echo "=== pipeline-auto-service: 서비스 추출 + 동작 패리티 ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py tests/test_pipeline_auto_schema.py -v --tb=short 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
+  pipeline-auto-schema)
+    echo "=== pipeline-auto-schema: ADR-010 스키마 컬럼 존재 확인 ==="
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -v 2>&1 || exit 1
+    echo "=== PASS ==="
+    ;;
+
   s4-auto-residual)
     echo "=== s4-auto-residual: S4 AUTO 잔류 유지 + 재검수 방지 ==="
     PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
@@ -5437,7 +5548,7 @@ print('  ✓ 스키마 확장 확인')
 
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, auto-headless-be, s4-auto-residual, stage-auto-autofill-guard"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, auto-headless-be, s4-auto-residual, stage-auto-autofill-guard, pipeline-auto-schema"
     exit 1
     ;;
 esac

@@ -1475,7 +1475,39 @@ export interface AiTaskResponse { content_id: number; task_name: string; status:
 export interface EnrichAutofillResponse { content_id: number; enriched_sources: string[]; filled_fields: string[]; skipped_fields: string[]; status_unchanged: string }
 export interface AiAutofillResponse { content_id: number; rag_sources: string[]; ai_tasks: Record<string, string>; filled_fields: string[]; skipped_fields: string[]; status_unchanged: string }
 export interface EnrichPolicy { use_cache_db: boolean; confidence_threshold: number; use_websearch: boolean }
-export interface StageAutoPolicy { s1_auto: boolean; s2_auto: boolean; s3_auto: boolean; s4_auto: boolean; s5_auto: boolean; s6_auto: boolean; s4_quality_threshold: number }
+export interface StageAutoPolicy {
+  s1_auto: boolean; s2_auto: boolean; s3_auto: boolean
+  s4_auto: boolean; s5_auto: boolean; s6_auto: boolean
+  s4_quality_threshold: number
+  // ADR-010 워커 제어
+  auto_tick_enabled?: boolean
+  batch_size?: number
+  ai_concurrency?: number
+  ai_visibility_timeout?: number
+}
+
+export interface AutoBucketStatus {
+  pending: number
+  in_flight: number
+  held: number
+  skipped: number
+}
+
+export interface AutoWorkerStatus {
+  tick_enabled: boolean
+  s1_auto: boolean; s2_auto: boolean; s3_auto: boolean; s4_auto: boolean
+  buckets: Record<string, AutoBucketStatus>
+}
+
+export interface AutoLogEvent {
+  id: number
+  content_id: number
+  title: string
+  stage: string | null
+  event_type: string | null
+  actor: string
+  at: string | null
+}
 export interface ReferenceExtractResponse {
   content_id: number; title_used: string; year_used: number | null
   wikidata_facts: Record<string, unknown>; wikidata_url: string | null
@@ -1552,6 +1584,14 @@ export const pipelineTestApi = {
     requestTest<ReviewActionResponse>("/api/test/pipeline/re-review", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
     }),
+  resumeAuto: (ids: number[]) =>
+    requestTest<{ resumed: number; results: Record<number, string> }>("/api/test/pipeline/resume-auto", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+  autoStatus: () =>
+    requestTest<AutoWorkerStatus>("/api/test/pipeline/auto-status"),
+  autoLog: (limit = 20) =>
+    requestTest<{ events: AutoLogEvent[] }>(`/api/test/pipeline/auto-log?limit=${limit}`),
 }
 
 // ── Distribution / Curation ───────────────────────────────

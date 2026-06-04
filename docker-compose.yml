@@ -74,7 +74,7 @@ services:
   worker:
     build: ./backend
     restart: unless-stopped
-    command: celery -A workers.celery_app worker --loglevel=info -Q design.high,design.normal,design.brand_check,design.cdn,ingest,analytics,metadata
+    command: celery -A workers.celery_app worker --loglevel=info -Q design.high,design.normal,design.brand_check,design.cdn,ingest,analytics,metadata,pipeline_fast
     volumes:
       - ./backend:/app
     env_file:
@@ -84,6 +84,26 @@ services:
       - TZ=Asia/Seoul
     # backend가 마이그레이션을 끝내고 healthy가 된 뒤에 기동 — worker가 옛 스키마로
     # 쿼리하는 타이밍 race 제거.
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      backend:
+        condition: service_healthy
+
+  worker-ai:
+    build: ./backend
+    restart: unless-stopped
+    # ADR-010: AI 단계 전용 워커 — concurrency 2(ai_concurrency 기본값) + pipeline_ai 큐 전용
+    command: celery -A workers.celery_app worker --loglevel=info -Q pipeline_ai --concurrency=2
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONPATH=/app
+      - TZ=Asia/Seoul
     depends_on:
       postgres:
         condition: service_started

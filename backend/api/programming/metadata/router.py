@@ -1394,6 +1394,11 @@ class StageAutoPolicyOut(BaseModel):
     s1_auto: bool; s2_auto: bool; s3_auto: bool
     s4_auto: bool; s5_auto: bool; s6_auto: bool
     s4_quality_threshold: float
+    # ADR-010 워커 제어 필드
+    auto_tick_enabled: bool = True
+    batch_size: int = 20
+    ai_concurrency: int = 2
+    ai_visibility_timeout: int = 600
     model_config = {"from_attributes": True}
 
 
@@ -1402,6 +1407,11 @@ class StageAutoPolicyPatch(BaseModel):
     s3_auto: Optional[bool] = None; s4_auto: Optional[bool] = None
     s5_auto: Optional[bool] = None; s6_auto: Optional[bool] = None
     s4_quality_threshold: Optional[float] = None
+    # ADR-010 워커 제어 필드
+    auto_tick_enabled: Optional[bool] = None
+    batch_size: Optional[int] = None
+    ai_concurrency: Optional[int] = None
+    ai_visibility_timeout: Optional[int] = None
 
 
 @router.get("/ai-tasks/stage-auto-policy", response_model=StageAutoPolicyOut, summary="단계별 자동 실행 정책 조회")
@@ -1422,11 +1432,20 @@ def patch_stage_auto_policy_route(body: StageAutoPolicyPatch, db: Session = Depe
     if not row:
         row = StageAutoPolicy(id=1)
         db.add(row)
+    old_threshold = row.s4_quality_threshold
     for field in ("s1_auto", "s2_auto", "s3_auto", "s4_auto", "s5_auto", "s6_auto",
-                  "s4_quality_threshold"):
+                  "s4_quality_threshold",
+                  "auto_tick_enabled", "batch_size", "ai_concurrency", "ai_visibility_timeout"):
         val = getattr(body, field)
         if val is not None:
             setattr(row, field, val)
+    # 임계값 변경 시 S4 잔류 마킹 초기화 → 새 기준으로 재평가 허용 (ADR-010)
+    if body.s4_quality_threshold is not None and body.s4_quality_threshold != old_threshold:
+        from api.programming.metadata.models.content import Content
+        db.query(Content).filter(
+            Content.auto_review_skipped_at.isnot(None),
+            Content.is_deleted.is_(False),
+        ).update({"auto_review_skipped_at": None}, synchronize_session=False)
     db.commit()
     db.refresh(row)
     return row
