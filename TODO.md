@@ -17,6 +17,7 @@
 
 ## Done (최근 5개만)
 - [x] **dev-pipeline-auto-worker** — 파이프라인 진행 엔진 FE→Celery 워커 이관 (ADR-010): Beat 15s tick + bucket 병행 + AI per-item fan-out(pipeline_ai 큐) + SKIP LOCKED claim + 멱등 advance/approve + auto_hold(수동 override) + FE 콘솔 모니터화(auto-status/auto-log 폴링·처리건 스크롤 로그·advance 시 목록 제거). Steps 0~8 + 운영픽스 4종 + UX복원 + S4 미승인 자동 반려(bucket 6, 잔류 폐지) (2026-06-04)
+- [x] **fix(tmdb-cache)** — TMDB 캐시 목록 정렬 불안정 해소 (id tiebreaker 추가 — popularity/last_fetched_at 비유일 정렬 + daily sync 값 변동으로 새로고침마다 행 섞임) (2026-05-30)
 - [x] **dev-auto-headless BE 회귀 pytest** — enrich_content KMDB 한도 초과 graceful degrade(kmdb:daily_limit, 500 아님) 단위 테스트 3건 + verify.sh `auto-headless-be`. KMDB 한도는 _fetch_kmdb_with_cache 1개만 monkeypatch로 시뮬레이션 (2026-06-03)
 - [x] **dev-stage-auto-autofill 회귀 가드** — recompute_quality_score 단위 테스트 9케이스(mock 없음) + verify.sh `stage-auto-autofill-guard`(pytest + 빈필드보존/status불변/재계산 grep 가드). empty-only는 grep 가드로 대체 (2026-06-03)
 - [x] **dev-s4-auto-residual** — S4 AUTO 잔류 유지(임계값 미만 미승인) + s4ReviewedRef 재검수 차단 + 임계값 변경 시 재평가. verify.sh `s4-auto-residual` + plan(plans/dev-s4-auto-residual). E2E: 잔류 3건 모두 점수 기준 정상 미달 확인 (2026-06-03)
