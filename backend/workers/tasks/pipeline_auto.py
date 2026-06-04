@@ -34,7 +34,7 @@ def process_fast_bucket(self, bucket: int) -> dict:
     bucket 4: quality_score >= threshold → approve_one, else auto_review_skipped_at set
     """
     from api.test.pipeline_auto_service import (
-        claim_bucket, advance_one, approve_one, enrich_autofill_one,
+        claim_bucket, advance_one, approve_one, reject_one, enrich_autofill_one,
     )
     from api.programming.metadata.models.external import StageAutoPolicy
 
@@ -52,7 +52,7 @@ def process_fast_bucket(self, bucket: int) -> dict:
         if not items:
             return {"bucket": bucket, "claimed": 0}
 
-        ok = skipped = failed = 0
+        ok = skipped = failed = rejected = 0
         for c in items:
             try:
                 if bucket == 1:
@@ -81,12 +81,12 @@ def process_fast_bucket(self, bucket: int) -> dict:
                         else:
                             skipped += 1
                     else:
-                        # 임계값 미달 → 잔류 영속 마킹
-                        from datetime import datetime, timezone
-                        c.auto_review_skipped_at = datetime.now(timezone.utc)
-                        c.auto_claimed_at = None
-                        db.flush()
-                        skipped += 1
+                        # 임계값 미달(승인 안 됨) → 반려/실패(bucket 6)로 보냄
+                        r = reject_one(db, c.id, actor="auto")
+                        if r["result"] == "ok":
+                            rejected += 1
+                        else:
+                            skipped += 1
 
                 db.commit()
             except Exception as exc:
@@ -100,7 +100,8 @@ def process_fast_bucket(self, bucket: int) -> dict:
                     db.rollback()
                 failed += 1
 
-        return {"bucket": bucket, "claimed": len(items), "ok": ok, "skipped": skipped, "failed": failed}
+        return {"bucket": bucket, "claimed": len(items), "ok": ok, "skipped": skipped,
+                "rejected": rejected, "failed": failed}
 
 
 # ── AI 단계 per-item task (bucket 3) ─────────────────────────────────────────
