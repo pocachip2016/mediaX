@@ -127,6 +127,11 @@ class Content(Base):
     is_deleted = Column(Boolean, default=False, index=True)
     locked_fields = Column(JSON, default=list)  # List[str] — 잠금 필드 목록
 
+    # AUTO 워커 제어 (ADR-010)
+    auto_hold = Column(Boolean, nullable=False, default=False, server_default="false")  # revert/re-review 시 자동 진행 제외
+    auto_review_skipped_at = Column(DateTime(timezone=True), nullable=True)  # S4 잔류(임계값 미달) 영속 마킹
+    auto_claimed_at = Column(DateTime(timezone=True), nullable=True)  # claim/in-flight 마킹 (visibility timeout 기준)
+
     # Relationships
     metadata_record = relationship("ContentMetadata", back_populates="content", uselist=False)
     cp_email = relationship("CpEmailLog", back_populates="contents")

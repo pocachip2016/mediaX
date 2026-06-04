@@ -181,11 +181,103 @@ def revert_stage(req: RevertRequest, db: Session = Depends(get_db)):
         prev_stage, prev_status = prev
         record_stage_event(db, cid, prev_stage, StageEventType.RETRIED, actor="user")
         c.status = prev_status
+        c.auto_hold = True          # 역방향 후 AUTO 자동 재진행 차단 (ADR-010)
+        c.auto_claimed_at = None    # claim 마킹 해제
         results[cid] = f"bucket_{cur_bucket - 1 if cur_bucket != 6 else 4}"
         reverted += 1
 
     db.commit()
     return RevertResponse(reverted=reverted, skipped=len(req.ids) - reverted, results=results)
+
+
+@router.get("/auto-log", dependencies=[Depends(require_pipeline_test)])
+def get_auto_log(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
+    """워커 처리건별 로그 — 최근 StageEvent를 title과 함께 최신순 반환.
+    FE는 event_type+stage로 한국어 라벨을 구성해 스크롤 로그로 표시."""
+    rows = (
+        db.query(StageEvent, Content.title)
+        .join(Content, StageEvent.content_id == Content.id)
+        .filter(Content.is_deleted.is_(False))
+        .order_by(StageEvent.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "events": [
+            {
+                "id": ev.id,
+                "content_id": ev.content_id,
+                "title": title,
+                "stage": ev.stage.value if ev.stage else None,
+                "event_type": ev.event_type.value if ev.event_type else None,
+                "actor": ev.actor,
+                "at": ev.started_at.isoformat() if ev.started_at else None,
+            }
+            for ev, title in rows
+        ]
+    }
+
+
+@router.get("/auto-status", dependencies=[Depends(require_pipeline_test)])
+def get_auto_status(db: Session = Depends(get_db)):
+    """AUTO 워커 현황 — bucket별 pending(대기)/in-flight(처리중)/skipped(잔류) 건수.
+    in-flight = auto_claimed_at 있고 visibility_timeout 미초과 건.
+    pending = 미claim 또는 stuck(timeout 초과) 건 — 다음 tick 처리 대상.
+    skipped = auto_review_skipped_at 있는 건 (S4 잔류).
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import or_
+    from api.programming.metadata.models.external import StageAutoPolicy
+    from api.test.pipeline_auto_service import _STAGE_BUCKET
+
+    policy = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    visibility_timeout = (policy.ai_visibility_timeout if policy else None) or 600
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=visibility_timeout)
+
+    def bucket_stats(bucket: int) -> dict:
+        stages = [s for s, b in _STAGE_BUCKET.items() if b == bucket]
+        base = db.query(Content).filter(
+            Content.is_deleted.is_(False),
+            Content.status != ContentStatus.rejected,
+        )
+        if bucket == 1:
+            base = base.filter(
+                or_(Content.current_stage.is_(None), Content.current_stage.in_(stages))
+            )
+        else:
+            base = base.filter(Content.current_stage.in_(stages))
+
+        in_flight = base.filter(
+            Content.auto_claimed_at.isnot(None),
+            Content.auto_claimed_at >= cutoff,
+        ).count()
+
+        pending_q = base.filter(
+            Content.auto_hold.is_(False),
+            or_(Content.auto_claimed_at.is_(None), Content.auto_claimed_at < cutoff),
+        )
+        # bucket 4: 잔류 판정 건은 pending에서 제외 (claim 대상 아님)
+        if bucket == 4:
+            pending_q = pending_q.filter(Content.auto_review_skipped_at.is_(None))
+        pending = pending_q.count()
+
+        held = base.filter(Content.auto_hold.is_(True)).count()
+
+        skipped = base.filter(Content.auto_review_skipped_at.isnot(None)).count() if bucket == 4 else 0
+
+        return {"pending": pending, "in_flight": in_flight, "held": held, "skipped": skipped}
+
+    buckets = {str(b): bucket_stats(b) for b in (1, 2, 3, 4)}
+
+    return {
+        "tick_enabled": policy.auto_tick_enabled if policy else True,
+        "s1_auto": policy.s1_auto if policy else False,
+        "s2_auto": policy.s2_auto if policy else False,
+        "s3_auto": policy.s3_auto if policy else False,
+        "s4_auto": policy.s4_auto if policy else False,
+        "buckets": buckets,
+    }
 
 
 @router.get("/summary", response_model=StageSummary,
@@ -347,64 +439,16 @@ class AiTaskResponse(BaseModel):
 @router.post("/advance", response_model=AdvanceResponse,
              dependencies=[Depends(require_pipeline_test)])
 def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
-    """[다음단계로] — 현재 단계를 완료하고 다음 bucket 진입 stage로 이동.
-    위치(current_stage)는 다음 bucket으로, status(완료)는 **떠나는 단계의 produce**로 올림.
-    예) S2(Enrich)→S3(AI) advance 시 status raw→enriched. S1→S2는 raw 유지."""
-    from api.programming.metadata.stage_events import record_stage_event
-    from api.programming.metadata.models.content import PipelineStage, StageEventType
-
-    # bucket(현재 위치) → 다음 bucket 진입 PipelineStage
-    _BUCKET_NEXT_STAGE = {
-        1: PipelineStage.S2_NORMALIZE,    # 생성 → Enrich
-        2: PipelineStage.S6_LLM_EXTRACT,  # Enrich → AI처리
-        3: PipelineStage.S8_REVIEW,       # AI처리 → 검수
-        4: PipelineStage.S9_PUBLISH,      # 검수 → 승인
-    }
-
-    # 떠나는 bucket → 그 단계 완료 시 status(produce). 다음 단계로 넘어가면 이 status로 확정.
-    _BUCKET_PRODUCE_STATUS = {
-        1: ContentStatus.raw,        # 생성 완료 = raw (S2 도착 시 raw 유지)
-        2: ContentStatus.enriched,   # Enrich 완료 = enriched
-        3: ContentStatus.ai,         # AI처리 완료 = ai
-        4: ContentStatus.review,     # 검수 완료 = review
-    }
-
-    _STAGE_BUCKET: dict[str, int] = {
-        PipelineStage.S1_INTAKE.value:         1,
-        PipelineStage.S2_NORMALIZE.value:      2,
-        PipelineStage.S3_SOURCE_MATCH.value:   2,
-        PipelineStage.S4_GAP_DETECT.value:     2,
-        PipelineStage.S5_WEBSEARCH_FILL.value: 2,
-        PipelineStage.S6_LLM_EXTRACT.value:    3,
-        PipelineStage.S7_STAGING.value:        3,
-        PipelineStage.S8_REVIEW.value:         4,
-        PipelineStage.S9_PUBLISH.value:        5,
-    }
+    """[다음단계로] — 현재 단계를 완료하고 다음 bucket 진입 stage로 이동."""
+    from api.test.pipeline_auto_service import advance_one
 
     results: dict[int, str] = {}
     advanced = 0
     for cid in req.ids:
-        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
-        if not c:
-            results[cid] = "not_found"
-            continue
-        # current_stage 없으면(시드 직후) → bucket 1
-        cur_bucket = _STAGE_BUCKET.get(c.current_stage.value if c.current_stage else "", 1)
-        next_stage = _BUCKET_NEXT_STAGE.get(cur_bucket)
-        if next_stage is None:
-            results[cid] = "terminal"
-            continue
-        record_stage_event(db, cid, next_stage, StageEventType.ADVANCED, actor="user")
-        # 떠나는 단계 완료 → status를 produce로 확정 (위치는 record_stage_event가 이동)
-        produce = _BUCKET_PRODUCE_STATUS.get(cur_bucket)
-        if produce is not None:
-            c.status = produce
-        # 검수(bucket 4) 진입 시 quality_score 재계산 — autofill 경로를 안 거쳐도 S4 임계값이 최신 완성도를 보게.
-        if cur_bucket + 1 == 4:
-            from api.programming.metadata.ai_engine import recompute_quality_score
-            recompute_quality_score(db, cid)
-        results[cid] = f"bucket_{cur_bucket + 1}"
-        advanced += 1
+        r = advance_one(db, cid, actor="user")
+        results[cid] = r["result"]
+        if r["result"] == "ok":
+            advanced += 1
 
     db.commit()
     return AdvanceResponse(advanced=advanced, skipped=len(req.ids) - advanced, results=results)
@@ -413,22 +457,16 @@ def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
 @router.post("/approve", response_model=ReviewActionResponse,
              dependencies=[Depends(require_pipeline_test)])
 def approve_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
-    """[승인] — 검수 통과. status=approved 확정 → 실제 콘텐츠 목록 노출.
-    위치=승인(S9_PUBLISH), 게시 단계 없이 종료점. StageEvent COMPLETED 기록."""
-    from api.programming.metadata.stage_events import record_stage_event
-    from api.programming.metadata.models.content import PipelineStage, StageEventType
+    """[승인] — 검수 통과. status=approved 확정. 멱등(이미 approved면 no-op)."""
+    from api.test.pipeline_auto_service import approve_one
 
     results: dict[int, str] = {}
     processed = 0
     for cid in req.ids:
-        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
-        if not c:
-            results[cid] = "not_found"
-            continue
-        # COMPLETED at S9_PUBLISH → derive_status_from_stage = approved (record_stage_event 내부 처리)
-        record_stage_event(db, cid, PipelineStage.S9_PUBLISH, StageEventType.COMPLETED, actor="user")
-        results[cid] = "approved"
-        processed += 1
+        r = approve_one(db, cid, actor="user")
+        results[cid] = r["result"]
+        if r["result"] == "ok":
+            processed += 1
 
     db.commit()
     return ReviewActionResponse(processed=processed, skipped=len(req.ids) - processed, results=results)
@@ -453,6 +491,8 @@ def reject_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
         stage = c.current_stage or PipelineStage.S8_REVIEW
         record_stage_event(db, cid, stage, StageEventType.REJECTED, actor="user")
         c.status = ContentStatus.rejected
+        c.auto_hold = True          # 반려 후 AUTO 재진행 차단 (ADR-010)
+        c.auto_claimed_at = None
         results[cid] = "rejected"
         processed += 1
 
@@ -476,11 +516,43 @@ def re_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
             continue
         record_stage_event(db, cid, PipelineStage.S8_REVIEW, StageEventType.RETRIED, actor="user")
         c.status = ContentStatus.ai
+        c.auto_hold = True          # 재검수 복귀 후 AUTO 자동 재진행 차단 (ADR-010)
+        c.auto_claimed_at = None
         results[cid] = "re_reviewed"
         processed += 1
 
     db.commit()
     return ReviewActionResponse(processed=processed, skipped=len(req.ids) - processed, results=results)
+
+
+# ── AUTO hold 해제 (ADR-010) ──────────────────────────────────────────────────
+
+class ResumeAutoRequest(BaseModel):
+    ids: list[int]
+
+
+class ResumeAutoResponse(BaseModel):
+    resumed: int
+    results: dict[int, str]
+
+
+@router.post("/resume-auto", response_model=ResumeAutoResponse,
+             dependencies=[Depends(require_pipeline_test)])
+def resume_auto(req: ResumeAutoRequest, db: Session = Depends(get_db)):
+    """auto_hold 해제 — 다음 tick부터 자동 진행 재개."""
+    results: dict[int, str] = {}
+    resumed = 0
+    for cid in req.ids:
+        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
+        if not c:
+            results[cid] = "not_found"
+            continue
+        c.auto_hold = False
+        c.auto_claimed_at = None
+        results[cid] = "resumed"
+        resumed += 1
+    db.commit()
+    return ResumeAutoResponse(resumed=resumed, results=results)
 
 
 @router.post("/enrich-source", response_model=EnrichSourceResponse,
@@ -553,61 +625,16 @@ class EnrichAutofillResponse(BaseModel):
 
 @router.post("/enrich-autofill", response_model=EnrichAutofillResponse,
              dependencies=[Depends(require_pipeline_test)])
-async def enrich_autofill(req: EnrichAutofillRequest, db: Session = Depends(get_db)):
-    """S2 AUTO — enrich(tmdb+kmdb) 후 **빈 필드에만** auto_fill 추천값 적용. status 불변.
-    conflict 필드는 자동 채우지 않음(수동 검수). 기존 값은 덮어쓰지 않음."""
-    from api.meta_core.enrich import enrich_content
-    from api.programming.metadata.service_recommendations import get_content_recommendations
-    from api.programming.metadata.service_bulk import apply_external_fields
+def enrich_autofill(req: EnrichAutofillRequest, db: Session = Depends(get_db)):
+    """S2 AUTO — enrich(tmdb+kmdb) 후 **빈 필드에만** auto_fill 추천값 적용. status 불변."""
+    from api.test.pipeline_auto_service import enrich_autofill_one
 
     c = db.query(Content).filter(Content.id == req.content_id, Content.is_deleted.is_(False)).first()
     if not c:
         raise HTTPException(status_code=404, detail="content not found")
 
-    before_status = c.status
-
-    # 1. 외부 소스 회수 (suggestions/external sources 적재)
-    result = enrich_content(req.content_id, db, only_sources={"tmdb", "kmdb"})
-    db.flush()
-
-    # 2. 추천값 조회 — missing_fields(빈 필드) + 필드별 source_id 제공
-    recs = get_content_recommendations(db, req.content_id)
-    empty = set(recs.missing_fields)
-
-    filled_fields: list[str] = []
-    skipped_fields: list[str] = []
-
-    # 3. auto_fill만 순회 (conflict 제외) — 빈 필드만 채움
-    for rec in recs.auto_fill:
-        if not rec.recommendations:
-            continue
-        if rec.field not in empty:
-            skipped_fields.append(rec.field)  # 이미 값 있음
-            continue
-        best = max(rec.recommendations, key=lambda r: r.confidence or 0)
-        await apply_external_fields(db, req.content_id, best.source_id, [rec.field])
-        filled_fields.append(rec.field)
-
-    # 4. status 불변 보장 (apply 경로가 바꿨다면 복원) — advance가 이후 승급
-    db.refresh(c)
-    if c.status != before_status:
-        c.status = before_status
-        db.add(c)
-        db.commit()
-        db.refresh(c)
-
-    # 5. quality_score 재계산 — 채워진 필드 기준(시드 0 고정 방지, S4 임계값 의미화)
-    from api.programming.metadata.ai_engine import recompute_quality_score
-    recompute_quality_score(db, req.content_id)
-    db.commit()
-
-    return EnrichAutofillResponse(
-        content_id=req.content_id,
-        enriched_sources=result.sources_hit,
-        filled_fields=filled_fields,
-        skipped_fields=skipped_fields,
-        status_unchanged=c.status.value if c.status else (before_status.value if before_status else ""),
-    )
+    r = enrich_autofill_one(db, req.content_id)
+    return EnrichAutofillResponse(**r)
 
 
 class AiAutofillRequest(BaseModel):
@@ -625,124 +652,17 @@ class AiAutofillResponse(BaseModel):
 
 @router.post("/ai-autofill", response_model=AiAutofillResponse,
              dependencies=[Depends(require_pipeline_test)])
-async def ai_autofill(req: AiAutofillRequest, db: Session = Depends(get_db)):
-    """S3 AUTO — RAG+AI태스크 후 **빈 필드에만** 보완값 적용. status 불변.
-    1) reference_extract(wikidata+wikipedia) 2) tmdb/kmdb auto_fill
-    3) translate_synopsis + short_synopsis AI태스크.
-    conflict 필드·기존 값은 건드리지 않음."""
-    from api.meta_core.reference_extract import reference_extract
-    from api.programming.metadata.service_recommendations import get_content_recommendations
-    from api.programming.metadata.service_content import update_content
-    from api.programming.metadata.schemas import ContentUpdate
-    from api.programming.metadata.ai_tasks.runner import run_single_ai_task
+def ai_autofill(req: AiAutofillRequest, db: Session = Depends(get_db)):
+    """S3 AUTO — RAG+AI태스크 후 **빈 필드에만** 보완값 적용. status 불변."""
+    from api.test.pipeline_auto_service import ai_autofill_one
 
     c = db.query(Content).filter(Content.id == req.content_id, Content.is_deleted.is_(False)).first()
     if not c:
         raise HTTPException(status_code=404, detail="content not found")
 
-    before_status = c.status
+    r = ai_autofill_one(db, req.content_id)
+    return AiAutofillResponse(**r)
 
-    # 1. RAG 조회 (wikidata + wikipedia ExternalMetaSource 적재)
-    ref = reference_extract(req.content_id, db)
-    facts = ref.wikidata_facts  # top-level dict: directors/cast/country/genres/runtime/production_year
-
-    # 2. 추천값 조회 (tmdb/kmdb auto_fill + missing_fields)
-    recs = get_content_recommendations(db, req.content_id)
-    empty = set(recs.missing_fields)
-    # auto_fill confidence 최고 값 dict
-    autofill: dict[str, str] = {}
-    for rec in recs.auto_fill:
-        if rec.recommendations:
-            best = max(rec.recommendations, key=lambda r: r.confidence or 0)
-            autofill[rec.field] = best.value
-
-    # 3. 빈 필드에만 적용 — external auto_fill 우선, 없으면 wikidata facts fallback
-    payload: dict = {}
-    filled_fields: list[str] = []
-    skipped_fields: list[str] = []
-
-    def _pick(field: str, facts_key: str | None = None) -> str | None:
-        """external auto_fill 우선, 없으면 wikidata facts. 채울 값 없으면 None."""
-        v = autofill.get(field)
-        if not v and facts_key:
-            raw = facts.get(facts_key)
-            if raw is not None:
-                v = ", ".join(raw) if isinstance(raw, list) else str(raw)
-        return v if v else None
-
-    field_map: list[tuple[str, str, str | None]] = [
-        # (missing_fields key, ContentUpdate key, facts key)
-        ("cast",            "cast",            "cast"),
-        ("director",        "directors",       "directors"),
-        ("genres",          "genres",          "genres"),
-        ("country",         "country",         "country"),
-        ("synopsis",        "synopsis",        None),       # wikipedia 직접 저장 금지
-    ]
-    for missing_key, update_key, facts_key in field_map:
-        val = _pick(missing_key, facts_key)
-        if missing_key in empty:
-            if val:
-                payload[update_key] = val
-                filled_fields.append(missing_key)
-        else:
-            if val:
-                skipped_fields.append(missing_key)
-
-    # runtime: int 변환
-    if "runtime" in empty:
-        rv = autofill.get("runtime") or (str(facts.get("runtime")) if facts.get("runtime") else None)
-        if rv:
-            try:
-                payload["runtime"] = int(str(rv).strip().split()[0])
-                filled_fields.append("runtime")
-            except (ValueError, IndexError):
-                pass
-    elif autofill.get("runtime") or facts.get("runtime"):
-        skipped_fields.append("runtime")
-
-    # production_year: content 직접 필드 (Content.production_year 기준)
-    if not c.production_year:
-        yr = facts.get("production_year") or autofill.get("production_year")
-        if yr:
-            try:
-                payload["production_year"] = int(str(yr)[:4])
-                filled_fields.append("production_year")
-            except ValueError:
-                pass
-
-    if payload:
-        update_content(db, req.content_id, ContentUpdate(**payload))
-
-    # 4. AI 태스크 순차 실행 (translate_synopsis → short_synopsis)
-    ai_results: dict[str, str] = {}
-    for task_name in ("translate_synopsis", "short_synopsis"):
-        try:
-            r = await run_single_ai_task(req.content_id, task_name, db)
-            ai_results[task_name] = r.get("status", "ok")
-        except Exception as exc:
-            ai_results[task_name] = "error"
-
-    # 5. status 불변 보장
-    db.refresh(c)
-    if c.status != before_status:
-        c.status = before_status
-        db.add(c)
-        db.commit()
-        db.refresh(c)
-
-    # 6. quality_score 재계산 — RAG/AI태스크로 채워진 필드 기준(시드 0 고정 방지, S4 임계값 의미화)
-    from api.programming.metadata.ai_engine import recompute_quality_score
-    recompute_quality_score(db, req.content_id)
-    db.commit()
-
-    return AiAutofillResponse(
-        content_id=req.content_id,
-        rag_sources=ref.sources_hit,
-        ai_tasks=ai_results,
-        filled_fields=filled_fields,
-        skipped_fields=skipped_fields,
-        status_unchanged=c.status.value if c.status else (before_status.value if before_status else ""),
-    )
 
 
 @router.get("/ai-tasks", dependencies=[Depends(require_pipeline_test)])

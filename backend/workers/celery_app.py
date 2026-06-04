@@ -16,6 +16,7 @@ celery_app = Celery(
         "workers.tasks.discovery_tasks",   # Phase C SEED 발굴
         "workers.websearch_tasks",         # Phase D WebSearch SEED 발굴
         "workers.tasks.distribution",      # OTT popularity sync (Watcha/Netflix/Wave/Tving)
+        "workers.tasks.pipeline_auto",     # ADR-010 파이프라인 AUTO 워커
     ],
 )
 
@@ -153,6 +154,11 @@ celery_app.conf.update(
             "task": "workers.tasks.distribution.backfill_external_curations",
             "schedule": crontab(hour=7, minute=30),
         },
+        # ADR-010 파이프라인 AUTO tick — 15초 (auto_tick_enabled=False 시 즉시 종료)
+        "pipeline-auto-tick": {
+            "task": "workers.tasks.pipeline_auto.pipeline_auto_tick",
+            "schedule": 15.0,  # seconds
+        },
     },
     broker_connection_retry_on_startup=True,
     broker_transport_options={
@@ -176,6 +182,9 @@ celery_app.conf.update(
         "workers.tasks.tmdb_cache.*":            {"queue": "metadata"},
         "workers.tasks.kmdb_cache.*":            {"queue": "metadata"},
         "workers.tasks.discovery_tasks.*":       {"queue": "metadata"},
+        "workers.tasks.pipeline_auto.pipeline_auto_tick":  {"queue": "pipeline_fast"},
+        "workers.tasks.pipeline_auto.process_fast_bucket": {"queue": "pipeline_fast"},
+        "workers.tasks.pipeline_auto.process_ai_item":     {"queue": "pipeline_ai"},
     },
 )
 
