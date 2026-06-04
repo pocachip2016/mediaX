@@ -475,26 +475,17 @@ def approve_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
 @router.post("/reject", response_model=ReviewActionResponse,
              dependencies=[Depends(require_pipeline_test)])
 def reject_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
-    """[반려] — status=rejected, 위치(검수) 유지. StageEvent REJECTED 기록.
+    """[반려] — status=rejected(bucket 6). 수동 반려는 auto_hold 설정(재검수 복귀 시 AUTO 차단).
     반려된 콘텐츠는 [재검수]로 복귀 가능."""
-    from api.programming.metadata.stage_events import record_stage_event
-    from api.programming.metadata.models.content import PipelineStage, StageEventType
+    from api.test.pipeline_auto_service import reject_one
 
     results: dict[int, str] = {}
     processed = 0
     for cid in req.ids:
-        c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
-        if not c:
-            results[cid] = "not_found"
-            continue
-        # 현재 위치 유지(없으면 검수). REJECTED는 derive를 트리거하지 않으므로 status 수동 설정.
-        stage = c.current_stage or PipelineStage.S8_REVIEW
-        record_stage_event(db, cid, stage, StageEventType.REJECTED, actor="user")
-        c.status = ContentStatus.rejected
-        c.auto_hold = True          # 반려 후 AUTO 재진행 차단 (ADR-010)
-        c.auto_claimed_at = None
-        results[cid] = "rejected"
-        processed += 1
+        r = reject_one(db, cid, actor="user", set_hold=True)
+        results[cid] = "rejected" if r["result"] == "ok" else r["result"]
+        if r["result"] == "ok":
+            processed += 1
 
     db.commit()
     return ReviewActionResponse(processed=processed, skipped=len(req.ids) - processed, results=results)

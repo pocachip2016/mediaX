@@ -10,7 +10,7 @@ from api.programming.metadata.models.content import (
     Content, ContentStatus, PipelineStage,
 )
 from api.programming.metadata.models.stage_event import StageEvent
-from api.test.pipeline_auto_service import advance_one, approve_one, claim_bucket
+from api.test.pipeline_auto_service import advance_one, approve_one, reject_one, claim_bucket
 
 
 def _make_content(db: Session, title: str, stage=None, status=ContentStatus.raw) -> Content:
@@ -126,4 +126,33 @@ def test_claim_excludes_held(db):
 
     claimed = claim_bucket(db, bucket=1, batch_size=50, visibility_timeout=600)
     claimed_ids = [x.id for x in claimed]
+    assert c.id not in claimed_ids
+
+
+def test_reject_one_auto_no_hold(db):
+    """AUTO 반려: status=rejected, auto_hold 미설정 (rejected는 claim에서 제외됨)."""
+    c = _make_content(db, "반려테스트-auto", stage=PipelineStage.S8_REVIEW, status=ContentStatus.ai)
+    r = reject_one(db, c.id, actor="auto")
+    assert r["result"] == "ok"
+    db.refresh(c)
+    assert c.status == ContentStatus.rejected
+    assert c.auto_hold is False  # AUTO 반려는 hold 미설정
+
+
+def test_reject_one_manual_sets_hold(db):
+    """수동 반려: status=rejected + auto_hold=True (재검수 복귀 시 AUTO 차단)."""
+    c = _make_content(db, "반려테스트-manual", stage=PipelineStage.S8_REVIEW, status=ContentStatus.ai)
+    r = reject_one(db, c.id, actor="user", set_hold=True)
+    assert r["result"] == "ok"
+    db.refresh(c)
+    assert c.status == ContentStatus.rejected
+    assert c.auto_hold is True
+
+
+def test_rejected_excluded_from_claim(db):
+    """반려된 건은 claim_bucket(bucket 4)에서 제외 — 재처리/churn 없음."""
+    c = _make_content(db, "반려테스트-claim", stage=PipelineStage.S8_REVIEW, status=ContentStatus.ai)
+    reject_one(db, c.id, actor="auto")
+    db.flush()
+    claimed_ids = [x.id for x in claim_bucket(db, bucket=4, batch_size=50, visibility_timeout=600)]
     assert c.id not in claimed_ids

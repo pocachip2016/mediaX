@@ -245,6 +245,42 @@ def approve_one(db: Session, content_id: int, actor: str = "auto") -> ApproveRes
     return ApproveResult(content_id=content_id, result="ok")
 
 
+# ── reject_one ────────────────────────────────────────────────────────────────
+
+class RejectResult(TypedDict):
+    content_id: int
+    result: str  # "ok" | "not_found" | "already_rejected"
+
+
+def reject_one(db: Session, content_id: int, actor: str = "auto", set_hold: bool = False) -> RejectResult:
+    """단건 반려 — status=rejected(bucket 6 반려/실패). StageEvent REJECTED.
+    set_hold=True(수동 반려): auto_hold 설정해 재검수 복귀 시 AUTO 재진입 차단.
+    set_hold=False(AUTO 반려): hold 미설정 — rejected는 claim에서 이미 제외됨."""
+    from api.programming.metadata.stage_events import record_stage_event
+
+    c = db.query(Content).filter(
+        Content.id == content_id,
+        Content.is_deleted.is_(False),
+    ).with_for_update().first()
+
+    if not c:
+        return RejectResult(content_id=content_id, result="not_found")
+
+    if c.status == ContentStatus.rejected:
+        release_claim(db, content_id)
+        return RejectResult(content_id=content_id, result="already_rejected")
+
+    stage = c.current_stage or PipelineStage.S8_REVIEW
+    record_stage_event(db, content_id, stage, StageEventType.REJECTED, actor=actor)
+    c.status = ContentStatus.rejected
+    if set_hold:
+        c.auto_hold = True
+    c.auto_claimed_at = None
+    c.auto_review_skipped_at = None  # 잔류 마킹 해제 (이제 반려됨)
+    db.flush()
+    return RejectResult(content_id=content_id, result="ok")
+
+
 # ── enrich_autofill_one (sync) ────────────────────────────────────────────────
 
 class EnrichAutofillResult(TypedDict):
