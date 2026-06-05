@@ -93,7 +93,7 @@ def list_contents(
     content_type: ContentType | None = Query(None),
     production_year: int | None = Query(None),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     items, total = service.list_contents(

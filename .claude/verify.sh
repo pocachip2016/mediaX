@@ -4579,6 +4579,78 @@ print('  ✓ ContentOut parent_id/season_number/episode_number OK')
     echo "=== PASS ==="
     ;;
 
+  # ── pipeline-tree-list ───────────────────────────────────────────────────
+  pipeline-tree-list)
+    echo "=== pipeline-tree-list: PipelineTreeList 컴포넌트 + 토글 + size 확대 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    PIPELINE_PAGE="$CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    TREE_LIST="$CMS/apps/web/components/contents/pipeline/PipelineTreeList.tsx"
+
+    echo "--- 컴포넌트 파일 존재 ---"
+    [ -f "$TREE_LIST" ] || { echo "  ✗ PipelineTreeList.tsx 없음"; exit 1; }
+    echo "  ✓ PipelineTreeList.tsx"
+
+    echo "--- viewMode prop 선언 ---"
+    grep -q 'viewMode' "$TREE_LIST" && echo "  ✓ viewMode prop OK" || { echo "  ✗ viewMode 없음"; exit 1; }
+
+    echo "--- 트리 그룹핑 함수 ---"
+    grep -q 'buildTree\|parent_id' "$TREE_LIST" && echo "  ✓ buildTree/parent_id 그룹핑 OK" || { echo "  ✗ buildTree 없음"; exit 1; }
+
+    echo "--- page.tsx: PipelineTreeList import ---"
+    grep -q 'PipelineTreeList' "$PIPELINE_PAGE" && echo "  ✓ PipelineTreeList import OK" || { echo "  ✗ import 없음"; exit 1; }
+
+    echo "--- page.tsx: listContents size > 100 ---"
+    grep -q 'size: 500\|size: [2-9][0-9][0-9]\|size: [0-9][0-9][0-9][0-9]' "$PIPELINE_PAGE" && echo "  ✓ listContents size 확대 OK" || { echo "  ✗ size 100 미확대"; exit 1; }
+
+    echo "--- page.tsx: listViewMode 토글 state ---"
+    grep -q 'listViewMode' "$PIPELINE_PAGE" && echo "  ✓ listViewMode state OK" || { echo "  ✗ listViewMode 없음"; exit 1; }
+
+    echo "--- page.tsx: TestContentList 사용처 모두 교체 확인 ---"
+    REMAINING=$(grep -c '<TestContentList' "$PIPELINE_PAGE" || true)
+    [ "${REMAINING:-0}" -eq 0 ] && echo "  ✓ TestContentList 사용처 모두 교체됨" || { echo "  ✗ TestContentList 사용처 ${REMAINING}건 미교체"; exit 1; }
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "^.* error " | head -10 || true
+    echo "=== PASS ==="
+    ;;
+
+  # ── pipeline-drilldown-detail ────────────────────────────────────────────
+  pipeline-drilldown-detail)
+    echo "=== pipeline-drilldown-detail: 우측 타입별 드릴다운 디스패치 ==="
+    CMS="$SCRIPT_DIR/../mediaX-CMS"
+    PIPELINE_PAGE="$CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    DRILLDOWN="$CMS/apps/web/components/contents/pipeline/PipelineDrilldownDetail.tsx"
+    CHILDREN_TABLE="$CMS/apps/web/components/contents/detail/ChildrenTable.tsx"
+
+    echo "--- 컴포넌트 파일 존재 ---"
+    [ -f "$DRILLDOWN" ] || { echo "  ✗ PipelineDrilldownDetail.tsx 없음"; exit 1; }
+    echo "  ✓ PipelineDrilldownDetail.tsx"
+
+    echo "--- getHierarchy 사용 ---"
+    grep -q "getHierarchy" "$DRILLDOWN" && echo "  ✓ getHierarchy OK" || { echo "  ✗ getHierarchy 없음"; exit 1; }
+
+    echo "--- isLeafType container/leaf 분기 ---"
+    grep -q "isLeafType" "$DRILLDOWN" && echo "  ✓ isLeafType 분기 OK" || { echo "  ✗ isLeafType 없음"; exit 1; }
+
+    echo "--- ChildrenTable onItemClick prop ---"
+    grep -q "onItemClick" "$CHILDREN_TABLE" && echo "  ✓ ChildrenTable onItemClick OK" || { echo "  ✗ onItemClick 없음"; exit 1; }
+
+    echo "--- page.tsx: PipelineDrilldownDetail import ---"
+    grep -q "PipelineDrilldownDetail" "$PIPELINE_PAGE" && echo "  ✓ import OK" || { echo "  ✗ import 없음"; exit 1; }
+
+    echo "--- page.tsx: SelectedContentMeta 사용처 모두 교체 확인 ---"
+    REMAIN=$(grep -c '<SelectedContentMeta' "$PIPELINE_PAGE" || true)
+    [ "${REMAIN:-0}" -eq 0 ] && echo "  ✓ SelectedContentMeta 사용처 모두 교체됨" || { echo "  ✗ SelectedContentMeta ${REMAIN}건 미교체"; exit 1; }
+
+    echo "--- typecheck ---"
+    cd "$CMS" && npm run typecheck --silent 2>&1 | tail -5
+    echo "--- lint errors ---"
+    cd "$CMS" && npm run lint --silent 2>&1 | grep -E "^.* error " | head -10 || true
+    echo "=== PASS ==="
+    ;;
+
   # ── pt-pipeline-test-console ─────────────────────────────────────────────
   pt-adr)
     echo "=== pt-adr: doc-only, skip ==="

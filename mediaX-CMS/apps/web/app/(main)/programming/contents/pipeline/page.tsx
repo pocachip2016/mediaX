@@ -27,6 +27,9 @@ import {
   type ReviewActionResponse,
 } from "@/lib/api"
 import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
+import { PipelineTreeList } from "@/components/contents/pipeline/PipelineTreeList"
+import { PipelineDrilldownDetail } from "@/components/contents/pipeline/PipelineDrilldownDetail"
+import { isLeafType } from "@/components/contents/detail/contentType"
 
 const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
 
@@ -1592,11 +1595,12 @@ function StageActionBar({ ids, onDone, onRevertDone, onAfterAdvance }: {
 }
 
 // S2(Enrich) 3단 콘솔 — 좌(목록+전체버튼) / 중(상세+필드테이블+단건버튼) / 우(추천 요약)
-function S2Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents }: {
+function S2Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents, listViewMode }: {
   testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
   onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
   workerStatus?: import("@/lib/api").AutoWorkerStatus | null
   logEvents?: import("@/lib/api").AutoLogEvent[]
+  listViewMode: "flat" | "tree"
 }) {
   const [detail, setDetail] = useState<ContentDetail | null>(null)
   const [recs, setRecs] = useState<RecommendationsOut | null>(null)
@@ -1653,7 +1657,7 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            <PipelineTreeList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} viewMode={listViewMode} />
             {testContents.length > 0 && (
               <StageActionBar ids={testContents.map((c) => c.id)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
             )}
@@ -1674,8 +1678,8 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
-            {selectedContentId !== null && (
+            <PipelineDrilldownDetail contentId={selectedContentId} refreshKey={metaRefresh} onSelect={onSelect} />
+            {selectedContentId !== null && detail && isLeafType(detail.content_type as import("@/lib/api").ContentType) && (
               <>
                 <div className="rounded border border-border bg-background overflow-hidden">
                   <div className="grid grid-cols-[4.5rem_1fr_1fr_4rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
@@ -1760,11 +1764,12 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
 }
 
 // S3(AI처리) 3단 콘솔 — 좌(목록+전체버튼) / 중(상세+RAG/번역/축약 테이블+단건버튼) / 우(AI 결과 요약)
-function S3Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents }: {
+function S3Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents, listViewMode }: {
   testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
   onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
   workerStatus?: import("@/lib/api").AutoWorkerStatus | null
   logEvents?: import("@/lib/api").AutoLogEvent[]
+  listViewMode: "flat" | "tree"
 }) {
   const [aiResults, setAiResults] = useState<ContentAIResult[]>([])
   const [metaRefresh, setMetaRefresh] = useState(0)   // 메타 카드 전용
@@ -1812,7 +1817,7 @@ function S3Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            <PipelineTreeList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} viewMode={listViewMode} />
             {testContents.length > 0 && (
               <StageActionBar ids={testContents.map((c) => c.id)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
             )}
@@ -1837,8 +1842,8 @@ function S3Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
-            {selectedContentId !== null && (
+            <PipelineDrilldownDetail contentId={selectedContentId} refreshKey={metaRefresh} onSelect={onSelect} />
+            {selectedContentId !== null && isLeafType((testContents.find((c) => c.id === selectedContentId)?.content_type ?? "movie") as import("@/lib/api").ContentType) && (
               <>
                 <EnrichBoostPanel selectedContentId={selectedContentId} runAllSignal={aiRunSignal} reloadSignal={panelReload} onRefresh={() => { void refetch(); refreshTestSummary(); setMetaRefresh((n) => n + 1) }} />
                 <StageActionBar ids={[selectedContentId]} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
@@ -2275,11 +2280,12 @@ function S4ReviewActionBar({ id, status, onDone }: { id: number; status: Content
 }
 
 // S4(검수) 3단 콘솔 — 좌(목록+전체승인+이전/다음/클린업) / 중(상세+필드편집+단건결정) / 우(WebSearch)
-function S4Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents }: {
+function S4Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents, listViewMode }: {
   testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
   onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
   workerStatus?: import("@/lib/api").AutoWorkerStatus | null
   logEvents?: import("@/lib/api").AutoLogEvent[]
+  listViewMode: "flat" | "tree"
 }) {
   const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
   const [reviewTitle, setReviewTitle] = useState("")
@@ -2330,7 +2336,7 @@ function S4Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            <PipelineTreeList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} viewMode={listViewMode} />
             {testContents.length > 0 && (
               <div className="space-y-2">
                 {bulkResult && <p className="text-[11px] text-muted-foreground">{bulkResult}</p>}
@@ -2366,8 +2372,10 @@ function S4Console({ testContents, testContentsLoading, selectedContentId, onSel
               <p className="text-xs text-muted-foreground text-center py-4">콘텐츠를 선택하면 상세 및 필드 편집이 표시됩니다</p>
             ) : (
               <>
-                <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
-                <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchStatus} />
+                <PipelineDrilldownDetail contentId={selectedContentId} refreshKey={metaRefresh} onSelect={onSelect} />
+                {isLeafType((testContents.find((c) => c.id === selectedContentId)?.content_type ?? "movie") as import("@/lib/api").ContentType) && (
+                  <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchStatus} />
+                )}
               </>
             )}
           </div>
@@ -2823,6 +2831,7 @@ export default function PipelineMonitoringPage() {
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const selectedContentIdRef = useRef<number | null>(null)
   useEffect(() => { selectedContentIdRef.current = selectedContentId }, [selectedContentId])
+  const [listViewMode, setListViewMode] = useState<"flat" | "tree">("flat")
 
   const [stageAuto, setStageAuto] = useState<StageAutoPolicy>({ s1_auto: false, s2_auto: false, s3_auto: false, s4_auto: false, s5_auto: false, s6_auto: false, s4_quality_threshold: 90 })
   const [stageAutoBusy, setStageAutoBusy] = useState(false)
@@ -2918,7 +2927,7 @@ export default function PipelineMonitoringPage() {
     if (!opts?.silent) setTestContentsLoading(true)
     try {
       // CP 무관 전체 조회. 단계 선택 시 해당 bucket 필터, 미선택 시 전체 표시.
-      const r = await metadataApi.listContents({ size: 100 })
+      const r = await metadataApi.listContents({ size: 500 })
       const filtered = activeStage !== null
         ? r.items.filter((c) => contentBucket(c) === activeStage)
         : r.items
@@ -3042,6 +3051,24 @@ export default function PipelineMonitoringPage() {
               ))}
             </div>
 
+            {/* 목록 보기 토글 (평면 / 계층 트리) */}
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-muted-foreground mr-1">목록:</span>
+              {(["flat", "tree"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setListViewMode(mode)}
+                  className={`px-2 py-0.5 rounded transition-colors ${
+                    listViewMode === mode
+                      ? "bg-amber-200 dark:bg-amber-800/50 text-amber-800 dark:text-amber-300 font-medium"
+                      : "text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  {mode === "flat" ? "평면" : "계층"}
+                </button>
+              ))}
+            </div>
+
             {/* S4 AUTO 임계값 입력 팝업 */}
             {s4ThresholdModal && (
               <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
@@ -3118,11 +3145,12 @@ export default function PipelineMonitoringPage() {
                         )}
                       </div>
                       <div className="p-3 space-y-3">
-                        <TestContentList
+                        <PipelineTreeList
                           contents={testContents}
                           loading={testContentsLoading}
                           selectedId={selectedContentId}
                           onSelect={handleSelectContent}
+                          viewMode={listViewMode}
                         />
                         {testContents.length > 0 && (
                           <S1BulkActionBar
@@ -3147,7 +3175,7 @@ export default function PipelineMonitoringPage() {
                           )}
                         </div>
                         <div className="p-3 space-y-3">
-                          <SelectedContentMeta contentId={selectedContentId} />
+                          <PipelineDrilldownDetail contentId={selectedContentId} onSelect={handleSelectContent} />
                           {selectedContentId !== null && (
                             <S1BulkActionBar
                               stageContents={testContents.filter((c) => c.id === selectedContentId)}
@@ -3182,6 +3210,7 @@ export default function PipelineMonitoringPage() {
                   onAfterAdvance={handleAfterAdvance}
                   workerStatus={autoWorkerStatus}
                   logEvents={autoLogEvents}
+                  listViewMode={listViewMode}
                 />
               )}
 
@@ -3197,6 +3226,7 @@ export default function PipelineMonitoringPage() {
                   onAfterAdvance={handleAfterAdvance}
                   workerStatus={autoWorkerStatus}
                   logEvents={autoLogEvents}
+                  listViewMode={listViewMode}
                 />
               )}
 
@@ -3212,6 +3242,7 @@ export default function PipelineMonitoringPage() {
                   onAfterAdvance={handleAfterAdvance}
                   workerStatus={autoWorkerStatus}
                   logEvents={autoLogEvents}
+                  listViewMode={listViewMode}
                 />
               )}
 
@@ -3234,14 +3265,15 @@ export default function PipelineMonitoringPage() {
               {activeStage === 6 && (
                 <>
                   <div className="col-span-2 space-y-3">
-                    <TestContentList
+                    <PipelineTreeList
                       contents={testContents}
                       loading={testContentsLoading}
                       selectedId={selectedContentId}
                       onSelect={handleSelectContent}
+                      viewMode={listViewMode}
                     />
                     <StageBulkBar stageContents={testContents} activeStage={activeStage} onDone={refreshTestSummary} />
-                    <SelectedContentMeta contentId={selectedContentId} />
+                    <PipelineDrilldownDetail contentId={selectedContentId} onSelect={handleSelectContent} />
                     <SingleAdvanceDeleteBar
                       contentId={selectedContentId}
                       activeStage={activeStage}
