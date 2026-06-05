@@ -172,6 +172,40 @@ def test_episode_inherits_cast_director_for_quality_score(db):
     assert score >= 90.0
 
 
+def test_season_inherits_all_fields_for_quality_score(db):
+    """우영우 시즌1형: 자식은 빈 필드, 부모(시리즈)만 메타 보유
+    → synopsis/genre/country/year/cast 모두 상속 점수 합산."""
+    from api.programming.metadata.models.content import ContentStatus
+    from api.programming.metadata.models.taxonomy import GenreCode, ContentGenre
+
+    series = Content(
+        title="이상한 변호사 우영우", content_type=ContentType.series,
+        cp_name="TEST_GUARD", status=ContentStatus.ai,
+        country="South Korea", production_year=2022,
+    )
+    db.add(series); db.flush()
+    db.add(ContentMetadata(content_id=series.id, quality_score=0.0, cp_synopsis="줄" * 270))
+    _add_credit(db, series.id, CreditRole.actor)
+    # 부모 genre (primary)
+    g = GenreCode(code="DRA", name_ko="드라마"); db.add(g); db.flush()
+    db.add(ContentGenre(content_id=series.id, genre_id=g.id, is_primary=True))
+    db.flush()
+
+    # 시즌1 — 자식 필드 전부 비움 (title만 고유)
+    season = Content(
+        title="이상한 변호사 우영우 시즌1", content_type=ContentType.season,
+        cp_name="TEST_GUARD", status=ContentStatus.ai, parent_id=series.id,
+    )
+    db.add(season); db.flush()
+    db.add(ContentMetadata(content_id=season.id, quality_score=0.0))
+    db.flush()
+
+    # title 10 + synopsis(상속 270자) 22 + genre(상속) 14 + cast(상속) 12
+    #   + country(상속) 10 + year(상속) 10 = 78 (director·runtime 없음)
+    score = recompute_quality_score(db, season.id)
+    assert score == 78.0
+
+
 def test_episode_without_any_credits_below_threshold(db):
     """부모에도 크레딧 없으면 상속 없음 → 점수 < 90."""
     from api.programming.metadata.models.content import ContentStatus

@@ -16,7 +16,9 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
-- [x] **dev-child-inheritance** — 시즌/에피소드 cast·director 상속 → quality_score 채점 반영 + FE (상속) 표시 + inheritance/quality_score 테스트 5건 + verify.sh child-inheritance 스텝 (2026-06-05)
+- [x] **반려/실패 콘솔 S4 배치** — RejectedConsole 3컬럼(목록+이전단계 / 상세+필드편집+재검수 / WebSearch) + 승인·반려 AUTO 토글 숨김 + 승인 체크박스 폴링 풀림 수정(idsKey) + 반려 목록 밑 다음단계→이전단계 (2026-06-05)
+- [x] **revert/재검수 단계 AUTO OFF** — revert/re-review 시 도착 단계(검수 s4_auto) 자동 OFF + auto_hold 미사용(재-ON 시 재개) + RevertResponse.disabled_stages + FE 토글 동기화(syncStageAuto). reject hold 유지. e2e/backward-hold 신정책 테스트 (2026-06-05)
+- [x] **dev-child-inheritance** — 시즌/에피소드 상속을 quality_score 채점에 완전 배선(synopsis/genre/country/year/cast/director) + 스칼라 필드(year/country) 자식 DB autofill(apply_parent_inheritance, empty-only·멱등, title/synopsis 제외) + FE (상속) 표시 + 테스트 8건 + 우영우 시즌1 22→78·에피 32→88 보정 (2026-06-05)
 - [x] **feat(series-meta)** — TmdbTvCache→ContentMetadata 시리즈 6필드 보강(apply_series_meta_from_cache, S2 AUTO 배선, 멱등, series 한정) + alembic 0038 + FE 표시 + worker watchmedo 핫리로드 인프라(stale 코드 차단) + apply_migration 훅. 우영우/오징어게임/무빙 백필 (2026-06-05)
 - [x] **feat(pipeline)** — cascade advance(시리즈/시즌 동일버킷 자손 포함) + 계층 상세 메타 패널(포스터+필드→하위목록) + 외부소스 master-detail(TMDB/KOBIS/KMDB 행 클릭 상세) + 건수 breakdown 라벨(N시즌/M편) + 부모 브레드크럼 (2026-06-05)
 - [x] **feat(pipeline-tree-drilldown)** — 계층 트리 + 타입별 드릴다운 (PipelineTreeList 평면/계층 토글 + PipelineDrilldownDetail 타입 디스패치 + ChildrenTable ASC 정렬 + list_contents size 100→500) (2026-06-05)

@@ -37,6 +37,27 @@
       "summary": "quality_score 상속 채점 테스트 2건 + inheritance cast/director 테스트 4건 + verify.sh child-inheritance 스텝 추가",
       "status": "completed",
       "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "2.1",
+      "name": "recompute-inherit-scoring",
+      "summary": "recompute_quality_score에서 season/episode 빈 필드를 resolve_inherited_metadata로 통합 폴백 채점(synopsis/genre/country/year + 기존 cast/director). 우영우 시즌1 22→78",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "2.2",
+      "name": "scalar-field-autofill",
+      "summary": "apply_parent_inheritance 신규(스칼라 production_year/country만 자식 DB 기록, empty-only·멱등, title/synopsis 제외) + enrich_autofill_one 배선",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "2.3",
+      "name": "tests-and-realdata",
+      "summary": "시즌1형 78점 상속 채점 테스트 + apply_parent_inheritance 테스트 3건 + verify.sh 패턴 확장 + 우영우 시즌1/에피 3건 실데이터 보정(year/country 채움, synopsis/title 불변)",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
     }
   ]
 }

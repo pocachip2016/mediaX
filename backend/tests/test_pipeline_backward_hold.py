@@ -1,13 +1,32 @@
-"""Step 5 검증: revert/reject/re-review → auto_hold set, resume-auto → 해제,
-임계값 변경 → auto_review_skipped_at clear (ADR-010).
+"""Step 5 검증 (ADR-010 + revert/재검수 신 정책):
+- revert/re-review → auto_hold 미사용 + 도착 단계(검수 s4_auto) AUTO OFF
+- reject → auto_hold set (검수→반려, 단계 OFF 무관)
+- resume-auto → 해제, 임계값 변경 → auto_review_skipped_at clear
 """
 import pytest
 from fastapi.testclient import TestClient
 from main import app
 from shared.database import SessionLocal
 from api.programming.metadata.models.content import Content, ContentStatus, PipelineStage
+from api.programming.metadata.models.external import StageAutoPolicy
 
 client = TestClient(app, headers={"x-pipeline-test-token": "test"})
+
+
+def _set_s4_auto(value: bool):
+    with SessionLocal() as db:
+        p = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+        if not p:
+            p = StageAutoPolicy(id=1)
+            db.add(p)
+        p.s4_auto = value
+        db.commit()
+
+
+def _get_s4_auto() -> bool:
+    with SessionLocal() as db:
+        p = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+        return bool(p and p.s4_auto)
 
 
 def _seed_one(stage=PipelineStage.S8_REVIEW, status=ContentStatus.ai) -> int:
@@ -44,17 +63,30 @@ def _cleanup(*ids):
         db.commit()
 
 
-# ── revert → auto_hold ────────────────────────────────────────────────────────
+# ── revert → hold 미사용 + 도착 단계 AUTO OFF ─────────────────────────────────
 
-def test_revert_sets_auto_hold():
+def test_revert_no_hold_disables_stage():
+    """revert(검수 bucket4 → 도착 AI bucket3): auto_hold 미설정 + 도착 단계 s3_auto OFF."""
     cid = _seed_one(stage=PipelineStage.S8_REVIEW, status=ContentStatus.ai)
+    with SessionLocal() as db:
+        p = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+        if not p:
+            p = StageAutoPolicy(id=1); db.add(p)
+        prev_s3 = p.s3_auto
+        p.s3_auto = True
+        db.commit()
     try:
         r = client.post("/api/test/pipeline/revert", json={"ids": [cid]})
         assert r.status_code == 200, r.text
         state = _get(cid)
-        assert state["auto_hold"] is True, f"revert 후 auto_hold 미설정: {state}"
+        assert state["auto_hold"] is False, f"revert는 hold 미사용: {state}"
         assert state["auto_claimed_at"] is None
+        assert "s3_auto" in r.json()["disabled_stages"]
     finally:
+        with SessionLocal() as db:
+            p = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+            if p: p.s3_auto = prev_s3
+            db.commit()
         _cleanup(cid)
 
 
@@ -72,16 +104,22 @@ def test_reject_sets_auto_hold():
         _cleanup(cid)
 
 
-# ── re-review → auto_hold ─────────────────────────────────────────────────────
+# ── re-review → hold 미사용 + 검수 AUTO OFF ───────────────────────────────────
 
-def test_re_review_sets_auto_hold():
+def test_re_review_no_hold_disables_s4():
+    """재검수(반려 → 검수 복귀): auto_hold 미설정 + 검수 s4_auto OFF."""
     cid = _seed_one(stage=PipelineStage.S8_REVIEW, status=ContentStatus.rejected)
+    prev_s4 = _get_s4_auto()
+    _set_s4_auto(True)
     try:
         r = client.post("/api/test/pipeline/re-review", json={"ids": [cid]})
         assert r.status_code == 200, r.text
         state = _get(cid)
-        assert state["auto_hold"] is True
+        assert state["auto_hold"] is False, f"재검수는 hold 미사용: {state}"
+        assert state["status"] == "ai"
+        assert _get_s4_auto() is False, "재검수 후 검수 s4_auto OFF 안 됨"
     finally:
+        _set_s4_auto(prev_s4)
         _cleanup(cid)
 
 

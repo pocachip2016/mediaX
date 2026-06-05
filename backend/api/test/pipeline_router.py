@@ -67,6 +67,7 @@ class RevertResponse(BaseModel):
     reverted: int
     skipped: int
     results: dict[int, str]
+    disabled_stages: list[str] = []   # 역방향으로 자동 OFF된 단계 AUTO 플래그 (FE 토글 갱신용)
 
 
 class StageSummary(BaseModel):
@@ -161,8 +162,12 @@ def revert_stage(req: RevertRequest, db: Session = Depends(get_db)):
         6: (PipelineStage.S8_REVIEW,      ContentStatus.ai),        # 반려 → 검수
     }
 
+    # 도착 bucket → AUTO 정책 플래그 (역방향 후 자동 OFF — 원치 않는 재진행 차단)
+    _BUCKET_AUTO_FLAG: dict[int, str] = {1: "s1_auto", 2: "s2_auto", 3: "s3_auto", 4: "s4_auto"}
+
     expanded = expand_same_bucket_descendants(db, req.ids)
     results: dict[int, str] = {}
+    arrived_buckets: set[int] = set()
     reverted = 0
     for cid in expanded:
         c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
@@ -182,15 +187,30 @@ def revert_stage(req: RevertRequest, db: Session = Depends(get_db)):
             continue
 
         prev_stage, prev_status = prev
+        arrived = cur_bucket - 1 if cur_bucket != 6 else 4
         record_stage_event(db, cid, prev_stage, StageEventType.RETRIED, actor="user")
         c.status = prev_status
-        c.auto_hold = True          # 역방향 후 AUTO 자동 재진행 차단 (ADR-010)
-        c.auto_claimed_at = None    # claim 마킹 해제
-        results[cid] = f"bucket_{cur_bucket - 1 if cur_bucket != 6 else 4}"
+        c.auto_claimed_at = None    # claim 마킹 해제 (auto_hold 미사용 — 단계 AUTO OFF로 대체)
+        arrived_buckets.add(arrived)
+        results[cid] = f"bucket_{arrived}"
         reverted += 1
 
+    # 도착 단계 AUTO 자동 OFF — 역방향한 콘텐츠가 다시 자동 진행되지 않도록 단계 정책을 끔.
+    # 운영자가 해당 단계 AUTO를 다시 ON하면 hold가 없으므로 그대로 재개된다.
+    disabled_stages: list[str] = []
+    if reverted:
+        from api.programming.metadata.models.external import StageAutoPolicy
+        policy = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+        if policy:
+            for b in sorted(arrived_buckets):
+                flag = _BUCKET_AUTO_FLAG.get(b)
+                if flag and getattr(policy, flag, False):
+                    setattr(policy, flag, False)
+                    disabled_stages.append(flag)
+
     db.commit()
-    return RevertResponse(reverted=reverted, skipped=len(expanded) - reverted, results=results)
+    return RevertResponse(reverted=reverted, skipped=len(expanded) - reverted,
+                          results=results, disabled_stages=disabled_stages)
 
 
 @router.get("/auto-log", dependencies=[Depends(require_pipeline_test)])
@@ -512,10 +532,16 @@ def re_review(req: ReviewActionRequest, db: Session = Depends(get_db)):
             continue
         record_stage_event(db, cid, PipelineStage.S8_REVIEW, StageEventType.RETRIED, actor="user")
         c.status = ContentStatus.ai
-        c.auto_hold = True          # 재검수 복귀 후 AUTO 자동 재진행 차단 (ADR-010)
-        c.auto_claimed_at = None
+        c.auto_claimed_at = None    # claim 마킹 해제 (auto_hold 미사용 — 검수 단계 AUTO OFF로 대체)
         results[cid] = "re_reviewed"
         processed += 1
+
+    # 재검수는 검수(bucket4)로 복귀 — 검수 AUTO 자동 OFF (운영자 수동 재검수 의도 유지, revert와 일관)
+    if processed:
+        from api.programming.metadata.models.external import StageAutoPolicy
+        policy = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+        if policy and policy.s4_auto:
+            policy.s4_auto = False
 
     db.commit()
     return ReviewActionResponse(processed=processed, skipped=len(req.ids) - processed, results=results)

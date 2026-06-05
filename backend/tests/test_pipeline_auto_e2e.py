@@ -107,31 +107,116 @@ def test_worker_bucket4_reads_metadata_quality_score(db):
     assert not hasattr(c, "quality_score"), "Content에 quality_score 직접 속성 생기면 worker 로직 재검토 필요"
 
 
-def test_revert_hold_resume_cycle(db):
-    """revert → auto_hold → claim 미포함 → resume → claim 포함."""
+def test_revert_disables_stage_auto_no_hold(db):
+    """revert → auto_hold 미설정 + 도착 단계 AUTO 자동 OFF, 재-ON 시 claim 재개.
+
+    역방향은 개별 hold를 걸지 않고 도착 단계의 AUTO 플래그를 끈다.
+    운영자가 그 단계 AUTO를 다시 ON하면 hold가 없으므로 그대로 claim·재개된다.
+    """
     from fastapi.testclient import TestClient
     from main import app
+    from api.programming.metadata.models.external import StageAutoPolicy
     client = TestClient(app, headers={"x-pipeline-test-token": "test"})
 
-    c = _make_content(db, "E2E-HOLD", stage=PipelineStage.S8_REVIEW, status=ContentStatus.ai)
+    policy = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not policy:
+        policy = StageAutoPolicy(id=1)
+        db.add(policy)
+        db.flush()
+    prev_s3 = policy.s3_auto
+    policy.s3_auto = True
     db.commit()
 
-    # revert → auto_hold
-    r = client.post("/api/test/pipeline/revert", json={"ids": [c.id]})
-    assert r.status_code == 200
-    db.refresh(c)
-    assert c.auto_hold is True
-
-    # claim → hold 콘텐츠 제외
-    claimed_ids = [x.id for x in claim_bucket(db, bucket=4, batch_size=50, visibility_timeout=600)]
-    assert c.id not in claimed_ids
-
-    # resume → hold 해제
-    r2 = client.post("/api/test/pipeline/resume-auto", json={"ids": [c.id]})
-    assert r2.status_code == 200
-    db.refresh(c)
-    assert c.auto_hold is False
-
-    # cleanup
-    c.is_deleted = True
+    c = _make_content(db, "E2E-REVERT-OFF", stage=PipelineStage.S8_REVIEW, status=ContentStatus.ai)
     db.commit()
+
+    try:
+        # revert: bucket4(S8_REVIEW) → 도착 bucket3(S6_LLM_EXTRACT)
+        r = client.post("/api/test/pipeline/revert", json={"ids": [c.id]})
+        assert r.status_code == 200
+        assert "s3_auto" in r.json()["disabled_stages"]
+
+        db.refresh(c)
+        db.refresh(policy)
+        assert c.auto_hold is False                          # hold 미사용
+        assert policy.s3_auto is False                       # 도착 단계 AUTO 자동 OFF
+        assert c.current_stage == PipelineStage.S6_LLM_EXTRACT
+
+        # 재-ON → hold 없으므로 claim 재개
+        policy.s3_auto = True
+        db.commit()
+        claimed_ids = [x.id for x in claim_bucket(db, bucket=3, batch_size=50, visibility_timeout=600)]
+        assert c.id in claimed_ids
+    finally:
+        # cleanup — 콘텐츠 soft-delete + 정책 원복
+        c.is_deleted = True
+        policy.s3_auto = prev_s3
+        db.commit()
+
+
+def test_revert_from_approved_disables_s4_auto(db):
+    """S5(승인, bucket5)에서 이전단계 → 도착 S4(검수, bucket4) → s4_auto OFF + disabled_stages."""
+    from fastapi.testclient import TestClient
+    from main import app
+    from api.programming.metadata.models.external import StageAutoPolicy
+    client = TestClient(app, headers={"x-pipeline-test-token": "test"})
+
+    policy = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not policy:
+        policy = StageAutoPolicy(id=1)
+        db.add(policy)
+        db.flush()
+    prev_s4 = policy.s4_auto
+    policy.s4_auto = True
+    db.commit()
+
+    c = _make_content(db, "E2E-APPROVED-REVERT", stage=PipelineStage.S9_PUBLISH, status=ContentStatus.approved)
+    db.commit()
+
+    try:
+        r = client.post("/api/test/pipeline/revert", json={"ids": [c.id]})
+        assert r.status_code == 200
+        assert "s4_auto" in r.json()["disabled_stages"]
+        db.refresh(c)
+        db.refresh(policy)
+        assert c.auto_hold is False
+        assert policy.s4_auto is False                       # 도착 단계(검수) AUTO OFF
+        assert c.current_stage == PipelineStage.S8_REVIEW
+    finally:
+        c.is_deleted = True
+        policy.s4_auto = prev_s4
+        db.commit()
+
+
+def test_revert_from_rejected_disables_s4_auto(db):
+    """반려/실패(bucket6)에서 이전단계 → 도착 S4(검수) → s4_auto OFF."""
+    from fastapi.testclient import TestClient
+    from main import app
+    from api.programming.metadata.models.external import StageAutoPolicy
+    client = TestClient(app, headers={"x-pipeline-test-token": "test"})
+
+    policy = db.query(StageAutoPolicy).filter(StageAutoPolicy.id == 1).first()
+    if not policy:
+        policy = StageAutoPolicy(id=1)
+        db.add(policy)
+        db.flush()
+    prev_s4 = policy.s4_auto
+    policy.s4_auto = True
+    db.commit()
+
+    # rejected는 위치 무관하게 bucket 6으로 분기 (content_bucket)
+    c = _make_content(db, "E2E-REJECTED-REVERT", stage=PipelineStage.S8_REVIEW, status=ContentStatus.rejected)
+    db.commit()
+
+    try:
+        r = client.post("/api/test/pipeline/revert", json={"ids": [c.id]})
+        assert r.status_code == 200
+        assert "s4_auto" in r.json()["disabled_stages"]
+        db.refresh(c)
+        db.refresh(policy)
+        assert c.auto_hold is False
+        assert policy.s4_auto is False                       # 도착 단계(검수) AUTO OFF
+    finally:
+        c.is_deleted = True
+        policy.s4_auto = prev_s4
+        db.commit()

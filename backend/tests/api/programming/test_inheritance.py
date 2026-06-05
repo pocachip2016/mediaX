@@ -207,6 +207,49 @@ def test_no_cast_inherit_if_direct_credits_exist(db):
     assert result is None or "cast_credits" not in (result or {})
 
 
+# ── apply_parent_inheritance — 스칼라 필드 DB 기록 ────────────────────────────
+
+def test_apply_parent_inheritance_fills_scalar_fields(db):
+    """시즌 빈 production_year/country가 부모값으로 DB 기록되고 title/synopsis는 불변."""
+    from api.test.pipeline_auto_service import apply_parent_inheritance
+
+    series = _make_series(db, year=2022, country="South Korea")
+    _add_meta(db, series.id, synopsis="A" * 270)
+    season = _make_season(db, series.id)  # year/country 비어있음
+    _add_meta(db, season.id, synopsis="")  # synopsis 빈 채로
+
+    filled = apply_parent_inheritance(db, season.id)
+    db.refresh(season)
+
+    assert set(filled) == {"production_year", "country"}
+    assert season.production_year == 2022
+    assert season.country == "South Korea"
+    # title·synopsis 불변
+    assert season.title == "무빙 시즌1"
+    season_meta = db.query(ContentMetadata).filter_by(content_id=season.id).first()
+    assert (season_meta.cp_synopsis or "") == ""
+
+
+def test_apply_parent_inheritance_idempotent(db):
+    """2회 호출 시 두 번째는 추가 변경 없음 (멱등)."""
+    from api.test.pipeline_auto_service import apply_parent_inheritance
+
+    series = _make_series(db, year=2022, country="South Korea")
+    season = _make_season(db, series.id)
+
+    first = apply_parent_inheritance(db, season.id)
+    second = apply_parent_inheritance(db, season.id)
+    assert set(first) == {"production_year", "country"}
+    assert second == []
+
+
+def test_apply_parent_inheritance_movie_noop(db):
+    """movie는 무처리."""
+    from api.test.pipeline_auto_service import apply_parent_inheritance
+    movie = create_content(db, ContentCreate(title="M", content_type=ContentType.movie))
+    assert apply_parent_inheritance(db, movie.id) == []
+
+
 # ── hierarchy endpoint includes inherited_meta ────────────────────────────────
 
 def test_get_content_hierarchy_includes_inherited_meta(db):
