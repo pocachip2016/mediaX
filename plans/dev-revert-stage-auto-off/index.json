@@ -1,0 +1,35 @@
+{
+  "task": "dev-revert-stage-auto-off",
+  "title": "역방향(revert) 시 도착 단계 AUTO 자동 OFF + hold 미사용",
+  "branch": "feat/child-inheritance",
+  "steps": [
+    {
+      "id": "1",
+      "name": "revert-stage-auto-off",
+      "summary": "revert 핸들러: 개별 auto_hold 설정 제거 + 도착 bucket의 AUTO 정책 플래그(s1~s4_auto) 자동 OFF + RevertResponse.disabled_stages 필드. reject/re-review/worker-실패 hold는 유지",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "2",
+      "name": "tests-verify",
+      "summary": "test_revert_disables_stage_auto_no_hold(hold 미설정+도착 단계 OFF+재-ON claim 재개)로 기존 hold 테스트 교체 + verify.sh revert-stage-auto-off 스텝(컨테이너 실행). e2e 8/8 pass",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "3",
+      "name": "fe-toggle-sync",
+      "summary": "FE handleRevertDone에 getStageAutoPolicy refetch 추가(revert 후 토글 UI 동기화) + StageControlBar/ApprovedStagePanel(S5)/RejectedPanel(반려)에 onRevertDone 배선. 백엔드는 도착 단계를 이미 OFF했으나 FE 토글이 stale이던 문제 해소",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "4",
+      "name": "approved-rejected-s4-guard",
+      "summary": "bucket5(승인)/bucket6(반려) revert → s4_auto OFF + disabled_stages e2e 회귀 테스트 2건. revert 3/3 pass",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    }
+  ]
+}

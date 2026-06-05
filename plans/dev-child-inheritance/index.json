@@ -1,0 +1,63 @@
+{
+  "task": "dev-child-inheritance",
+  "title": "시즌/에피소드 상속 — 자식 노드 quality_score 자동반려 해소",
+  "branch": "feat/child-inheritance",
+  "steps": [
+    {
+      "id": "1.1",
+      "name": "inheritance-cast-director",
+      "summary": "_detect_missing + _extract_fields에 cast_credits/director_credits 상속 추가",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "1.2",
+      "name": "quality-score-inherit",
+      "summary": "recompute_quality_score에서 season/episode는 직접 크레딧 없으면 상속 체크 후 점수 반영",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "1.3",
+      "name": "schema-fe-types",
+      "summary": "ContentDetail에 inherited_meta 타입 필드 추가",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "1.4",
+      "name": "fe-child-detail",
+      "summary": "PipelineDrilldownDetail에서 에피소드 cast/director 상속값 표시 + (상속) 배지",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "1.5",
+      "name": "tests-verify",
+      "summary": "quality_score 상속 채점 테스트 2건 + inheritance cast/director 테스트 4건 + verify.sh child-inheritance 스텝 추가",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "2.1",
+      "name": "recompute-inherit-scoring",
+      "summary": "recompute_quality_score에서 season/episode 빈 필드를 resolve_inherited_metadata로 통합 폴백 채점(synopsis/genre/country/year + 기존 cast/director). 우영우 시즌1 22→78",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "2.2",
+      "name": "scalar-field-autofill",
+      "summary": "apply_parent_inheritance 신규(스칼라 production_year/country만 자식 DB 기록, empty-only·멱등, title/synopsis 제외) + enrich_autofill_one 배선",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "2.3",
+      "name": "tests-and-realdata",
+      "summary": "시즌1형 78점 상속 채점 테스트 + apply_parent_inheritance 테스트 3건 + verify.sh 패턴 확장 + 우영우 시즌1/에피 3건 실데이터 보정(year/country 채움, synopsis/title 불변)",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    }
+  ]
+}

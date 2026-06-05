@@ -4429,6 +4429,20 @@ print('  ✓ episode → tv routing OK')
     echo "=== PASS ==="
     ;;
 
+  child-inheritance)
+    echo "=== child-inheritance: 시즌/에피소드 상속 채점 + 스칼라 필드 autofill ==="
+    python3 -m pytest tests/test_quality_score_recompute.py -k "inherit" -v
+    python3 -m pytest tests/api/programming/test_inheritance.py -k "cast or director or parent_inheritance" -v
+    echo "=== PASS ==="
+    ;;
+
+  revert-stage-auto-off)
+    echo "=== revert-stage-auto-off: 역방향 시 도착 단계 AUTO OFF + hold 미사용 ==="
+    # e2e는 실제 postgres 연결 필요 → backend 컨테이너에서 실행
+    docker compose exec -T backend python -m pytest tests/test_pipeline_auto_e2e.py -k "revert" -v
+    echo "=== PASS ==="
+    ;;
+
   mh-gap-aware)
     echo "=== mh-gap-aware: gap analyzer 상속-aware ==="
     python3 -m pytest tests/meta_core/test_gap.py -v

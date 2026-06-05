@@ -582,16 +582,13 @@ function S1BulkActionBar({ stageContents, activeStage, onDone, onDeleted, onAfte
   )
 }
 
-// 콘텐츠 목록 밑 — 해당 단계 전체 다음단계로 / 클린업 (S2~6 용)
-function StageBulkBar({ stageContents, activeStage, onDone }: {
-  stageContents: ContentOut[]; activeStage: number | null; onDone: () => void
+// 콘텐츠 목록 밑 — 반려/실패(S6) 전용: 다음단계 없음, 이전단계(검수 복귀) + 클린업
+function StageBulkBar({ stageContents, onDone, onRevertDone }: {
+  stageContents: ContentOut[]; onDone: () => void; onRevertDone?: () => void
 }) {
-  const ids = stageContents.map((c) => c.id)
-  const [from, to] = STAGE_TRANSITION[activeStage ?? 0] ?? ["현재", "다음"]
   return (
     <div className="rounded-lg border border-border bg-background px-3 py-1">
-      <StageAdvanceBar ids={ids} fromStatus={`${from} 전체 (${ids.length}건)`} toStatus={to} onDone={onDone} />
-      <StageControlBar stageContents={stageContents} onDone={onDone} showPrev={false} />
+      <StageControlBar stageContents={stageContents} onDone={onDone} showPrev onRevertDone={onRevertDone} />
     </div>
   )
 }
@@ -679,10 +676,12 @@ function StageControlBar({
   stageContents,
   onDone,
   showPrev = true,
+  onRevertDone,
 }: {
   stageContents: ContentOut[]
   onDone: () => void
   showPrev?: boolean
+  onRevertDone?: () => void   // revert 성공 후: AUTO 토글 동기화 + 이전 단계 포커싱
 }) {
   const [cleanupConfirm, setCleanupConfirm] = useState(false)
   const [cleaning, setCleaning] = useState(false)
@@ -718,6 +717,7 @@ function StageControlBar({
       const r = await pipelineTestApi.revert(ids)
       setResult(`↩ ${r.reverted}건 이전단계 복귀`)
       onDone()
+      onRevertDone?.()   // 도착 단계 AUTO OFF를 토글 UI에 반영
     } catch (e) {
       setResult(`오류: ${e instanceof Error ? e.message : "이전단계 실패"}`)
     } finally {
@@ -2205,23 +2205,37 @@ function ReviewFieldTable({ selectedContentId, onApplied }: { selectedContentId:
   )
 }
 
-function RejectedPanel({ onRefresh, selectedContentId, stageContents }: { onRefresh: () => void; selectedContentId: number | null; stageContents: ContentOut[] }) {
+// 반려/실패(S6) 콘솔 — S4Console과 동일한 3컬럼 배치 (좌 목록+이전단계 / 중 상세+필드편집+재검수 / 우 WebSearch)
+function RejectedConsole({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onStageAutoSync, listViewMode }: {
+  testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
+  onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onStageAutoSync?: () => void
+  listViewMode: "flat" | "tree"
+}) {
   const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
+  const [title, setTitle] = useState("")
   const [acting, setActing] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [title, setTitle] = useState("")
+  const [useWebsearch, setUseWebsearch] = useState(false)
+  const [policyBusy, setPolicyBusy] = useState(false)
+  const [metaRefresh, setMetaRefresh] = useState(0)
+
+  useEffect(() => { metadataApi.getEnrichPolicy().then((p) => setUseWebsearch(p.use_websearch)).catch(() => {}) }, [])
 
   const fetchContent = useCallback(async () => {
     if (!selectedContentId) { setTitle(""); setContentStatus(null); return }
     try {
       const c = await metadataApi.getContent(selectedContentId)
-      setTitle(c.title)
-      setContentStatus(c.status as ContentStatus)
+      setTitle(c.title); setContentStatus(c.status as ContentStatus)
     } catch { setContentStatus(null) }
   }, [selectedContentId])
-
   useEffect(() => { void fetchContent() }, [fetchContent])
+
+  const toggleWebsearch = async () => {
+    setPolicyBusy(true)
+    try { const p = await metadataApi.patchEnrichPolicy({ use_websearch: !useWebsearch }); setUseWebsearch(p.use_websearch) }
+    catch { /* ignore */ } finally { setPolicyBusy(false) }
+  }
 
   const handleReReview = async () => {
     if (!selectedContentId) return
@@ -2229,53 +2243,95 @@ function RejectedPanel({ onRefresh, selectedContentId, stageContents }: { onRefr
     try {
       const r = await pipelineTestApi.reReview([selectedContentId])
       setResultMsg(`↻ #${selectedContentId} 검수 단계로 복귀 (${r.processed}건)`)
-      onRefresh()
+      refreshTestSummary()
       await fetchContent()
+      setMetaRefresh((n) => n + 1)
+      onStageAutoSync?.()   // 재검수 → BE가 검수 s4_auto OFF → 토글 UI 동기화
     } catch (e) { setError(e instanceof Error ? e.message : "재검수 실패") }
     finally { setActing(false) }
   }
 
   const isRejected = contentStatus === "rejected"
+  const selectedType = (testContents.find((c) => c.id === selectedContentId)?.content_type ?? "movie") as import("@/lib/api").ContentType
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold">✕ 반려/실패</h3>
-          {selectedContentId
-            ? <p className="text-xs text-muted-foreground mt-0.5">#{selectedContentId} {title && <span className="font-medium text-foreground">{title}</span>}</p>
-            : <p className="text-xs text-muted-foreground mt-0.5">좌측 목록에서 반려 콘텐츠를 선택하세요</p>
-          }
+    <>
+      {/* 좌 — 반려 목록 + 이전단계/클린업 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-red-200 dark:border-red-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-red-200 dark:border-red-700/50 bg-red-50/50 dark:bg-red-900/10 flex items-center gap-2">
+            <span className="text-xs font-semibold text-red-800 dark:text-red-300">✕ 반려/실패</span>
+            {testContents.length > 0 && <span className="text-xs text-red-600 dark:text-red-400">{testContents.length}건</span>}
+          </div>
+          <div className="p-3 space-y-3">
+            <PipelineTreeList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} viewMode={listViewMode} />
+            {testContents.length > 0 && (
+              <StageBulkBar stageContents={testContents} onDone={refreshTestSummary} onRevertDone={onRevertDone} />
+            )}
+          </div>
         </div>
-        {contentStatus && (
-          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-            {STATUS_LABEL[contentStatus] ?? contentStatus}
-          </span>
-        )}
       </div>
 
-      {/* 필드 수정 — 재검수 전 메타 보강 */}
-      <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchContent} />
-
-      {error && (
-        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
-      )}
-      {resultMsg && (
-        <div className="rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 px-3 py-2.5">
-          <div className="text-sm font-medium text-green-700 dark:text-green-400">{resultMsg}</div>
+      {/* 중 — 상세 + 필드편집 + 재검수 */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-red-200 dark:border-red-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2 border-b border-red-200 dark:border-red-700/50 bg-red-50/50 dark:bg-red-900/10 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold text-red-800 dark:text-red-300">{detailLabel(selectedContentId, testContents)}</span>
+              {selectedContentId && <span className="text-xs text-red-600 dark:text-red-400">#{selectedContentId}</span>}
+              {contentStatus && (
+                <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{STATUS_LABEL[contentStatus] ?? contentStatus}</span>
+              )}
+            </div>
+            {selectedContentId !== null && (
+              <button onClick={() => void handleReReview()} disabled={!isRejected || acting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-400 text-xs font-medium hover:bg-amber-50 dark:hover:bg-amber-900/10 disabled:opacity-50 transition-colors">
+                {acting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                재검수
+              </button>
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            {selectedContentId === null ? (
+              <p className="text-xs text-muted-foreground text-center py-4">좌측 목록에서 반려 콘텐츠를 선택하세요</p>
+            ) : (
+              <>
+                {error && <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>}
+                {resultMsg && <div className="rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 px-3 py-2.5 text-sm font-medium text-green-700 dark:text-green-400">{resultMsg}</div>}
+                <PipelineDrilldownDetail contentId={selectedContentId} refreshKey={metaRefresh} onSelect={onSelect} />
+                {isLeafType(selectedType) && (
+                  <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchContent} />
+                )}
+              </>
+            )}
+          </div>
         </div>
-      )}
+      </div>
 
-      <button
-        onClick={() => void handleReReview()}
-        disabled={!selectedContentId || !isRejected || acting}
-        className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-400 text-sm font-medium hover:bg-amber-50 dark:hover:bg-amber-900/10 disabled:opacity-50 transition-colors"
-      >
-        {acting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-        재검수 (검수 단계로 복귀)
-      </button>
-      <StageControlBar stageContents={stageContents} onDone={onRefresh} />
-    </div>
+      {/* 우 — WebSearch (재검수 전 메타 보강) */}
+      <div className="col-span-1">
+        <div className="rounded-lg border border-red-200 dark:border-red-700/50 bg-background overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-red-200 dark:border-red-700/50 bg-red-50/50 dark:bg-red-900/10 flex items-center justify-between">
+            <span className="text-xs font-semibold text-red-800 dark:text-red-300">WebSearch</span>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <span className="text-[10px] text-muted-foreground">정책</span>
+              <button onClick={() => void toggleWebsearch()} disabled={policyBusy}
+                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${useWebsearch ? "bg-violet-600" : "bg-slate-300 dark:bg-slate-600"}`}>
+                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${useWebsearch ? "translate-x-3.5" : "translate-x-0.5"}`} />
+              </button>
+              <span className={`text-[10px] font-medium ${useWebsearch ? "text-violet-600" : "text-muted-foreground"}`}>{useWebsearch ? "ON" : "OFF"}</span>
+            </label>
+          </div>
+          <div className="p-3">
+            {!useWebsearch ? (
+              <p className="text-xs text-muted-foreground">WebSearch 정책이 OFF — 위 토글로 활성화 후 검색하세요.</p>
+            ) : (
+              <InlineWebSearch key={selectedContentId ?? 0} defaultQuery={title} />
+            )}
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -2615,7 +2671,7 @@ function TestReviewPanel({ onRefresh, selectedContentId, stageContents }: { onRe
 }
 
 // S5(승인) 콘솔 — 목록+검색+페이징+체크박스+승인시각+이전단계로
-function ApprovedStagePanel({ stageContents, onRefresh }: { stageContents: ContentOut[]; onRefresh: () => void }) {
+function ApprovedStagePanel({ stageContents, onRefresh, onRevertDone }: { stageContents: ContentOut[]; onRefresh: () => void; onRevertDone?: () => void }) {
   const [search, setSearch] = useState("")
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [page, setPage] = useState(1)
@@ -2623,9 +2679,18 @@ function ApprovedStagePanel({ stageContents, onRefresh }: { stageContents: Conte
   const [revertResult, setRevertResult] = useState<string | null>(null)
   const PAGE_SIZE = 10
 
-  // search/page 초기화 when stageContents changes
-  useEffect(() => { setPage(1) }, [stageContents])
-  useEffect(() => { setChecked(new Set()) }, [stageContents])
+  // 목록 "내용"(id 집합)이 실제 바뀔 때만 반응 — 폴링으로 인한 배열 참조 변경엔 무반응(체크 유지)
+  const idsKey = stageContents.map((c) => c.id).join(",")
+  useEffect(() => { setPage(1) }, [idsKey])
+  // 목록에서 사라진 id의 체크만 정리하고 남은 체크는 유지 → 폴링 시 체크 풀림 방지
+  useEffect(() => {
+    const valid = new Set(stageContents.map((c) => c.id))
+    setChecked((prev) => {
+      const next = new Set([...prev].filter((id) => valid.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey])
 
   const filtered = stageContents.filter((c) =>
     !search.trim() || c.title.toLowerCase().includes(search.trim().toLowerCase()) || String(c.id).includes(search.trim())
@@ -2649,6 +2714,7 @@ function ApprovedStagePanel({ stageContents, onRefresh }: { stageContents: Conte
       setRevertResult(`↩ ${r.reverted}건 검수 단계로 복귀`)
       setChecked(new Set())
       onRefresh()
+      onRevertDone?.()   // S4 AUTO OFF를 토글 UI에 반영
     } catch (e) { setRevertResult(`오류: ${e instanceof Error ? e.message : "실패"}`) }
     finally { setRevertBusy(false) }
   }
@@ -2931,10 +2997,16 @@ export default function PipelineMonitoringPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // revert 성공 후: 이전 단계 카드 포커싱 (ADR-010: auto_hold는 BE에서 set)
+  // BE가 단계 AUTO를 OFF한 뒤 토글 UI를 동기화 (revert/재검수 공용)
+  const syncStageAuto = useCallback(() => {
+    metadataApi.getStageAutoPolicy().then(setStageAuto).catch(() => {})
+  }, [])
+
+  // revert 성공 후: 이전 단계 카드 포커싱 + AUTO 토글 동기화
   const handleRevertDone = useCallback(async () => {
     setActiveStage((cur) => (cur !== null && cur > 1 ? cur - 1 : cur))
     void refreshTestSummary()
+    syncStageAuto()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -3108,7 +3180,7 @@ export default function PipelineMonitoringPage() {
                   autoOn={s.stage === 4 ? stageAuto.s4_auto : (stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy] as boolean)}
                   onToggleAuto={() => toggleStageAuto(s.stage, s.stage === 4 ? !stageAuto.s4_auto : !(stageAuto[`s${s.stage}_auto` as keyof StageAutoPolicy] as boolean))}
                   autoBusy={stageAutoBusy}
-                  showAuto={s.stage !== 6}
+                  showAuto={s.stage <= 4}
                 />
               ))}
             </div>
@@ -3181,7 +3253,7 @@ export default function PipelineMonitoringPage() {
             )}
 
             {/* S1·S2: 3단 카드, S3~6: 2분할 (좌 목록 / 우 단계패널) */}
-            <div className={`grid gap-4 items-start ${activeStage === 6 ? "grid-cols-5" : "grid-cols-3"}`}>
+            <div className="grid gap-4 items-start grid-cols-3">
               {/* S1 — 3단 (좌 생성 / 중 목록 / 우 상세) */}
               {activeStage === 1 && (
                 <>
@@ -3318,7 +3390,7 @@ export default function PipelineMonitoringPage() {
                       {testContents.length > 0 && <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">{testContents.length}건</span>}
                     </div>
                     <div className="p-4">
-                      <ApprovedStagePanel stageContents={testContents} onRefresh={refreshTestSummary} />
+                      <ApprovedStagePanel stageContents={testContents} onRefresh={refreshTestSummary} onRevertDone={handleRevertDone} />
                     </div>
                   </div>
                 </div>
@@ -3326,31 +3398,16 @@ export default function PipelineMonitoringPage() {
 
               {/* S6 — 2분할 (좌 목록+메타+버튼 / 우 반려 패널) */}
               {activeStage === 6 && (
-                <>
-                  <div className="col-span-2 space-y-3">
-                    <PipelineTreeList
-                      contents={testContents}
-                      loading={testContentsLoading}
-                      selectedId={selectedContentId}
-                      onSelect={handleSelectContent}
-                      viewMode={listViewMode}
-                    />
-                    <StageBulkBar stageContents={testContents} activeStage={activeStage} onDone={refreshTestSummary} />
-                    <PipelineDrilldownDetail contentId={selectedContentId} onSelect={handleSelectContent} />
-                    <SingleAdvanceDeleteBar
-                      contentId={selectedContentId}
-                      activeStage={activeStage}
-                      onDone={refreshTestSummary}
-                      onDeleted={() => { setSelectedContentId(null); void refreshTestSummary() }}
-                      stageContents={testContents}
-                    />
-                  </div>
-                  <div className="col-span-3">
-                    <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background p-4">
-                      <RejectedPanel onRefresh={refreshTestSummary} selectedContentId={selectedContentId} stageContents={testContents} />
-                    </div>
-                  </div>
-                </>
+                <RejectedConsole
+                  testContents={testContents}
+                  testContentsLoading={testContentsLoading}
+                  selectedContentId={selectedContentId}
+                  onSelect={handleSelectContent}
+                  refreshTestSummary={refreshTestSummary}
+                  onRevertDone={handleRevertDone}
+                  onStageAutoSync={syncStageAuto}
+                  listViewMode={listViewMode}
+                />
               )}
             </div>
 

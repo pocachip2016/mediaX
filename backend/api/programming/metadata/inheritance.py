@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from api.programming.metadata.content_kind import TV_TYPES
 from api.programming.metadata.models.content import Content, ContentType, ContentMetadata
+from api.programming.metadata.models.person import CreditRole
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -24,7 +25,7 @@ def resolve_inherited_metadata(content: Content, db: Session) -> dict | None:
     """season/episode 에 대해 빈 필드를 조상에서 채운 dict 반환.
 
     반환 dict 키: production_year, country, synopsis, primary_genre, poster_url,
-                  _source_id (상속 제공 조상 content_id)
+                  cast_credits, director_credits, _source_id (상속 제공 조상 content_id)
     content 가 movie/series 이거나 parent 가 없으면 None 반환.
     """
     if content.content_type not in (ContentType.season, ContentType.episode):
@@ -92,6 +93,12 @@ def _detect_missing(content: Content, db: Session) -> set[str]:
     if not has_poster and (not meta or not meta.cp_poster_url):
         missing.add("poster_url")
 
+    roles = {cc.role for cc in content.credits}
+    if CreditRole.actor not in roles:
+        missing.add("cast_credits")
+    if CreditRole.director not in roles:
+        missing.add("director_credits")
+
     return missing
 
 
@@ -126,6 +133,22 @@ def _extract_fields(ancestor: Content, db: Session, wanted: set[str]) -> dict:
             result["poster_url"] = url
         elif meta and meta.cp_poster_url:
             result["poster_url"] = meta.cp_poster_url
+
+    if "cast_credits" in wanted:
+        actors = [cc for cc in ancestor.credits if cc.role == CreditRole.actor]
+        if actors:
+            result["cast_credits"] = [
+                {"person_id": cc.person_id, "name_ko": cc.person.name_ko, "cast_order": cc.cast_order}
+                for cc in sorted(actors, key=lambda x: x.cast_order or 99)
+            ]
+
+    if "director_credits" in wanted:
+        dirs = [cc for cc in ancestor.credits if cc.role == CreditRole.director]
+        if dirs:
+            result["director_credits"] = [
+                {"person_id": cc.person_id, "name_ko": cc.person.name_ko}
+                for cc in dirs
+            ]
 
     return result
 

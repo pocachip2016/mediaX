@@ -390,6 +390,11 @@ def enrich_autofill_one(db: Session, content_id: int) -> EnrichAutofillResult:
     if series_filled:
         filled_fields.extend(series_filled)
 
+    # season/episode 스칼라 필드(production_year, country) 부모 상속 DB 기록
+    parent_filled = apply_parent_inheritance(db, content_id)
+    if parent_filled:
+        filled_fields.extend(parent_filled)
+
     recompute_quality_score(db, content_id)
     db.commit()
 
@@ -400,6 +405,38 @@ def enrich_autofill_one(db: Session, content_id: int) -> EnrichAutofillResult:
         skipped_fields=skipped_fields,
         status_unchanged=c.status.value if c.status else (before_status.value if before_status else ""),
     )
+
+
+# ── apply_parent_inheritance ──────────────────────────────────────────────────
+
+def apply_parent_inheritance(db: Session, content_id: int) -> list[str]:
+    """season/episode 전용: 부모 스칼라 필드(production_year, country)를 빈 경우만 DB 기록.
+
+    title·synopsis·genre·cast 등은 건드리지 않음(점수만 read-time 상속).
+    empty-only + 멱등. movie/series는 무처리.
+    반환: 채운 필드명 list (빈 list = 처리 없음).
+    """
+    from api.programming.metadata.models.content import ContentType
+
+    c = db.query(Content).filter(Content.id == content_id, Content.is_deleted.is_(False)).first()
+    if not c or c.content_type not in (ContentType.season, ContentType.episode):
+        return []
+
+    from api.programming.metadata.inheritance import resolve_inherited_metadata
+    inh = resolve_inherited_metadata(c, db) or {}
+
+    filled: list[str] = []
+    if not c.production_year and inh.get("production_year"):
+        c.production_year = inh["production_year"]
+        filled.append("production_year")
+    if not c.country and inh.get("country"):
+        c.country = inh["country"]
+        filled.append("country")
+
+    if filled:
+        db.add(c)
+        db.flush()
+    return filled
 
 
 # ── apply_series_meta_from_cache ──────────────────────────────────────────────

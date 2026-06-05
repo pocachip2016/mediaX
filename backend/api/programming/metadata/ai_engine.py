@@ -250,7 +250,7 @@ def recompute_quality_score(db: Session, content_id: int) -> float | None:
     배점(합 100): synopsis 22(길이 tier) / genre 14 / cast 12 / director 12 /
                   country 10 / production_year 10 / runtime 10 / title 10
     """
-    from api.programming.metadata.models.content import Content, ContentMetadata
+    from api.programming.metadata.models.content import Content, ContentMetadata, ContentType
     from api.programming.metadata.models.person import CreditRole
 
     content = (
@@ -269,11 +269,19 @@ def recompute_quality_score(db: Session, content_id: int) -> float | None:
     w = _COMPLETENESS_WEIGHTS
     score = 0.0
 
+    # season/episode — 빈 필드는 조상(series 방향) 상속값으로 점수 폴백 (DB는 안 채움)
+    inh: dict = {}
+    if content.content_type in (ContentType.season, ContentType.episode):
+        from api.programming.metadata.inheritance import resolve_inherited_metadata
+        inh = resolve_inherited_metadata(content, db) or {}
+
     if content.title:
         score += w["title"]
 
-    # synopsis — 길이 tier (최대 22)
+    # synopsis — 자식 비었으면 상속값, 길이 tier (최대 22)
     synopsis = meta.ai_synopsis or meta.cp_synopsis or meta.final_synopsis or meta.synopsis_ko or ""
+    if not synopsis and inh.get("synopsis"):
+        synopsis = inh["synopsis"]
     syn_len = len(synopsis)
     if syn_len >= 200:
         score += 22
@@ -284,21 +292,31 @@ def recompute_quality_score(db: Session, content_id: int) -> float | None:
     elif syn_len > 0:
         score += 4
 
-    # genre — meta 문자열 또는 ContentGenre 관계 존재
-    if (meta and (meta.final_genre or meta.ai_genre_primary or meta.cp_genre)) or len(content.genres) > 0:
+    # genre — meta 문자열 또는 ContentGenre 관계 존재 (없으면 상속 폴백)
+    has_genre = (meta and (meta.final_genre or meta.ai_genre_primary or meta.cp_genre)) or len(content.genres) > 0
+    if not has_genre and inh.get("primary_genre"):
+        has_genre = True
+    if has_genre:
         score += w["genre"]
 
-    # cast / director — ContentCredit 관계
+    # cast / director — ContentCredit 관계 (season/episode는 조상 상속 폴백)
     roles = {cc.role for cc in content.credits}
-    if CreditRole.actor in roles:
+    has_actor = CreditRole.actor in roles
+    has_director = CreditRole.director in roles
+    if not has_actor and inh.get("cast_credits"):
+        has_actor = True
+    if not has_director and inh.get("director_credits"):
+        has_director = True
+
+    if has_actor:
         score += w["cast"]
-    if CreditRole.director in roles:
+    if has_director:
         score += w["director"]
 
-    # Content 직접 필드
-    if content.country:
+    # Content 직접 필드 — country/year는 상속 폴백, runtime은 상속 안 함(자식 고유)
+    if content.country or inh.get("country"):
         score += w["country"]
-    if content.production_year:
+    if content.production_year or inh.get("production_year"):
         score += w["production_year"]
     if content.runtime_minutes:
         score += w["runtime"]
