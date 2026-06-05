@@ -1,0 +1,42 @@
+{
+  "task": "dev-catalog-category-tree",
+  "title": "카탈로그 모듈 Phase A — 서비스 카테고리 트리 (1.2.1)",
+  "branch": "feature/catalog-category-tree",
+  "steps": [
+    {
+      "id": "1.1",
+      "name": "catalog-models",
+      "summary": "Category/ContentCategory SQLAlchemy 모델 신규(categories + content_categories) + alembic env.py 배선 + TODO/plans 스캐폴드",
+      "status": "completed",
+      "completed_at": "2026-06-06T00:00:00+09:00"
+    },
+    {
+      "id": "1.2",
+      "name": "catalog-migration",
+      "summary": "alembic 0039 마이그레이션 파일(categories + content_categories 테이블) 신규 작성 + 스키마 검증",
+      "status": "completed",
+      "completed_at": "2026-06-06T00:00:00+09:00"
+    },
+    {
+      "id": "1.3",
+      "name": "catalog-service",
+      "summary": "트리 연산 서비스(create/move/merge/delete/map/unmap/list_tree/count) + 사이클가드/dedupe/멱등 + 단위테스트 18건 통과",
+      "status": "completed",
+      "completed_at": "2026-06-06T00:00:00+09:00"
+    },
+    {
+      "id": "1.4",
+      "name": "catalog-api",
+      "summary": "schemas/router 신규 + programming router 배선 + API 테스트 15건 통과 (tree/CRUD/move/409/매핑)",
+      "status": "completed",
+      "completed_at": "2026-06-06T00:00:00+09:00"
+    },
+    {
+      "id": "1.5",
+      "name": "catalog-fe",
+      "summary": "CatalogCategoryPage + CategoryTree(재귀) + AddCategoryInline + catalogApi(getTree/createCategory/deleteCategory) + nav 등록 + TS 타입체크 통과",
+      "status": "completed",
+      "completed_at": "2026-06-06T00:00:00+09:00"
+    }
+  ]
+}

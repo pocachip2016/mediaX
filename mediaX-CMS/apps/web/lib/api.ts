@@ -1793,3 +1793,49 @@ export const distributionApi = {
       body: JSON.stringify(data),
     }),
 }
+
+// ── 카탈로그 카테고리 트리 (1.2.1) ───────────────────────────────────────────
+
+export interface CategoryNode {
+  id: number
+  name: string
+  slug: string | null
+  depth: number
+  sort_order: number
+  is_active: boolean
+  parent_id: number | null
+  created_at: string | null
+  updated_at: string | null
+  children: CategoryNode[]
+  content_count?: number
+}
+
+export interface CategoryCreateRequest {
+  name: string
+  parent_id?: number | null
+  sort_order?: number | null
+  slug?: string | null
+}
+
+export const catalogApi = {
+  getTree: (opts?: { root_id?: number; counts?: boolean }) => {
+    const qs = new URLSearchParams()
+    if (opts?.root_id != null) qs.set("root_id", String(opts.root_id))
+    if (opts?.counts) qs.set("counts", "true")
+    const q = qs.toString()
+    return request<CategoryNode[]>(
+      `/api/programming/catalog/categories/tree${q ? `?${q}` : ""}`
+    )
+  },
+
+  createCategory: (data: CategoryCreateRequest) =>
+    request<CategoryNode>("/api/programming/catalog/categories", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number) =>
+    request<void>(`/api/programming/catalog/categories/${id}`, {
+      method: "DELETE",
+    }),
+}

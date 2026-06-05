@@ -16,6 +16,7 @@ import api.programming.metadata.models  # noqa: F401
 import api.meta_core.models  # noqa: F401
 import api.meta_core.public_api.models  # noqa: F401
 import api.distribution.models  # noqa: F401
+import api.programming.catalog.models  # noqa: F401
 from shared.database import Base
 
 

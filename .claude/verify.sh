@@ -5815,9 +5815,173 @@ db.close()
     echo "=== PASS ==="
     ;;
 
+  # ── dev-catalog-category-tree ────────────────────────────────────
+  catalog-models)
+    echo "=== catalog-models: Category/ContentCategory 모델 + alembic env 배선 ==="
+    # 1. 모델 임포트 + 테이블명 확인
+    python3 -c "
+import api.programming.catalog.models as m
+assert m.Category.__tablename__ == 'categories', 'categories 테이블명 불일치'
+assert m.ContentCategory.__tablename__ == 'content_categories', 'content_categories 테이블명 불일치'
+from shared.database import Base
+import api.programming.metadata.models  # 기존 모델 로드
+assert 'categories' in Base.metadata.tables, 'categories 테이블 Base에 없음'
+assert 'content_categories' in Base.metadata.tables, 'content_categories 테이블 Base에 없음'
+print('  ✓ Category/ContentCategory 모델 임포트 + Base 등록 확인')
+"
+    # 2. alembic env.py 주석 해제 확인
+    grep -q "^import api.programming.catalog.models" "$BACKEND/alembic/env.py" \
+      || { echo "FAIL: alembic/env.py catalog import 주석 해제 안 됨"; exit 1; }
+    echo "  ✓ alembic/env.py catalog import 배선 확인"
+    # 3. SQLite in-memory create_all 스모크
+    python3 -c "
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from shared.database import Base
+import api.programming.metadata.models
+import api.programming.catalog.models
+engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False})
+Base.metadata.create_all(engine)
+from sqlalchemy import inspect
+names = inspect(engine).get_table_names()
+assert 'categories' in names, 'categories 테이블 create_all 실패'
+assert 'content_categories' in names, 'content_categories 테이블 create_all 실패'
+print('  ✓ SQLite create_all 스모크 통과')
+"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-migration)
+    echo "=== catalog-migration: alembic 0039 + 마이그레이션 구조 검증 ==="
+    # 1. 마이그레이션 파일 존재 확인
+    [ -f "$BACKEND/alembic/versions/0039_catalog_category_tree.py" ] \
+      || { echo "FAIL: 0039_catalog_category_tree.py 없음"; exit 1; }
+    echo "  ✓ 0039_catalog_category_tree.py 마이그레이션 파일 존재"
+    # 2. down_revision 확인
+    grep -q "down_revision = \"0038\"" "$BACKEND/alembic/versions/0039_catalog_category_tree.py" \
+      || { echo "FAIL: down_revision 0038 아님"; exit 1; }
+    echo "  ✓ down_revision=0038 확인"
+    # 3. 마이그레이션 스크립트 문법 확인 (Python import)
+    python3 -c "
+import sys
+import importlib.util
+spec = importlib.util.spec_from_file_location('migration_0039', 'alembic/versions/0039_catalog_category_tree.py')
+mod = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+    assert hasattr(mod, 'upgrade'), 'upgrade() 함수 없음'
+    assert hasattr(mod, 'downgrade'), 'downgrade() 함수 없음'
+    print('  ✓ 마이그레이션 파일 Python 문법 검증 통과')
+except Exception as e:
+    print(f'FAIL: 마이그레이션 파일 파싱 실패 — {e}')
+    sys.exit(1)
+"
+    # 4. SQLite 임시 DB에서 create_all 동작 확인 (alembic 독립적)
+    python3 -c "
+from sqlalchemy import create_engine, inspect
+from shared.database import Base
+import api.programming.metadata.models
+import api.programming.catalog.models
+import tempfile
+import os
+
+with tempfile.TemporaryDirectory() as tmpdir:
+    db_path = os.path.join(tmpdir, 'test.db')
+    db_url = f'sqlite:///{db_path}'
+    engine = create_engine(db_url, connect_args={'check_same_thread': False})
+
+    # 모든 모델 기반 테이블 생성
+    Base.metadata.create_all(engine)
+
+    # 테이블 확인
+    inspector = inspect(engine)
+    names = inspector.get_table_names()
+    assert 'categories' in names, 'categories 테이블 create_all 실패'
+    assert 'content_categories' in names, 'content_categories 테이블 create_all 실패'
+
+    # 스키마 검증 (컬럼) — SQLAlchemy 버전 호환
+    cat_cols = {col['name'] for col in inspector.get_columns('categories')}
+    expected_cat = {'id', 'parent_id', 'name', 'slug', 'depth', 'sort_order', 'is_active', 'created_at', 'updated_at'}
+    assert cat_cols == expected_cat, f'categories 컬럼 불일치: {cat_cols} != {expected_cat}'
+
+    cc_cols = {col['name'] for col in inspector.get_columns('content_categories')}
+    expected_cc = {'id', 'content_id', 'category_id', 'sort_order', 'is_primary', 'created_at'}
+    assert cc_cols == expected_cc, f'content_categories 컬럼 불일치: {cc_cols} != {expected_cc}'
+
+    print('  ✓ SQLite create_all 테이블/스키마 검증 통과')
+"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-service)
+    echo "=== catalog-service: 트리 연산 + 단위테스트 ==="
+    python3 -m pytest tests/test_catalog_tree.py -q --tb=short 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
+  catalog-api)
+    echo "=== catalog-api: schemas + router + 배선 + API 테스트 ==="
+    # 1. pytest API 테스트
+    python3 -m pytest tests/test_catalog_api.py -q --tb=short 2>&1 | tail -25
+    # 2. 라우터 배선 확인
+    python3 -c "
+from main import app
+routes = [r.path for r in app.routes]
+required = [
+    '/api/programming/catalog/categories/tree',
+    '/api/programming/catalog/categories',
+    '/api/programming/catalog/categories/{category_id}/move',
+    '/api/programming/catalog/categories/{category_id}/merge',
+]
+for r in required:
+    assert r in routes, f'FAIL: 라우트 없음 — {r}'
+    print(f'  ✓ {r}')
+"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-fe)
+    echo "=== catalog-fe: 최소 카테고리 트리 화면 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS"
+    PAGE="$FE_ROOT/apps/web/app/(main)/programming/catalog/page.tsx"
+    API_TS="$FE_ROOT/apps/web/lib/api.ts"
+
+    # 1. 파일 존재
+    [ -f "$PAGE" ] || { echo "FAIL: catalog/page.tsx 없음"; exit 1; }
+    echo "  ✓ page.tsx 존재"
+
+    # 2. 컴포넌트/함수 참조 확인
+    grep -q "CategoryTree" "$PAGE" || { echo "FAIL: CategoryTree 컴포넌트 없음"; exit 1; }
+    echo "  ✓ CategoryTree 컴포넌트 참조 확인"
+    grep -q "getCategoryTree\|catalogApi" "$PAGE" || { echo "FAIL: catalogApi 참조 없음"; exit 1; }
+    echo "  ✓ catalogApi 참조 확인"
+
+    # 3. api.ts 함수 존재
+    grep -q "getTree\|getCategoryTree" "$API_TS" || { echo "FAIL: api.ts getTree 없음"; exit 1; }
+    grep -q "createCategory" "$API_TS" || { echo "FAIL: api.ts createCategory 없음"; exit 1; }
+    grep -q "deleteCategory" "$API_TS" || { echo "FAIL: api.ts deleteCategory 없음"; exit 1; }
+    echo "  ✓ api.ts getTree/createCategory/deleteCategory 확인"
+
+    # 4. docs.ts nav 등록
+    grep -q "programming/catalog" "$FE_ROOT/apps/web/config/docs.ts" \
+      || { echo "FAIL: docs.ts에 /programming/catalog nav 없음"; exit 1; }
+    echo "  ✓ docs.ts nav 등록 확인"
+
+    # 5. TypeScript 타입 체크
+    cd "$FE_ROOT"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"
+      echo "$TS_OUT" | grep "error TS" | head -10
+      exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, auto-headless-be, s4-auto-residual, stage-auto-autofill-guard, pipeline-auto-schema, series-meta-columns, series-meta-populate, series-meta-schema, series-meta-fe"
+    echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
     exit 1
     ;;
 esac

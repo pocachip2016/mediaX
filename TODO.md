@@ -10,12 +10,14 @@
 (없음)
 
 ## Later (백로그)
-- [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
+- [ ] 1.2 카탈로그 — 가격 정책(pricing + holdback) 구현
 - [ ] 1.3 큐레이션 모듈 설계 확정
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **feat(catalog-category-tree)** — 카탈로그 카테고리 트리(1.2.1) — BE 모델/마이그레이션/서비스(18 테스트)/API(15 테스트) + FE 트리 화면(읽기+생성+삭제+nav) (2026-06-06)
+- [x] **feat(contents-hierarchy)** — 콘텐츠 목록 계층 트리(평면/계층 토글, 기본 계층) + 파이프라인 S1 기본 트리 + lib/contentTree 공유 유틸 + 시즌/에피 포스터 숨김 (2026-06-06)
 - [x] **반려/실패 콘솔 S4 배치** — RejectedConsole 3컬럼(목록+이전단계 / 상세+필드편집+재검수 / WebSearch) + 승인·반려 AUTO 토글 숨김 + 승인 체크박스 폴링 풀림 수정(idsKey) + 반려 목록 밑 다음단계→이전단계 (2026-06-05)
 - [x] **revert/재검수 단계 AUTO OFF** — revert/re-review 시 도착 단계(검수 s4_auto) 자동 OFF + auto_hold 미사용(재-ON 시 재개) + RevertResponse.disabled_stages + FE 토글 동기화(syncStageAuto). reject hold 유지. e2e/backward-hold 신정책 테스트 (2026-06-05)
 - [x] **dev-child-inheritance** — 시즌/에피소드 상속을 quality_score 채점에 완전 배선(synopsis/genre/country/year/cast/director) + 스칼라 필드(year/country) 자식 DB autofill(apply_parent_inheritance, empty-only·멱등, title/synopsis 제외) + FE (상속) 표시 + 테스트 8건 + 우영우 시즌1 22→78·에피 32→88 보정 (2026-06-05)
