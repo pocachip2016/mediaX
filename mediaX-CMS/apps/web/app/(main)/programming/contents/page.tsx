@@ -1,15 +1,17 @@
 "use client"
 
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   Search, X, ChevronLeft, ChevronRight, RefreshCw,
   Film, Tv, Layers, Play, Check, RotateCcw, Link2, Trash2,
+  ChevronDown,
 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { metadataApi, type ContentOut, type ContentStatus, type ContentType, resolvePosterUrl } from "@/lib/api"
 import { BulkActionModal, type BulkTarget } from "@/components/contents/BulkActionModal"
+import { buildContentTree, countDescendants, type ContentTreeNode } from "@/lib/contentTree"
 
 // ── 타입 ───────────────────────────────────────────────────
 
@@ -153,6 +155,12 @@ export default function ContentsPage() {
   // 삭제
   const [deleting, setDeleting] = useState(false)
 
+  // 계층 트리 뷰
+  const [viewMode, setViewMode] = useState<"flat" | "tree">("tree")
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+  const [loadingChildren, setLoadingChildren] = useState<Set<number>>(new Set())
+  const mergedItemsRef = useRef<Map<number, ContentRow>>(new Map())
+
   // 모달
   const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [bulkAction, setBulkAction] = useState<"approve" | "reject" | "reprocess" | "rematch">("approve")
@@ -174,11 +182,45 @@ export default function ContentsPage() {
         page: p,
         size: s,
       })
-      setItems(res.items)
+      const rootItems = res.items
+      const m = new Map<number, ContentRow>()
+      rootItems.forEach((it) => m.set(it.id, it))
+
+      // 시리즈/시즌 루트의 자식을 병합해 트리 계층 구성 (S1 동작과 일치)
+      const containerIds = rootItems
+        .filter((it) => it.content_type === "series" || it.content_type === "season")
+        .map((it) => it.id)
+      const childrenAll: ContentRow[] = []
+      await Promise.allSettled(
+        containerIds.map(async (id) => {
+          try {
+            const hierarchy = await metadataApi.getHierarchy(id)
+            const extract = (stagingChildren: typeof hierarchy.children) => {
+              for (const s of stagingChildren) {
+                if (!m.has(s.content.id)) {
+                  m.set(s.content.id, s.content as ContentRow)
+                  childrenAll.push(s.content as ContentRow)
+                }
+                if (s.children?.length) extract(s.children)
+              }
+            }
+            extract(hierarchy.children)
+          } catch { /* 개별 실패는 무시 */ }
+        })
+      )
+
+      mergedItemsRef.current = m
+      setItems([...rootItems, ...childrenAll])
       setTotal(res.total)
+      // 시리즈/시즌 루트 기본 펼침 (S1 PipelineTreeList 동작과 일치)
+      setExpandedIds(new Set(containerIds))
     } catch {
       setItems(MOCK_CONTENTS)
       setTotal(MOCK_CONTENTS.length)
+      const m = new Map<number, ContentRow>()
+      MOCK_CONTENTS.forEach((it) => m.set(it.id, it))
+      mergedItemsRef.current = m
+      setExpandedIds(new Set())
     } finally {
       setLoading(false)
     }
@@ -198,6 +240,73 @@ export default function ContentsPage() {
     items.forEach((it) => { counts[statusToUiGroup(it.status)] = (counts[statusToUiGroup(it.status)] ?? 0) + 1 })
     return counts
   }, [items])
+
+  // ── 계층 트리 ──
+  // filteredItems + mergedRef의 모든 항목(자식 포함)으로 트리 빌드
+  const allMergedItems = useMemo(
+    () => Array.from(mergedItemsRef.current.values()),
+    // items 변경 시 ref도 동기화됐으므로 items를 dep로 사용
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items]
+  )
+  const treeRoots = useMemo(() => {
+    const uiFiltered = uiGroup === "all" ? allMergedItems : allMergedItems.filter((it) => statusToUiGroup(it.status) === uiGroup)
+    return buildContentTree(uiFiltered).roots
+  }, [allMergedItems, uiGroup])
+
+  // 트리 노드를 depth 순서대로 평탄화 (펼침 상태 기준)
+  function flattenTree(nodes: ContentTreeNode[], depth: number): Array<{ node: ContentTreeNode; depth: number }> {
+    const result: Array<{ node: ContentTreeNode; depth: number }> = []
+    for (const node of nodes) {
+      result.push({ node, depth })
+      if (expandedIds.has(node.item.id) && node.children.length > 0) {
+        result.push(...flattenTree(node.children, depth + 1))
+      }
+    }
+    return result
+  }
+  const flattenedTree = useMemo(() => flattenTree(treeRoots, 0), [treeRoots, expandedIds])
+
+  const toggleExpand = async (node: ContentTreeNode) => {
+    const id = node.item.id
+    const isExpanding = !expandedIds.has(id)
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+    // 펼칠 때 자식이 아직 없으면 lazy 로드
+    if (isExpanding && node.children.length === 0 && (node.item.content_type === "series" || node.item.content_type === "season")) {
+      setLoadingChildren((prev) => new Set(prev).add(id))
+      try {
+        const hierarchy = await metadataApi.getHierarchy(id)
+        if (hierarchy?.children?.length) {
+          // StagingItem.content 추출 → mergedItemsRef에 병합 → items 갱신
+          const newItems: ContentRow[] = []
+          const extract = (stagingChildren: typeof hierarchy.children) => {
+            for (const s of stagingChildren) {
+              if (!mergedItemsRef.current.has(s.content.id)) {
+                newItems.push(s.content as ContentRow)
+                mergedItemsRef.current.set(s.content.id, s.content as ContentRow)
+              }
+              if (s.children?.length) extract(s.children)
+            }
+          }
+          extract(hierarchy.children)
+          if (newItems.length > 0) {
+            setItems((prev) => [...prev, ...newItems])
+          }
+        }
+      } catch {
+        // lazy 로드 실패 — 접힘으로 롤백
+        setExpandedIds((prev) => { const next = new Set(prev); next.delete(id); return next })
+      } finally {
+        setLoadingChildren((prev) => { const next = new Set(prev); next.delete(id); return next })
+      }
+    }
+  }
 
   // ── 선택 ──
   const allSelected = filteredItems.length > 0 && filteredItems.every((it) => selectedIds.has(it.id))
@@ -266,6 +375,25 @@ export default function ContentsPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {/* 평면/계층 토글 */}
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-muted-foreground mr-1">목록:</span>
+            {(["flat", "tree"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setViewMode(mode)}
+                className={cn(
+                  "px-2 py-0.5 rounded transition-colors",
+                  viewMode === mode
+                    ? "bg-primary/15 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {mode === "flat" ? "평면" : "계층"}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => fetchList(appliedForm, page, size)}
@@ -458,11 +586,11 @@ export default function ContentsPage() {
                 <tr><td colSpan={10} className="text-center py-16 text-muted-foreground text-sm">
                   <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" /> 불러오는 중...
                 </td></tr>
-              ) : filteredItems.length === 0 ? (
+              ) : (viewMode === "flat" ? filteredItems : flattenedTree.map((e) => e.node.item as ContentRow)).length === 0 ? (
                 <tr><td colSpan={10} className="text-center py-16 text-muted-foreground text-sm">
                   표시할 콘텐츠가 없습니다.
                 </td></tr>
-              ) : (
+              ) : viewMode === "flat" ? (
                 filteredItems.map((item) => {
                   const selected = selectedIds.has(item.id)
                   return (
@@ -475,22 +603,12 @@ export default function ContentsPage() {
                       )}
                     >
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => toggleRow(item.id)}
-                          className="h-4 w-4 cursor-pointer"
-                        />
+                        <input type="checkbox" checked={selected} onChange={() => toggleRow(item.id)} className="h-4 w-4 cursor-pointer" />
                       </td>
                       <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                         {resolvePosterUrl(item.poster_url) ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={resolvePosterUrl(item.poster_url)!}
-                            alt={item.title}
-                            className="rounded"
-                            style={{ width: 36, height: "auto" }}
-                          />
+                          <img src={resolvePosterUrl(item.poster_url)!} alt={item.title} className="rounded" style={{ width: 36, height: "auto" }} />
                         ) : (
                           <div className="flex items-center justify-center rounded bg-muted" style={{ width: 36, height: 52 }}>
                             <Film className="h-4 w-4 text-muted-foreground" />
@@ -499,14 +617,11 @@ export default function ContentsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-medium truncate max-w-[240px]">{item.title}</div>
-                        {item.original_title && (
-                          <div className="text-xs text-muted-foreground truncate max-w-[240px]">{item.original_title}</div>
-                        )}
+                        {item.original_title && <div className="text-xs text-muted-foreground truncate max-w-[240px]">{item.original_title}</div>}
                       </td>
                       <td className="px-4 py-3">
                         <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium", TYPE_CLASS[item.content_type])}>
-                          <TypeIcon type={item.content_type} />
-                          {TYPE_LABEL[item.content_type]}
+                          <TypeIcon type={item.content_type} />{TYPE_LABEL[item.content_type]}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm truncate max-w-[120px]">{item.cp_name ?? "—"}</td>
@@ -521,12 +636,89 @@ export default function ContentsPage() {
                       <td className="px-4 py-3"><EnrichmentBadge enrichment={item.enrichment} /></td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(item.created_at)}</td>
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        <Link
-                          href={`/programming/contents/${item.id}/edit`}
-                          className="inline-flex items-center px-2.5 py-1 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors"
-                        >
-                          편집
-                        </Link>
+                        <Link href={`/programming/contents/${item.id}/edit`} className="inline-flex items-center px-2.5 py-1 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors">편집</Link>
+                      </td>
+                    </tr>
+                  )
+                })
+              ) : (
+                // ── 계층 트리 모드 ──
+                flattenedTree.map(({ node, depth }) => {
+                  const item = node.item as ContentRow
+                  const selected = selectedIds.has(item.id)
+                  const hasChildren = node.children.length > 0
+                  const isExpanded = expandedIds.has(item.id)
+                  const isLoadingChild = loadingChildren.has(item.id)
+                  const descCount = countDescendants(node)
+                  const canExpand = hasChildren || item.content_type === "series" || item.content_type === "season"
+                  return (
+                    <tr
+                      key={item.id}
+                      onClick={() => router.push(`/programming/contents/${item.id}`)}
+                      className={cn(
+                        "border-b border-border last:border-0 cursor-pointer transition-colors",
+                        selected ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-accent/30",
+                      )}
+                    >
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={selected} onChange={() => toggleRow(item.id)} className="h-4 w-4 cursor-pointer" />
+                      </td>
+                      <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                        {resolvePosterUrl(item.poster_url) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={resolvePosterUrl(item.poster_url)!} alt={item.title} className="rounded" style={{ width: 36, height: "auto" }} />
+                        ) : (
+                          <div className="flex items-center justify-center rounded bg-muted" style={{ width: 36, height: 52 }}>
+                            <Film className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {/* 들여쓰기 + chevron + 제목 */}
+                        <div className="flex items-center gap-1.5" style={{ paddingLeft: `${depth * 20}px` }}>
+                          <span
+                            className="shrink-0 w-4 h-4 flex items-center justify-center text-muted-foreground"
+                            onClick={(e) => {
+                              if (canExpand) { e.stopPropagation(); void toggleExpand(node) }
+                            }}
+                          >
+                            {isLoadingChild ? (
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                            ) : canExpand ? (
+                              isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
+                            ) : (
+                              <span className="w-3.5" />
+                            )}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-medium truncate max-w-[200px]">{item.title}</div>
+                            {item.original_title && <div className="text-xs text-muted-foreground truncate max-w-[200px]">{item.original_title}</div>}
+                          </div>
+                          {descCount > 0 && (
+                            <span className="shrink-0 text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
+                              {descCount}건
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium", TYPE_CLASS[item.content_type])}>
+                          <TypeIcon type={item.content_type} />{TYPE_LABEL[item.content_type]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm truncate max-w-[120px]">{item.cp_name ?? "—"}</td>
+                      <td className="px-4 py-3 text-sm">{item.production_year ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium", STATUS_CLASS[item.status])}>
+                          {item.status === "enriched" && <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />}
+                          {STATUS_LABEL[item.status]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3"><QualityBadge score={item.quality_score} /></td>
+                      <td className="px-4 py-3"><EnrichmentBadge enrichment={item.enrichment} /></td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(item.created_at)}</td>
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/programming/contents/${item.id}/edit`} className="inline-flex items-center px-2.5 py-1 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors">편집</Link>
                       </td>
                     </tr>
                   )

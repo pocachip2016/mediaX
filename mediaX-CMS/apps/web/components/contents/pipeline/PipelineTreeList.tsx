@@ -4,6 +4,7 @@ import { useState, useMemo } from "react"
 import { ChevronRight, ChevronDown, RefreshCw } from "lucide-react"
 import { TypeIcon } from "@/components/contents/detail/contentType"
 import type { ContentOut } from "@/lib/api"
+import { buildContentTree, countDescendants, type ContentTreeNode } from "@/lib/contentTree"
 
 // ── 상수 (pipeline/page.tsx 와 동기) ─────────────────────────────────────────
 
@@ -22,48 +23,6 @@ const STATUS_COLOR: Record<string, string> = {
 }
 const TYPE_LABEL: Record<string, string> = { movie: "영화", series: "시리즈", season: "시즌", episode: "에피" }
 
-// ── 트리 그룹핑 ───────────────────────────────────────────────────────────────
-
-interface TreeNode {
-  item: ContentOut
-  children: TreeNode[]
-}
-
-function buildTree(contents: ContentOut[]): { roots: TreeNode[]; idMap: Map<number, TreeNode> } {
-  const idMap = new Map<number, TreeNode>()
-  for (const c of contents) idMap.set(c.id, { item: c, children: [] })
-
-  const roots: TreeNode[] = []
-  for (const c of contents) {
-    const node = idMap.get(c.id)!
-    const parentNode = c.parent_id != null ? idMap.get(c.parent_id) : undefined
-    if (parentNode) {
-      parentNode.children.push(node)
-    } else {
-      roots.push(node)
-    }
-  }
-
-  // series > season > episode 순으로 정렬
-  const typeOrder: Record<string, number> = { series: 0, season: 1, episode: 2, movie: 3 }
-  const sort = (nodes: TreeNode[]) => {
-    nodes.sort((a, b) => {
-      const to = (typeOrder[a.item.content_type] ?? 9) - (typeOrder[b.item.content_type] ?? 9)
-      if (to !== 0) return to
-      const sn = (a.item.season_number ?? 0) - (b.item.season_number ?? 0)
-      if (sn !== 0) return sn
-      return (a.item.episode_number ?? 0) - (b.item.episode_number ?? 0)
-    })
-    nodes.forEach((n) => sort(n.children))
-  }
-  sort(roots)
-  return { roots, idMap }
-}
-
-function countDescendants(node: TreeNode): number {
-  return node.children.reduce((acc, c) => acc + 1 + countDescendants(c), 0)
-}
-
 // ── 행 컴포넌트 ───────────────────────────────────────────────────────────────
 
 function TreeRow({
@@ -74,7 +33,7 @@ function TreeRow({
   expanded,
   onToggle,
 }: {
-  node: TreeNode
+  node: ContentTreeNode
   depth: number
   selectedId: number | null
   onSelect: (id: number) => void
@@ -145,7 +104,7 @@ function TreeNodes({
   expandedSet,
   onToggle,
 }: {
-  nodes: TreeNode[]
+  nodes: ContentTreeNode[]
   depth: number
   selectedId: number | null
   onSelect: (id: number) => void
@@ -191,7 +150,7 @@ export interface PipelineTreeListProps {
 }
 
 export function PipelineTreeList({ contents, loading, selectedId, onSelect, viewMode }: PipelineTreeListProps) {
-  const { roots } = useMemo(() => buildTree(contents), [contents])
+  const { roots } = useMemo(() => buildContentTree(contents), [contents])
 
   // 최상위 series/season 노드를 기본 펼침
   const [expandedSet, setExpandedSet] = useState<Set<number>>(() => {

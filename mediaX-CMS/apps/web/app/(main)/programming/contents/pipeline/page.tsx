@@ -2959,7 +2959,7 @@ export default function PipelineMonitoringPage() {
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const selectedContentIdRef = useRef<number | null>(null)
   useEffect(() => { selectedContentIdRef.current = selectedContentId }, [selectedContentId])
-  const [listViewMode, setListViewMode] = useState<"flat" | "tree">("flat")
+  const [listViewMode, setListViewMode] = useState<"flat" | "tree">("tree")
 
   const [stageAuto, setStageAuto] = useState<StageAutoPolicy>({ s1_auto: false, s2_auto: false, s3_auto: false, s4_auto: false, s5_auto: false, s6_auto: false, s4_quality_threshold: 90 })
   const [stageAutoBusy, setStageAutoBusy] = useState(false)
