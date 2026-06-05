@@ -5,7 +5,6 @@ import { RefreshCw } from "lucide-react"
 import { metadataApi, type ContentDetail, type StagingItem } from "@/lib/api"
 import { isLeafType } from "@/components/contents/detail/contentType"
 import { ChildrenTable } from "@/components/contents/detail/ChildrenTable"
-import type { BreadcrumbParent } from "@/components/contents/detail/BreadcrumbNav"
 
 // ── 상수 (pipeline/page.tsx 와 동기) ─────────────────────────────────────────
 
@@ -24,35 +23,6 @@ const STATUS_LABEL: Record<string, string> = {
 }
 const TYPE_LABEL: Record<string, string> = { movie: "영화", series: "시리즈", season: "시즌", episode: "에피" }
 
-// ── 브레드크럼 (파이프라인용 — router.push 없이 onSelect 사용) ─────────────────
-
-function PipelineBreadcrumb({
-  parents,
-  onSelect,
-}: {
-  parents: BreadcrumbParent[]
-  onSelect: (id: number) => void
-}) {
-  if (parents.length === 0) return null
-  return (
-    <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap px-3 pt-2">
-      {parents.map((p, i) => (
-        <span key={p.id} className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onSelect(p.id)}
-            className="hover:text-foreground hover:underline transition-colors"
-            title={p.title}
-          >
-            {p.title}
-          </button>
-          {i < parents.length - 1 && <span className="text-border">›</span>}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 
 export interface PipelineDrilldownDetailProps {
@@ -66,7 +36,7 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
   const [loading, setLoading] = useState(false)
   const [hierarchy, setHierarchy] = useState<StagingItem | null>(null)
   const [hierarchyLoading, setHierarchyLoading] = useState(false)
-  const [parents, setParents] = useState<BreadcrumbParent[]>([])
+  const [parents, setParents] = useState<{ id: number; title: string; content_type: string }[]>([])
 
   useEffect(() => {
     if (contentId === null) { setDetail(null); setHierarchy(null); setParents([]); return }
@@ -79,21 +49,27 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
     return () => { alive = false }
   }, [contentId, refreshKey])
 
-  // 컨테이너 타입이면 hierarchy + parentChain 로드
+  // 컨테이너 타입이면 hierarchy 로드, 모든 타입에서 parent 1단계 로드
   useEffect(() => {
-    if (!detail || isLeafType(detail.content_type)) {
+    if (!detail) {
       setHierarchy(null)
       setParents([])
       return
     }
     let alive = true
-    setHierarchyLoading(true)
-    metadataApi.getHierarchy(detail.id)
-      .then((h) => { if (alive) setHierarchy(h) })
-      .catch(() => { if (alive) setHierarchy(null) })
-      .finally(() => { if (alive) setHierarchyLoading(false) })
 
-    // parentChain — series는 부모 없음, season은 series 부모 1단계
+    // 컨테이너(series/season)만 hierarchy 로드
+    if (!isLeafType(detail.content_type)) {
+      setHierarchyLoading(true)
+      metadataApi.getHierarchy(detail.id)
+        .then((h) => { if (alive) setHierarchy(h) })
+        .catch(() => { if (alive) setHierarchy(null) })
+        .finally(() => { if (alive) setHierarchyLoading(false) })
+    } else {
+      setHierarchy(null)
+    }
+
+    // parent_id 있으면 타입 무관하게 1단계 부모 로드 (season/episode 모두)
     if (detail.parent_id != null) {
       metadataApi.getContent(detail.parent_id)
         .then((p) => {
@@ -139,7 +115,22 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
     return (
       <div className="rounded-lg border border-border bg-background overflow-hidden">
         <div className="px-3 py-2 bg-muted/40 flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold truncate">{detail.title}</span>
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            {parents.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onSelect(parents[0]!.id)}
+                  className="text-xs text-muted-foreground hover:text-foreground hover:underline shrink-0 transition-colors"
+                  title={parents[0]!.title}
+                >
+                  {parents[0]!.title}
+                </button>
+                <span className="text-xs text-border shrink-0">›</span>
+              </>
+            )}
+            <span className="text-xs font-semibold truncate">{detail.title}</span>
+          </div>
           <span className="text-xs text-muted-foreground shrink-0">#{detail.id}</span>
         </div>
         <div className="p-3 flex gap-3">
@@ -176,18 +167,63 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
   // ── Container (series / season) — 계층 드릴다운 ─────────────────────────────
   const parentType = detail.content_type === "series" ? "series" : "season"
   const children = hierarchy?.children ?? []
+  const containerFields: Array<[string, string | null]> = [
+    ["제작연도", detail.production_year != null ? String(detail.production_year) : null],
+    ["국가", detail.country ?? null],
+    ["장르", (detail.genres ?? []).map((g) => g.genre.name_ko).join(", ") || null],
+    ...(detail.content_type === "season" && detail.season_number != null
+      ? [["시즌", `S${detail.season_number}`] as [string, string | null]]
+      : []),
+  ]
+  const containerSynopsis = detail.metadata_record?.final_synopsis ?? detail.metadata_record?.ai_synopsis ?? detail.metadata_record?.cp_synopsis ?? null
 
   return (
     <div className="rounded-lg border border-border bg-background overflow-hidden space-y-0">
       <div className="px-3 py-2 bg-muted/40 flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold truncate">{detail.title}</span>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${STATUS_COLOR[detail.status] ?? ""}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
-          <span className="text-xs text-muted-foreground">#{detail.id}</span>
+        <div className="flex items-center gap-1 min-w-0 flex-1">
+          {parents.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => onSelect(parents[0]!.id)}
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline shrink-0 transition-colors"
+                title={parents[0]!.title}
+              >
+                {parents[0]!.title}
+              </button>
+              <span className="text-xs text-border shrink-0">›</span>
+            </>
+          )}
+          <span className="text-xs font-semibold truncate">{detail.title}</span>
+        </div>
+        <span className="text-xs text-muted-foreground shrink-0">#{detail.id}</span>
+      </div>
+      <div className="p-3 flex gap-3 border-b border-border">
+        {detail.poster_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={detail.poster_url} alt={detail.title} className="w-16 h-24 object-cover rounded border border-border shrink-0" />
+        ) : (
+          <div className="w-16 h-24 rounded border border-dashed border-border flex items-center justify-center text-[10px] text-muted-foreground shrink-0">No Img</div>
+        )}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${STATUS_COLOR[detail.status] ?? ""}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
+            <span className="text-[10px] text-muted-foreground">{TYPE_LABEL[detail.content_type] ?? detail.content_type}</span>
+          </div>
+          <div className="space-y-0.5 text-xs">
+            {containerFields.map(([label, value]) => (
+              <div key={label} className="flex gap-2">
+                <span className="text-muted-foreground w-14 shrink-0">{label}</span>
+                <span className="truncate flex-1">{value ?? "—"}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-      {parents.length > 0 && (
-        <PipelineBreadcrumb parents={parents} onSelect={onSelect} />
+      {containerSynopsis && (
+        <div className="px-3 py-2 border-b border-border">
+          <p className="text-xs text-muted-foreground line-clamp-3">{containerSynopsis}</p>
+        </div>
       )}
       <div className="p-3">
         <ChildrenTable

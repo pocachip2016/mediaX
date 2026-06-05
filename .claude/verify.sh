@@ -5596,6 +5596,33 @@ print('BEAT: OK')
     echo "=== PASS ==="
     ;;
 
+  hierarchy-cascade)
+    echo "=== hierarchy-cascade: advance/revert 계층 cascade + FE typecheck ==="
+    # 1) 백엔드: expand_same_bucket_descendants 헬퍼 존재
+    grep -q "expand_same_bucket_descendants" "$BACKEND/api/test/pipeline_auto_service.py" || { echo "FAIL: expand_same_bucket_descendants 없음"; exit 1; }
+    echo "  ✓ expand_same_bucket_descendants 헬퍼 존재"
+    # 2) 백엔드: advance/revert 엔드포인트가 cascade 호출
+    grep -q "expand_same_bucket_descendants" "$BACKEND/api/test/pipeline_router.py" || { echo "FAIL: pipeline_router.py cascade 없음"; exit 1; }
+    echo "  ✓ advance/revert cascade 적용"
+    # 3) pytest — cascade 2케이스
+    .venv/bin/python -m pytest tests/test_stage_manual_steps.py::test_advance_cascade_series_moves_all_same_bucket tests/test_stage_manual_steps.py::test_advance_cascade_skips_different_bucket_descendants -v --tb=short 2>&1 || exit 1
+    echo "  ✓ cascade pytest 2케이스 PASS"
+    # 4) FE: sameBucketSubtreeIds 헬퍼 + 단건 호출부 수정
+    PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
+    grep -q "sameBucketSubtreeIds" "$PAGE" || { echo "FAIL: sameBucketSubtreeIds 없음"; exit 1; }
+    grep -q "sameBucketSubtreeIds(selectedContentId" "$PAGE" || { echo "FAIL: 단건 호출부 미수정"; exit 1; }
+    echo "  ✓ FE sameBucketSubtreeIds 적용"
+    # 5) FE: 하드코딩 "1건" 제거 확인
+    grep -q "다음 단계로 (1건)" "$PAGE" && { echo "FAIL: 하드코딩 '1건' 잔존"; exit 1; } || true
+    echo "  ✓ 하드코딩 '1건' 제거됨"
+    # 6) FE typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
+    echo "  ✓ FE typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
   s4-auto-residual)
     echo "=== s4-auto-residual: S4 AUTO 잔류 유지 + 재검수 방지 ==="
     PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"

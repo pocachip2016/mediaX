@@ -74,6 +74,58 @@ def content_bucket(c: Content) -> int:
     return _STAGE_BUCKET.get(c.current_stage.value if c.current_stage else "", 1)
 
 
+def expand_same_bucket_descendants(db: Session, ids: list[int]) -> list[int]:
+    """ids 목록에 각 id와 같은 bucket에 있는 자손(시즌·에피소드)을 추가해 dedup 반환.
+
+    같은 bucket 조건: 자손의 content_bucket()이 부모 노드와 동일.
+    앞선 자손이 다른 bucket에 있으면 제외 — desync 방지.
+    """
+    if not ids:
+        return []
+
+    # 시드 id 각각의 bucket 기록 (나중에 자손 bucket과 비교)
+    roots = db.query(Content).filter(
+        Content.id.in_(ids), Content.is_deleted.is_(False)
+    ).all()
+    root_bucket: dict[int, int] = {c.id: content_bucket(c) for c in roots}
+
+    # 각 root에 대해 BFS로 자손 수집 — 같은 bucket인 경우만 포함
+    all_ids: list[int] = list(ids)
+    seen: set[int] = set(ids)
+
+    # (child_id, parent_root_bucket) 쌍으로 frontier 관리
+    frontier: list[tuple[int, int]] = [(rid, root_bucket[rid]) for rid in ids]
+
+    while frontier:
+        parent_ids = [pid for pid, _ in frontier]
+        parent_bucket_map = {pid: bkt for pid, bkt in frontier}
+
+        children = db.query(Content.id, Content.parent_id, Content.current_stage, Content.status).filter(
+            Content.parent_id.in_(parent_ids),
+            Content.is_deleted.is_(False),
+        ).all()
+
+        next_frontier: list[tuple[int, int]] = []
+        for child_id, parent_id, cur_stage, status in children:
+            if child_id in seen:
+                continue
+            # 자손 bucket 계산
+            if status == ContentStatus.rejected:
+                child_bkt = 6
+            else:
+                child_bkt = _STAGE_BUCKET.get(cur_stage.value if cur_stage else "", 1)
+
+            expected_bkt = parent_bucket_map.get(parent_id)
+            if child_bkt == expected_bkt:
+                seen.add(child_id)
+                all_ids.append(child_id)
+                next_frontier.append((child_id, child_bkt))
+
+        frontier = next_frontier
+
+    return all_ids
+
+
 # ── claim ─────────────────────────────────────────────────────────────────────
 
 def claim_bucket(

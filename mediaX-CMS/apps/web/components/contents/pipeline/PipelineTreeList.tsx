@@ -233,7 +233,7 @@ export function PipelineTreeList({ contents, loading, selectedId, onSelect, view
     return (
       <div className="rounded-lg border border-border bg-background overflow-hidden">
         <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-          <span className="text-xs font-semibold text-muted-foreground">콘텐츠 목록</span>
+          <span className="text-xs font-semibold text-muted-foreground">콘텐츠/시리즈 목록</span>
           <span className="text-xs text-muted-foreground">{contents.length}건</span>
         </div>
         <div className="divide-y divide-border max-h-64 overflow-y-auto">
@@ -262,7 +262,7 @@ export function PipelineTreeList({ contents, loading, selectedId, onSelect, view
   return (
     <div className="rounded-lg border border-border bg-background overflow-hidden">
       <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground">콘텐츠 목록</span>
+        <span className="text-xs font-semibold text-muted-foreground">콘텐츠/시리즈 목록</span>
         <span className="text-xs text-muted-foreground">{contents.length}건</span>
       </div>
       <div className="divide-y divide-border max-h-64 overflow-y-auto">

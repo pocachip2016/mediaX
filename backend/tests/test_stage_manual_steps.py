@@ -189,3 +189,74 @@ def test_enrich_only_sources_skips_others(db):
     # tmdb 는 시도(API 키 없으면 no_key skip), kmdb 는 아예 미시도
     assert "kmdb" not in result.sources_hit
     assert "kmdb:no_key" not in result.sources_skipped  # kmdb 자체를 호출 안 함
+
+
+# ── advance cascade (시리즈 계층) ────────────────────────────────────────────
+
+def _make_series(db):
+    """시리즈 > 시즌1 > 에피1·2 계층 생성 (전부 raw, bucket 1)."""
+    from api.programming.metadata.models.content import PipelineStage
+
+    series = Content(title="테스트시리즈", content_type=ContentType.series,
+                     cp_name="TEST_MSS", status=ContentStatus.raw,
+                     current_stage=PipelineStage.S1_INTAKE)
+    db.add(series); db.flush()
+    db.add(ContentMetadata(content_id=series.id, quality_score=0.0)); db.flush()
+
+    season = Content(title="테스트시리즈 시즌1", content_type=ContentType.season,
+                     cp_name="TEST_MSS", status=ContentStatus.raw,
+                     current_stage=PipelineStage.S1_INTAKE, parent_id=series.id, season_number=1)
+    db.add(season); db.flush()
+    db.add(ContentMetadata(content_id=season.id, quality_score=0.0)); db.flush()
+
+    ep1 = Content(title="테스트시리즈 1화", content_type=ContentType.episode,
+                  cp_name="TEST_MSS", status=ContentStatus.raw,
+                  current_stage=PipelineStage.S1_INTAKE, parent_id=season.id,
+                  season_number=1, episode_number=1)
+    ep2 = Content(title="테스트시리즈 2화", content_type=ContentType.episode,
+                  cp_name="TEST_MSS", status=ContentStatus.raw,
+                  current_stage=PipelineStage.S1_INTAKE, parent_id=season.id,
+                  season_number=1, episode_number=2)
+    db.add_all([ep1, ep2]); db.flush()
+    for ep in (ep1, ep2):
+        db.add(ContentMetadata(content_id=ep.id, quality_score=0.0))
+    db.flush()
+    return series, season, ep1, ep2
+
+
+def test_advance_cascade_series_moves_all_same_bucket(client, db):
+    """시리즈 id만 advance 요청 → 같은 bucket 자손(시즌·에피) 모두 함께 이동."""
+    from api.programming.metadata.models.content import PipelineStage as PS
+    series, season, ep1, ep2 = _make_series(db)
+    db.commit()
+
+    res = client.post("/api/test/pipeline/advance", json={"ids": [series.id]})
+    assert res.status_code == 200
+    data = res.json()
+    # 시리즈1 + 시즌1 + 에피2 = 4건 이동
+    assert data["advanced"] == 4
+
+    # bucket1(S1_INTAKE)→bucket2(S2_NORMALIZE). ADVANCED 이벤트는 status 불변, current_stage만 이동.
+    for node in (series, season, ep1, ep2):
+        db.refresh(node)
+        assert node.current_stage == PS.S2_NORMALIZE, \
+            f"{node.title} current_stage 미이동 (실제: {node.current_stage})"
+
+
+def test_advance_cascade_skips_different_bucket_descendants(client, db):
+    """에피소드가 이미 다른 bucket(enriched)에 있으면 advance 대상에서 제외."""
+    from api.programming.metadata.models.content import PipelineStage
+
+    series, season, ep1, ep2 = _make_series(db)
+    # ep2만 미리 bucket 2(enriched)로 이동
+    ep2.status = ContentStatus.enriched
+    ep2.current_stage = PipelineStage.S2_NORMALIZE
+    db.flush(); db.commit()
+
+    res = client.post("/api/test/pipeline/advance", json={"ids": [series.id]})
+    assert res.status_code == 200
+    data = res.json()
+    # 시리즈1 + 시즌1 + ep1(bucket1) = 3건, ep2(bucket2) 제외
+    assert data["advanced"] == 3
+    db.refresh(ep2)
+    assert ep2.current_stage == PipelineStage.S2_NORMALIZE  # ep2는 그대로
