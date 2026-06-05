@@ -212,8 +212,11 @@ export default function ContentsPage() {
       mergedItemsRef.current = m
       setItems([...rootItems, ...childrenAll])
       setTotal(res.total)
-      // 시리즈/시즌 루트 기본 펼침 (S1 PipelineTreeList 동작과 일치)
-      setExpandedIds(new Set(containerIds))
+      // 시리즈/시즌 모두(루트 + 자식 시즌) 기본 펼침 → 에피소드까지 바로 노출
+      const allExpandable = [...rootItems, ...childrenAll]
+        .filter((it) => it.content_type === "series" || it.content_type === "season")
+        .map((it) => it.id)
+      setExpandedIds(new Set(allExpandable))
     } catch {
       setItems(MOCK_CONTENTS)
       setTotal(MOCK_CONTENTS.length)
@@ -664,7 +667,9 @@ export default function ContentsPage() {
                         <input type="checkbox" checked={selected} onChange={() => toggleRow(item.id)} className="h-4 w-4 cursor-pointer" />
                       </td>
                       <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
-                        {resolvePosterUrl(item.poster_url) ? (
+                        {(item.content_type === "season" || item.content_type === "episode") ? (
+                          <div style={{ width: 36, height: 52 }} />
+                        ) : resolvePosterUrl(item.poster_url) ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={resolvePosterUrl(item.poster_url)!} alt={item.title} className="rounded" style={{ width: 36, height: "auto" }} />
                         ) : (
