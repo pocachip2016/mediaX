@@ -167,6 +167,10 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
   // ── Container (series / season) — 계층 드릴다운 ─────────────────────────────
   const parentType = detail.content_type === "series" ? "series" : "season"
   const children = hierarchy?.children ?? []
+  const seriesMeta = detail.content_type === "series" ? detail.metadata_record : null
+  const airPeriod = seriesMeta?.first_air_date
+    ? `${seriesMeta.first_air_date.slice(0, 4)}${seriesMeta.last_air_date ? ` ~ ${seriesMeta.last_air_date.slice(0, 4)}` : " ~"}`
+    : null
   const containerFields: Array<[string, string | null]> = [
     ["제작연도", detail.production_year != null ? String(detail.production_year) : null],
     ["국가", detail.country ?? null],
@@ -174,6 +178,13 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
     ...(detail.content_type === "season" && detail.season_number != null
       ? [["시즌", `S${detail.season_number}`] as [string, string | null]]
       : []),
+    ...(detail.content_type === "series" ? [
+      ["시즌수", seriesMeta?.total_seasons != null ? `${seriesMeta.total_seasons}시즌` : null] as [string, string | null],
+      ["에피수", seriesMeta?.total_episodes != null ? `${seriesMeta.total_episodes}편` : null] as [string, string | null],
+      ["방영기간", airPeriod] as [string, string | null],
+      ["방영상태", seriesMeta?.air_status ?? null] as [string, string | null],
+      ["방송사", seriesMeta?.networks?.join(", ") ?? null] as [string, string | null],
+    ] : []),
   ]
   const containerSynopsis = detail.metadata_record?.final_synopsis ?? detail.metadata_record?.ai_synopsis ?? detail.metadata_record?.cp_synopsis ?? null
 

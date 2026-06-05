@@ -11,6 +11,7 @@ psycopg2-binary==2.9.9
 redis==5.0.7
 celery==5.4.0
 celery-redbeat==2.2.0
+watchdog==4.0.1  # dev: worker 코드 핫리로드 (watchmedo auto-restart)
 
 # Search
 elasticsearch==8.14.0

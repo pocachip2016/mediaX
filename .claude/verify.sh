@@ -5645,9 +5645,165 @@ print('BEAT: OK')
     echo "=== PASS ==="
     ;;
 
+  # ── dev-series-meta steps ────────────────────────────────────────
+  series-meta-fe)
+    echo "=== series-meta-fe: FE 시리즈 필드 표시 + TypeScript 타입 체크 ==="
+    FE_COMP="$SCRIPT_DIR/../mediaX-CMS/apps/web/components/contents/pipeline/PipelineDrilldownDetail.tsx"
+    for field in total_seasons total_episodes first_air_date air_status networks; do
+      grep -q "$field" "$FE_COMP" || { echo "FAIL: PipelineDrilldownDetail.tsx에 $field 없음"; exit 1; }
+      echo "  ✓ PipelineDrilldownDetail.tsx: $field"
+    done
+    grep -q "시즌수\|에피수\|방영기간\|방영상태\|방송사" "$FE_COMP" \
+      || { echo "FAIL: 한국어 레이블 없음"; exit 1; }
+    echo "  ✓ 한국어 레이블 존재 확인"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"
+      echo "$TS_OUT" | grep "error TS" | head -5
+      exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  series-meta-schema)
+    echo "=== series-meta-schema: MetadataOut BE 스키마 + FE 타입 6필드 확인 ==="
+    python3 -c "
+from api.programming.metadata.schemas import MetadataOut
+import inspect
+fields = MetadataOut.model_fields
+required = ['total_seasons','total_episodes','first_air_date','last_air_date','air_status','networks']
+for r in required:
+    assert r in fields, f'FAIL: MetadataOut.{r} 없음'
+    print(f'  ✓ MetadataOut.{r}')
+"
+    FE_API="$SCRIPT_DIR/../mediaX-CMS/apps/web/lib/api.ts"
+    for field in total_seasons total_episodes first_air_date last_air_date air_status networks; do
+      grep -q "$field" "$FE_API" || { echo "FAIL: api.ts에 $field 없음"; exit 1; }
+      echo "  ✓ api.ts: $field"
+    done
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"
+      echo "$TS_OUT" | grep "error TS" | head -5
+      exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  series-meta-populate)
+    echo "=== series-meta-populate: apply_series_meta_from_cache 단위 테스트 ==="
+    python3 -c "
+import sys
+from datetime import date
+from sqlalchemy import create_engine, extract
+from sqlalchemy.orm import sessionmaker
+from shared.database import Base
+import api.programming.metadata.models
+from api.programming.metadata.models.content import Content, ContentType, ContentStatus, ContentMetadata
+from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
+from api.programming.metadata.models.tmdb_cache import TmdbTvCache
+from api.test.pipeline_auto_service import apply_series_meta_from_cache
+
+engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False})
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+db = Session()
+
+# 공통 시드
+series = Content(id=1, title='브레이킹 배드', content_type=ContentType.series, status=ContentStatus.raw, is_deleted=False)
+movie  = Content(id=2, title='기생충', content_type=ContentType.movie, status=ContentStatus.raw, is_deleted=False)
+db.add_all([series, movie])
+db.flush()
+
+cache = TmdbTvCache(
+    id=1396, name='브레이킹 배드',
+    number_of_seasons=5, number_of_episodes=62,
+    first_air_date=date(2008, 1, 20), last_air_date=date(2013, 9, 29),
+    status='Ended',
+    raw_json={'networks': [{'name': 'AMC'}]},
+)
+db.add(cache)
+db.flush()
+
+ext = ExternalMetaSource(content_id=1, source_type=ExternalSourceType.tmdb, external_id='1396', raw_json={})
+db.add(ext)
+db.flush()
+
+# 테스트 1: series → 6필드 채워짐
+filled = apply_series_meta_from_cache(db, 1)
+meta = db.query(ContentMetadata).filter_by(content_id=1).first()
+assert meta is not None, 'FAIL: ContentMetadata 미생성'
+assert meta.total_seasons == 5, f'FAIL: total_seasons={meta.total_seasons}'
+assert meta.total_episodes == 62, f'FAIL: total_episodes={meta.total_episodes}'
+assert meta.air_status == 'Ended', f'FAIL: air_status={meta.air_status}'
+assert meta.networks == ['AMC'], f'FAIL: networks={meta.networks}'
+assert set(filled) == {'total_seasons','total_episodes','first_air_date','last_air_date','air_status','networks'}, f'FAIL: filled={filled}'
+print('  ✓ series → 6필드 채워짐')
+
+# 테스트 2: 재실행 시 멱등 (기존값 덮어쓰지 않음)
+filled2 = apply_series_meta_from_cache(db, 1)
+assert filled2 == [], f'FAIL: 재실행에서 filled={filled2} (빈 리스트여야 함)'
+print('  ✓ 재실행 시 멱등 (0 filled)')
+
+# 테스트 3: movie → 무처리
+filled_movie = apply_series_meta_from_cache(db, 2)
+assert filled_movie == [], f'FAIL: movie에서 filled={filled_movie}'
+print('  ✓ movie → 무처리')
+
+db.close()
+print('  ✓ 전체 단위 테스트 통과')
+"
+    echo "=== PASS ==="
+    ;;
+
+  series-meta-columns)
+    echo "=== series-meta-columns: ContentMetadata 시리즈 컬럼 6개 + 마이그레이션 0038 ==="
+    # 1. 모델 컬럼 6개 존재 확인
+    python3 -c "
+from api.programming.metadata.models.content import ContentMetadata
+cols = [c.key for c in ContentMetadata.__table__.columns]
+required = ['total_seasons','total_episodes','first_air_date','last_air_date','air_status','networks']
+for r in required:
+    assert r in cols, f'FAIL: ContentMetadata.{r} 없음'
+    print(f'  ✓ ContentMetadata.{r}')
+"
+    # 2. 마이그레이션 파일 존재 확인
+    test -f alembic/versions/0038_series_meta_columns.py \
+      || { echo "FAIL: 0038_series_meta_columns.py 없음"; exit 1; }
+    echo "  ✓ alembic/versions/0038_series_meta_columns.py 존재"
+    # 3. down_revision=0037 확인
+    grep -q 'down_revision = "0037"' alembic/versions/0038_series_meta_columns.py \
+      || { echo "FAIL: down_revision 0037 아님"; exit 1; }
+    echo "  ✓ down_revision=0037 확인"
+    # 4. SQLite create_all 스모크 테스트
+    python3 -c "
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from shared.database import Base
+import api.programming.metadata.models
+engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False})
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+db = Session()
+from api.programming.metadata.models.content import ContentMetadata
+m = ContentMetadata(content_id=999)
+db.add(m)
+db.flush()
+assert m.total_seasons is None
+assert m.networks is None
+print('  ✓ SQLite create_all + ContentMetadata 스모크 통과')
+db.close()
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
-    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, auto-headless-be, s4-auto-residual, stage-auto-autofill-guard, pipeline-auto-schema"
+    echo "사용 가능한 step: meta-intelligence-step1 ~ step9, phase-c-step0 ~ phase-c-step9, quota-adr-step1 ~ step3, sources-step0 ~ step3, watcha-step0 ~ step8, ui-consolidation-step0 ~ step7, ui-impl-1 ~ ui-impl-4, dev-api-step0 ~ step5, ui-wiring-step0 ~ step3, watcha-real-2, watcha-real-3, watcha-real-4, watcha-real-5, watcha-real-6, M.1, M.2, poster-display-step1 ~ step8, poster-recommend-1.1 ~ 3.1, detail-vod-1.1 ~ 3.1, flexible-meta-step0 ~ step4, flexible-meta-step5a ~ flexible-meta-step5d, ai-review-queue-1.1 ~ 1.5, ai-review-queue-2, ai-review-queue-3, ai-review-queue-4, ai-review-queue-5, ai-review-queue-6, ai-review-queue-7, content-register-1, content-register-2, content-register-3, poster-ingest-P.2, poster-ingest-P.3, distribution-step0, distribution-step3a, recommend-step1.0 ~ recommend-step1.9, kmdb-live-search, kmdb-unit-pytest, kmdb-discovery-run, kmdb-enrich-content, kmdb-cache-model, kmdb-front, kobis-quota-backfill, sqlite-to-postgres, kobis-kmdb-mapped-contents, link-kmdb-to-contents, mh-bulk-movie, mh-bulk-series, mh-bulk-e2e, mh-fe-bulk-ui, mh-fe-3tab, mh-fe-recommend, pt-adr, pt-seed-script, pt-test-api, pt-timeline-api, pt-fe-skeleton, pt-s0-panel, pt-timeline-comp, pt-s1-s2-embed, pt-s3-s5-trigger, pt-wrap, dus-adr ~ dus-wrap, dev-detail-3col-layout-step0 ~ step6, dpf-board-stage-api, dpf-board-fe-shell, dpf-board-fe-detail, dev-curation-workbench-step7 ~ step10, sms-step1 ~ sms-step8 (service-module-split steps), auto-headless, auto-headless-be, s4-auto-residual, stage-auto-autofill-guard, pipeline-auto-schema, series-meta-columns, series-meta-populate, series-meta-schema, series-meta-fe"
     exit 1
     ;;
 esac

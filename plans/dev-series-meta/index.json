@@ -1,0 +1,36 @@
+{
+  "task": "dev-series-meta",
+  "title": "시리즈 메타 보완 — TmdbTvCache → ContentMetadata 시리즈 전용 필드",
+  "branch": "feat/series-meta",
+  "steps": [
+    {
+      "id": "1.1",
+      "name": "series-meta-columns",
+      "summary": "ContentMetadata에 시리즈 전용 컬럼 6개 추가 + alembic 0038 마이그레이션",
+      "status": "completed",
+      "summary": "ContentMetadata 시리즈 6컬럼(total_seasons/total_episodes/first_air_date/last_air_date/air_status/networks) + alembic 0038 마이그레이션",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "1.2",
+      "name": "series-meta-populate",
+      "summary": "apply_series_meta_from_cache 서비스 (TmdbTvCache→ContentMetadata 채우기, 퍼지 폴백) + enrich_autofill_one 배선 + SQLite 단위테스트",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "1.3",
+      "name": "series-meta-schema",
+      "summary": "MetadataOut BE 스키마 + FE api.ts 타입에 6필드(total_seasons/total_episodes/first_air_date/last_air_date/air_status/networks) 추가",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    },
+    {
+      "id": "1.4",
+      "name": "series-meta-fe",
+      "summary": "PipelineDrilldownDetail.tsx series Container에 시즌수·에피수·방영기간·방영상태·방송사 5필드 표시 + 한국어 라벨",
+      "status": "completed",
+      "completed_at": "2026-06-05T00:00:00+09:00"
+    }
+  ]
+}

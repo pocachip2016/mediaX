@@ -68,6 +68,12 @@ export interface MetadataOut {
   reviewed_at: string | null
   synopsis_ko: string | null
   synopsis_en: string | null
+  total_seasons: number | null
+  total_episodes: number | null
+  first_air_date: string | null
+  last_air_date: string | null
+  air_status: string | null
+  networks: string[] | null
 }
 
 export interface PersonOut {

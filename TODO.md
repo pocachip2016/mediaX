@@ -7,7 +7,7 @@
 - (없음)
 
 ## Next (이번 마일스톤)
-- (없음)
+- [ ] **dev-child-inheritance** — 시즌/에피소드 상속을 quality_score 채점·detail 노출에 배선(현재 staging/gap만) + cast/director 상속 확장 → 자식 노드 rejected 해소. 5스텝 플랜 수립 완료, 미착수
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **feat(series-meta)** — TmdbTvCache→ContentMetadata 시리즈 6필드 보강(apply_series_meta_from_cache, S2 AUTO 배선, 멱등, series 한정) + alembic 0038 + FE 표시 + worker watchmedo 핫리로드 인프라(stale 코드 차단) + apply_migration 훅. 우영우/오징어게임/무빙 백필 (2026-06-05)
 - [x] **feat(pipeline)** — cascade advance(시리즈/시즌 동일버킷 자손 포함) + 계층 상세 메타 패널(포스터+필드→하위목록) + 외부소스 master-detail(TMDB/KOBIS/KMDB 행 클릭 상세) + 건수 breakdown 라벨(N시즌/M편) + 부모 브레드크럼 (2026-06-05)
 - [x] **feat(pipeline-tree-drilldown)** — 계층 트리 + 타입별 드릴다운 (PipelineTreeList 평면/계층 토글 + PipelineDrilldownDetail 타입 디스패치 + ChildrenTable ASC 정렬 + list_contents size 100→500) (2026-06-05)
 - [x] **dev-pipeline-auto-worker** — 파이프라인 진행 엔진 FE→Celery 워커 이관 (ADR-010): Beat 15s tick + bucket 병행 + AI per-item fan-out(pipeline_ai 큐) + SKIP LOCKED claim + 멱등 advance/approve + auto_hold(수동 override) + FE 콘솔 모니터화(auto-status/auto-log 폴링·처리건 스크롤 로그·advance 시 목록 제거). Steps 0~8 + 운영픽스 4종 + UX복원 + S4 미승인 자동 반려(bucket 6, 잔류 폐지) (2026-06-04)
