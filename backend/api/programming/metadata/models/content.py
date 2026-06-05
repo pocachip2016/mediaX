@@ -11,7 +11,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, DateTime,
+    Column, String, Integer, Float, Text, DateTime, Date,
     Enum, ForeignKey, Boolean, JSON,
 )
 from sqlalchemy.orm import relationship
@@ -219,6 +219,14 @@ class ContentMetadata(Base):
     # 업로드 확장 필드
     audio_channels = Column(String(20))              # "5.1CH", "Stereo", "Atmos"
     extra_metadata = Column(JSON)                    # CSV 미매핑 컬럼 흡수 {"헤더": "값"}
+
+    # 시리즈 전용 메타 (content_type=series 노드에만 의미 있음, TmdbTvCache 소스)
+    total_seasons = Column(Integer)                # 총 시즌 수
+    total_episodes = Column(Integer)               # 총 에피소드 수
+    first_air_date = Column(Date)                  # 첫 방영일
+    last_air_date = Column(Date)                   # 마지막 방영일
+    air_status = Column(String(50))                # "Ended" / "Returning Series" / "Canceled" 등
+    networks = Column(JSON)                        # list[str] 방송사 명칭
 
     # AI Task 확장 메타 (ADR-007 Phase1 — AiTask 플러그인으로 채워짐)
     synopsis_ko = Column(Text)          # 한국어 줄거리 (번역 또는 원본)

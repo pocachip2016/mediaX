@@ -386,6 +386,10 @@ def enrich_autofill_one(db: Session, content_id: int) -> EnrichAutofillResult:
         db.commit()
         db.refresh(c)
 
+    series_filled = apply_series_meta_from_cache(db, content_id)
+    if series_filled:
+        filled_fields.extend(series_filled)
+
     recompute_quality_score(db, content_id)
     db.commit()
 
@@ -396,6 +400,93 @@ def enrich_autofill_one(db: Session, content_id: int) -> EnrichAutofillResult:
         skipped_fields=skipped_fields,
         status_unchanged=c.status.value if c.status else (before_status.value if before_status else ""),
     )
+
+
+# ── apply_series_meta_from_cache ──────────────────────────────────────────────
+
+def apply_series_meta_from_cache(db: Session, content_id: int) -> list[str]:
+    """series 노드 전용: TmdbTvCache → ContentMetadata 시리즈 필드 채우기.
+
+    빈 값만 채움(empty-only) + 멱등. movie/season/episode는 무처리.
+    ExternalMetaSource(tmdb) → TmdbTvCache(id) 경로로 캐시 조회.
+    캐시 미연결 시 title+first_air_year 퍼지 매칭 시도(기존 worker 방식 동일).
+    반환: 채운 필드명 list (빈 list = 처리 없음).
+    """
+    from api.programming.metadata.models.content import ContentType, ContentMetadata
+    from api.programming.metadata.models.external import ExternalMetaSource, ExternalSourceType
+    from api.programming.metadata.models.tmdb_cache import TmdbTvCache
+
+    c = db.query(Content).filter(Content.id == content_id, Content.is_deleted.is_(False)).first()
+    if not c or c.content_type != ContentType.series:
+        return []
+
+    # ExternalMetaSource(tmdb) → TmdbTvCache 경로
+    cache: TmdbTvCache | None = None
+    ext = (
+        db.query(ExternalMetaSource)
+        .filter(
+            ExternalMetaSource.content_id == content_id,
+            ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+        )
+        .first()
+    )
+    if ext and ext.external_id:
+        try:
+            tmdb_id = int(ext.external_id)
+            cache = db.get(TmdbTvCache, tmdb_id)
+        except (ValueError, TypeError):
+            pass
+
+    # 퍼지 폴백: name 정확 매칭 → year 슬라이싱
+    if cache is None:
+        cache = db.query(TmdbTvCache).filter(TmdbTvCache.name == c.title).first()
+    if cache is None and c.production_year:
+        from sqlalchemy import extract
+        import difflib
+        candidates = (
+            db.query(TmdbTvCache)
+            .filter(extract("year", TmdbTvCache.first_air_date) == c.production_year)
+            .limit(50)
+            .all()
+        )
+        best_ratio, best_cache = 0.0, None
+        for cand in candidates:
+            ratio = difflib.SequenceMatcher(None, c.title, cand.name).ratio()
+            if ratio > best_ratio:
+                best_ratio, best_cache = ratio, cand
+        if best_ratio >= 0.85:
+            cache = best_cache
+
+    if cache is None:
+        return []
+
+    meta = db.query(ContentMetadata).filter_by(content_id=content_id).first()
+    if meta is None:
+        meta = ContentMetadata(content_id=content_id)
+        db.add(meta)
+        db.flush()
+
+    filled: list[str] = []
+
+    def _set_if_empty(attr: str, value) -> None:
+        if value is not None and getattr(meta, attr) is None:
+            setattr(meta, attr, value)
+            filled.append(attr)
+
+    _set_if_empty("total_seasons", cache.number_of_seasons)
+    _set_if_empty("total_episodes", cache.number_of_episodes)
+    _set_if_empty("first_air_date", cache.first_air_date)
+    _set_if_empty("last_air_date", cache.last_air_date)
+    _set_if_empty("air_status", cache.status)
+    raw = cache.raw_json or {}
+    networks_val = [n.get("name") for n in raw.get("networks", []) if n.get("name")]
+    _set_if_empty("networks", networks_val if networks_val else None)
+
+    if filled:
+        db.flush()
+        logger.info("[series_meta] content_id=%d filled=%s", content_id, filled)
+
+    return filled
 
 
 # ── ai_autofill_one (sync) ────────────────────────────────────────────────────
