@@ -38,6 +38,13 @@ export const docsNav: NavSection[] = [
         ],
       },
       {
+        title: "카탈로그",
+        href: "/programming/catalog",
+        items: [
+          { title: "카테고리 트리", href: "/programming/catalog", label: "NEW" },
+        ],
+      },
+      {
         title: "큐레이션",
         href: "/programming/categories",
         items: [

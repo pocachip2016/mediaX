@@ -9,7 +9,7 @@ import api.programming.metadata.models  # noqa: F401
 import api.meta_core.models  # noqa: F401  — meta_core re-export (동일 테이블, 중복 등록 무해)
 import api.meta_core.public_api.models  # noqa: F401  — DamEvent
 import api.distribution.models  # noqa: F401
-# import api.programming.catalog.models  # noqa: F401  — 추후 추가
+import api.programming.catalog.models  # noqa: F401
 # import api.design.models               # noqa: F401  — 추후 추가
 
 config = context.config
