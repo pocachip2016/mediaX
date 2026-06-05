@@ -87,6 +87,45 @@ function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: s
   )
 }
 
+// ── 상세 패널 ─────────────────────────────────────────────
+
+function KobisDetailPanel({ item, onClose }: { item: KobisCacheItem; onClose: () => void }) {
+  const fields: Array<[string, string | null]> = [
+    ["영문제목", item.title_en],
+    ["영화코드", item.movie_cd],
+    ["개봉일",   item.open_dt],
+    ["제작연도", item.prdt_year != null ? String(item.prdt_year) : null],
+    ["장르",     item.rep_genre_nm],
+    ["국가",     item.rep_nation_nm],
+    ["수집일",   formatDate(item.last_fetched_at)],
+  ]
+  return (
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden sticky top-4">
+      <div className="px-4 py-3 bg-muted/50 border-b flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold truncate flex-1">{item.title}</span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex justify-center">
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            KOBIS 영화
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {fields.map(([label, value]) => value != null && (
+            <div key={label} className="flex gap-2">
+              <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+              <span className="text-xs flex-1 break-all">{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 메인 컴포넌트 ─────────────────────────────────────────
 
 export default function KobisPage() {
@@ -98,6 +137,7 @@ export default function KobisPage() {
   const [cacheLoading, setCacheLoading] = useState(false)
   const [search,  setSearch]  = useState("")
   const [applied, setApplied] = useState("")
+  const [selectedItem, setSelectedItem] = useState<KobisCacheItem | null>(null)
 
   const SIZE = 20
 
@@ -210,67 +250,80 @@ export default function KobisPage() {
           <button onClick={applySearch}
             className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">검색</button>
         </div>
-        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">영화코드</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">제목</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">영문제목</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">개봉일</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">제작연도</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">장르</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">국가</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden xl:table-cell">수집일</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cacheLoading ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
-                  <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />불러오는 중...
-                </td></tr>
-              ) : cache.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">결과가 없습니다.</td></tr>
-              ) : cache.map((item) => (
-                <tr key={item.movie_cd} className="border-t hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{item.movie_cd}</td>
-                  <td className="px-4 py-3 font-medium">{item.title}</td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground hidden sm:table-cell">{item.title_en ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">{item.open_dt ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">{item.prdt_year ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.rep_genre_nm ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.rep_nation_nm ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground tabular-nums hidden xl:table-cell">{formatDate(item.last_fetched_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className={`grid gap-4 items-start ${selectedItem ? "xl:grid-cols-[1fr_280px]" : ""}`}>
+          <div className="space-y-3">
+            <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">영화코드</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">제목</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">영문제목</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">개봉일</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">제작연도</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">장르</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">국가</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden xl:table-cell">수집일</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cacheLoading ? (
+                    <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
+                      <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />불러오는 중...
+                    </td></tr>
+                  ) : cache.length === 0 ? (
+                    <tr><td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">결과가 없습니다.</td></tr>
+                  ) : cache.map((item) => {
+                    const isSelected = selectedItem?.movie_cd === item.movie_cd
+                    return (
+                      <tr
+                        key={item.movie_cd}
+                        onClick={() => setSelectedItem(isSelected ? null : item)}
+                        className={`border-t hover:bg-muted/30 transition-colors cursor-pointer ${isSelected ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}
+                      >
+                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{item.movie_cd}</td>
+                        <td className="px-4 py-3 font-medium">{item.title}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground hidden sm:table-cell">{item.title_en ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">{item.open_dt ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">{item.prdt_year ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.rep_genre_nm ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.rep_nation_nm ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground tabular-nums hidden xl:table-cell">{formatDate(item.last_fetched_at)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 페이지네이션 */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-1">
+                <button onClick={() => setCachePage((p) => Math.max(1, p - 1))} disabled={cachePage === 1}
+                  className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                {buildPages(cachePage, totalPages).map((p, i) =>
+                  p === "…" ? (
+                    <span key={`e${i}`} className="px-2 text-muted-foreground">…</span>
+                  ) : (
+                    <button key={p} onClick={() => setCachePage(p)}
+                      className={`min-w-[36px] h-9 px-2 rounded-md text-sm transition-colors ${
+                        p === cachePage ? "bg-primary text-primary-foreground font-medium" : "hover:bg-muted text-muted-foreground"
+                      }`}>{p}</button>
+                  )
+                )}
+                <button onClick={() => setCachePage((p) => Math.min(totalPages, p + 1))} disabled={cachePage === totalPages}
+                  className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {selectedItem && <KobisDetailPanel item={selectedItem} onClose={() => setSelectedItem(null)} />}
         </div>
       </div>
-
-      {/* 페이지네이션 */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1">
-          <button onClick={() => setCachePage((p) => Math.max(1, p - 1))} disabled={cachePage === 1}
-            className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          {buildPages(cachePage, totalPages).map((p, i) =>
-            p === "…" ? (
-              <span key={`e${i}`} className="px-2 text-muted-foreground">…</span>
-            ) : (
-              <button key={p} onClick={() => setCachePage(p)}
-                className={`min-w-[36px] h-9 px-2 rounded-md text-sm transition-colors ${
-                  p === cachePage ? "bg-primary text-primary-foreground font-medium" : "hover:bg-muted text-muted-foreground"
-                }`}>{p}</button>
-            )
-          )}
-          <button onClick={() => setCachePage((p) => Math.min(totalPages, p + 1))} disabled={cachePage === totalPages}
-            className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
     </div>
   )
 }

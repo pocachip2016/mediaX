@@ -27,6 +27,9 @@ import {
   type ReviewActionResponse,
 } from "@/lib/api"
 import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
+import { PipelineTreeList } from "@/components/contents/pipeline/PipelineTreeList"
+import { PipelineDrilldownDetail } from "@/components/contents/pipeline/PipelineDrilldownDetail"
+import { isLeafType } from "@/components/contents/detail/contentType"
 
 const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
 
@@ -55,6 +58,65 @@ function stageBucket(c: { current_stage?: string | null }): number {
 // 반려 항목은 위치와 무관하게 bucket 6(반려/실패)으로 분기. BE pipeline_summary와 일치.
 function contentBucket(c: { current_stage?: string | null; status?: string | null }): number {
   return c.status === "rejected" ? 6 : stageBucket(c)
+}
+
+// 단건 선택 시 같은 bucket에 있는 자손 id까지 포함해 반환.
+// testContents는 이미 현재 bucket으로 필터된 목록이므로, 거기 있으면 같은 bucket 확정.
+function sameBucketSubtreeIds(rootId: number, contents: ContentOut[]): number[] {
+  const idSet = new Set(contents.map((c) => c.id))
+  if (!idSet.has(rootId)) return [rootId]
+  // parent → children 맵 (contents 범위 안에서만)
+  const childMap = new Map<number, number[]>()
+  for (const c of contents) {
+    if (c.parent_id != null) {
+      const list = childMap.get(c.parent_id) ?? []
+      list.push(c.id)
+      childMap.set(c.parent_id, list)
+    }
+  }
+  const result: number[] = []
+  const queue = [rootId]
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    result.push(id)
+    const children = childMap.get(id) ?? []
+    queue.push(...children)
+  }
+  return result
+}
+
+// 다음단계 버튼 라벨 — 시리즈/시즌은 하위 건수 breakdown으로 표시
+function advanceCountLabel(rootId: number, subtreeIds: number[], allContents: ContentOut[]): string {
+  const root = allContents.find((c) => c.id === rootId)
+  if (!root) return `${subtreeIds.length}건`
+  const idSet = new Set(subtreeIds)
+  if (root.content_type === "series") {
+    const seasons = allContents.filter((c) => c.content_type === "season" && idSet.has(c.id)).length
+    const episodes = allContents.filter((c) => c.content_type === "episode" && idSet.has(c.id)).length
+    if (seasons === 0 && episodes === 0) return `${subtreeIds.length}건`
+    const parts: string[] = []
+    if (seasons > 0) parts.push(`${seasons}시즌`)
+    if (episodes > 0) parts.push(`${episodes}편`)
+    return parts.join(", ")
+  }
+  if (root.content_type === "season") {
+    const episodes = allContents.filter((c) => c.content_type === "episode" && idSet.has(c.id)).length
+    return episodes > 0 ? `에피소드 ${episodes}편` : `${subtreeIds.length}건`
+  }
+  return `${subtreeIds.length}건`
+}
+
+// content_type → 상세 패널 헤더 라벨
+const DETAIL_LABEL: Record<string, string> = {
+  movie: "콘텐츠 상세",
+  series: "시리즈 상세",
+  season: "시즌 상세",
+  episode: "에피소드 상세",
+}
+function detailLabel(contentId: number | null, contents: ContentOut[]): string {
+  if (contentId === null) return "콘텐츠 상세"
+  const c = contents.find((x) => x.id === contentId)
+  return DETAIL_LABEL[c?.content_type ?? ""] ?? "콘텐츠 상세"
 }
 
 // ── Mock 데이터 ──────────────────────────────────────────
@@ -295,7 +357,7 @@ function TestContentList({
   return (
     <div className="rounded-lg border border-border bg-background overflow-hidden">
       <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground">콘텐츠 목록</span>
+        <span className="text-xs font-semibold text-muted-foreground">콘텐츠/시리즈 목록</span>
         <span className="text-xs text-muted-foreground">{contents.length}건</span>
       </div>
       <div className="divide-y divide-border max-h-64 overflow-y-auto">
@@ -406,20 +468,23 @@ function SelectedContentMeta({ contentId, refreshKey = 0 }: { contentId: number 
   )
 }
 
-// 메타 상세 밑 — 선택 콘텐츠 단건 다음단계로 / 삭제
-function SingleAdvanceDeleteBar({ contentId, activeStage, onDone, onDeleted }: {
+// 메타 상세 밑 — 선택 콘텐츠 다음단계로 / 삭제 (컨테이너면 같은 bucket 자손 포함)
+function SingleAdvanceDeleteBar({ contentId, activeStage, onDone, onDeleted, stageContents }: {
   contentId: number | null; activeStage: number | null; onDone: () => void; onDeleted: () => void
+  stageContents: ContentOut[]
 }) {
   const [busy, setBusy] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   if (contentId === null) return null
   const [from, to] = STAGE_TRANSITION[activeStage ?? 0] ?? ["현재", "다음"]
+  const ids = sameBucketSubtreeIds(contentId, stageContents)
+  const n = ids.length
 
   const handleAdvance = async () => {
     setBusy(true); setResult(null)
     try {
-      const r = await pipelineTestApi.advance([contentId])
+      const r = await pipelineTestApi.advance(ids)
       setResult(`✓ ${r.advanced}건 ${from}→${to}`)
       onDone()
     } catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "advance 실패"}`) }
@@ -428,7 +493,7 @@ function SingleAdvanceDeleteBar({ contentId, activeStage, onDone, onDeleted }: {
   const handleDelete = async () => {
     setBusy(true); setResult(null); setConfirmDel(false)
     try {
-      const r = await pipelineTestApi.cleanupStage([contentId])
+      const r = await pipelineTestApi.cleanupStage(ids)
       setResult(`삭제 완료 (${r.deleted}건)`)
       onDeleted()
     } catch (e) { setResult(`오류: ${e instanceof Error ? e.message : "삭제 실패"}`) }
@@ -440,18 +505,18 @@ function SingleAdvanceDeleteBar({ contentId, activeStage, onDone, onDeleted }: {
       <button onClick={() => void handleAdvance()} disabled={busy}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
         {busy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>→</span>}
-        다음 단계로 (1건) · {from}→{to}
+        다음 단계로 ({advanceCountLabel(contentId, ids, stageContents)}) · {from}→{to}
       </button>
       {confirmDel ? (
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-red-500 font-medium">이 콘텐츠 삭제. 계속?</span>
+          <span className="text-[11px] text-red-500 font-medium">{n}건 삭제. 계속?</span>
           <button onClick={() => void handleDelete()} className="px-2.5 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-medium transition-colors">삭제 확인</button>
           <button onClick={() => setConfirmDel(false)} className="px-2.5 py-1 rounded-lg border border-border text-[11px] hover:bg-accent transition-colors">취소</button>
         </div>
       ) : (
         <button onClick={() => setConfirmDel(true)} disabled={busy}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50 transition-colors">
-          <Trash2 className="h-3 w-3" /> 삭제
+          <Trash2 className="h-3 w-3" /> 삭제 ({n}건)
         </button>
       )}
       {result && <span className={`text-[11px] ${result.startsWith("오류") ? "text-red-500" : "text-muted-foreground"}`}>{result}</span>}
@@ -460,8 +525,8 @@ function SingleAdvanceDeleteBar({ contentId, activeStage, onDone, onDeleted }: {
 }
 
 // S1 전용 — 다음단계(?건) + 클린업(?건) 한 줄 버튼 (advance + cleanup)
-function S1BulkActionBar({ stageContents, activeStage, onDone, onDeleted, onAfterAdvance }: {
-  stageContents: ContentOut[]; activeStage: number | null; onDone: () => void; onDeleted?: () => void; onAfterAdvance?: () => void
+function S1BulkActionBar({ stageContents, activeStage, onDone, onDeleted, onAfterAdvance, advanceLabelOverride }: {
+  stageContents: ContentOut[]; activeStage: number | null; onDone: () => void; onDeleted?: () => void; onAfterAdvance?: () => void; advanceLabelOverride?: string
 }) {
   const ids = stageContents.map((c) => c.id)
   const [from, to] = STAGE_TRANSITION[activeStage ?? 0] ?? ["현재", "다음"]
@@ -496,7 +561,7 @@ function S1BulkActionBar({ stageContents, activeStage, onDone, onDeleted, onAfte
         <button onClick={() => void handleAdvance()} disabled={advBusy || !ids.length}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium disabled:opacity-50 transition-colors">
           {advBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <span>→</span>}
-          다음단계 ({ids.length}건)
+          다음단계 ({advanceLabelOverride ?? `${ids.length}건`})
         </button>
         {cleanConfirm ? (
           <>
@@ -1592,11 +1657,12 @@ function StageActionBar({ ids, onDone, onRevertDone, onAfterAdvance }: {
 }
 
 // S2(Enrich) 3단 콘솔 — 좌(목록+전체버튼) / 중(상세+필드테이블+단건버튼) / 우(추천 요약)
-function S2Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents }: {
+function S2Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents, listViewMode }: {
   testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
   onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
   workerStatus?: import("@/lib/api").AutoWorkerStatus | null
   logEvents?: import("@/lib/api").AutoLogEvent[]
+  listViewMode: "flat" | "tree"
 }) {
   const [detail, setDetail] = useState<ContentDetail | null>(null)
   const [recs, setRecs] = useState<RecommendationsOut | null>(null)
@@ -1653,7 +1719,7 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            <PipelineTreeList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} viewMode={listViewMode} />
             {testContents.length > 0 && (
               <StageActionBar ids={testContents.map((c) => c.id)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
             )}
@@ -1661,12 +1727,12 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
         </div>
       </div>
 
-      {/* 중 — 콘텐츠 상세 + 필드 테이블 */}
+      {/* 중 — 상세 패널 + 필드 테이블 */}
       <div className="col-span-1">
         <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
           <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">{detailLabel(selectedContentId, testContents)}</span>
               {selectedContentId && <span className="text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>}
             </div>
             {selectedContentId !== null && (
@@ -1674,8 +1740,8 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
-            {selectedContentId !== null && (
+            <PipelineDrilldownDetail contentId={selectedContentId} refreshKey={metaRefresh} onSelect={onSelect} />
+            {selectedContentId !== null && detail && isLeafType(detail.content_type as import("@/lib/api").ContentType) && (
               <>
                 <div className="rounded border border-border bg-background overflow-hidden">
                   <div className="grid grid-cols-[4.5rem_1fr_1fr_4rem] text-[10px] font-semibold text-muted-foreground bg-muted/40 border-b border-border">
@@ -1693,7 +1759,7 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
                     ))}
                   </div>
                 </div>
-                <StageActionBar ids={[selectedContentId]} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
+                <StageActionBar ids={sameBucketSubtreeIds(selectedContentId, testContents)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
               </>
             )}
           </div>
@@ -1760,11 +1826,12 @@ function S2Console({ testContents, testContentsLoading, selectedContentId, onSel
 }
 
 // S3(AI처리) 3단 콘솔 — 좌(목록+전체버튼) / 중(상세+RAG/번역/축약 테이블+단건버튼) / 우(AI 결과 요약)
-function S3Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents }: {
+function S3Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents, listViewMode }: {
   testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
   onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
   workerStatus?: import("@/lib/api").AutoWorkerStatus | null
   logEvents?: import("@/lib/api").AutoLogEvent[]
+  listViewMode: "flat" | "tree"
 }) {
   const [aiResults, setAiResults] = useState<ContentAIResult[]>([])
   const [metaRefresh, setMetaRefresh] = useState(0)   // 메타 카드 전용
@@ -1812,7 +1879,7 @@ function S3Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            <PipelineTreeList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} viewMode={listViewMode} />
             {testContents.length > 0 && (
               <StageActionBar ids={testContents.map((c) => c.id)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
             )}
@@ -1820,12 +1887,12 @@ function S3Console({ testContents, testContentsLoading, selectedContentId, onSel
         </div>
       </div>
 
-      {/* 중 — 콘텐츠 상세 + RAG/번역/축약 테이블 */}
+      {/* 중 — 상세 패널 + RAG/번역/축약 테이블 */}
       <div className="col-span-1">
         <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
           <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">{detailLabel(selectedContentId, testContents)}</span>
               {selectedContentId && <span className="text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>}
             </div>
             {selectedContentId !== null && (
@@ -1837,11 +1904,11 @@ function S3Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
-            {selectedContentId !== null && (
+            <PipelineDrilldownDetail contentId={selectedContentId} refreshKey={metaRefresh} onSelect={onSelect} />
+            {selectedContentId !== null && isLeafType((testContents.find((c) => c.id === selectedContentId)?.content_type ?? "movie") as import("@/lib/api").ContentType) && (
               <>
                 <EnrichBoostPanel selectedContentId={selectedContentId} runAllSignal={aiRunSignal} reloadSignal={panelReload} onRefresh={() => { void refetch(); refreshTestSummary(); setMetaRefresh((n) => n + 1) }} />
-                <StageActionBar ids={[selectedContentId]} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
+                <StageActionBar ids={sameBucketSubtreeIds(selectedContentId, testContents)} onDone={refreshTestSummary} onRevertDone={onRevertDone} onAfterAdvance={onAfterAdvance} />
               </>
             )}
           </div>
@@ -2275,11 +2342,12 @@ function S4ReviewActionBar({ id, status, onDone }: { id: number; status: Content
 }
 
 // S4(검수) 3단 콘솔 — 좌(목록+전체승인+이전/다음/클린업) / 중(상세+필드편집+단건결정) / 우(WebSearch)
-function S4Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents }: {
+function S4Console({ testContents, testContentsLoading, selectedContentId, onSelect, refreshTestSummary, onRevertDone, onAfterAdvance, workerStatus, logEvents, listViewMode }: {
   testContents: ContentOut[]; testContentsLoading: boolean; selectedContentId: number | null
   onSelect: (id: number) => void; refreshTestSummary: () => void; onRevertDone?: () => void; onAfterAdvance?: () => void
   workerStatus?: import("@/lib/api").AutoWorkerStatus | null
   logEvents?: import("@/lib/api").AutoLogEvent[]
+  listViewMode: "flat" | "tree"
 }) {
   const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null)
   const [reviewTitle, setReviewTitle] = useState("")
@@ -2330,7 +2398,7 @@ function S4Console({ testContents, testContentsLoading, selectedContentId, onSel
             )}
           </div>
           <div className="p-3 space-y-3">
-            <TestContentList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} />
+            <PipelineTreeList contents={testContents} loading={testContentsLoading} selectedId={selectedContentId} onSelect={onSelect} viewMode={listViewMode} />
             {testContents.length > 0 && (
               <div className="space-y-2">
                 {bulkResult && <p className="text-[11px] text-muted-foreground">{bulkResult}</p>}
@@ -2342,12 +2410,12 @@ function S4Console({ testContents, testContentsLoading, selectedContentId, onSel
         </div>
       </div>
 
-      {/* 중 — 콘텐츠 상세 + 필드 편집 + 단건 결정 */}
+      {/* 중 — 상세 패널 + 필드 편집 + 단건 결정 */}
       <div className="col-span-1">
         <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
           <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">{detailLabel(selectedContentId, testContents)}</span>
               {selectedContentId && <span className="text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>}
               {contentStatus && (
                 <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${
@@ -2366,8 +2434,10 @@ function S4Console({ testContents, testContentsLoading, selectedContentId, onSel
               <p className="text-xs text-muted-foreground text-center py-4">콘텐츠를 선택하면 상세 및 필드 편집이 표시됩니다</p>
             ) : (
               <>
-                <SelectedContentMeta contentId={selectedContentId} refreshKey={metaRefresh} />
-                <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchStatus} />
+                <PipelineDrilldownDetail contentId={selectedContentId} refreshKey={metaRefresh} onSelect={onSelect} />
+                {isLeafType((testContents.find((c) => c.id === selectedContentId)?.content_type ?? "movie") as import("@/lib/api").ContentType) && (
+                  <ReviewFieldTable selectedContentId={selectedContentId} onApplied={fetchStatus} />
+                )}
               </>
             )}
           </div>
@@ -2538,7 +2608,7 @@ function TestReviewPanel({ onRefresh, selectedContentId, stageContents }: { onRe
           </>
         }
       </div>
-      <StageAdvanceBar ids={selectedContentId ? [selectedContentId] : []} fromStatus="AI처리" toStatus="검수" onDone={() => { onRefresh(); void fetchContent() }} />
+      <StageAdvanceBar ids={selectedContentId ? sameBucketSubtreeIds(selectedContentId, stageContents) : []} fromStatus="AI처리" toStatus="검수" onDone={() => { onRefresh(); void fetchContent() }} />
       <StageControlBar stageContents={stageContents} onDone={onRefresh} />
     </div>
   )
@@ -2823,6 +2893,7 @@ export default function PipelineMonitoringPage() {
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const selectedContentIdRef = useRef<number | null>(null)
   useEffect(() => { selectedContentIdRef.current = selectedContentId }, [selectedContentId])
+  const [listViewMode, setListViewMode] = useState<"flat" | "tree">("flat")
 
   const [stageAuto, setStageAuto] = useState<StageAutoPolicy>({ s1_auto: false, s2_auto: false, s3_auto: false, s4_auto: false, s5_auto: false, s6_auto: false, s4_quality_threshold: 90 })
   const [stageAutoBusy, setStageAutoBusy] = useState(false)
@@ -2918,7 +2989,7 @@ export default function PipelineMonitoringPage() {
     if (!opts?.silent) setTestContentsLoading(true)
     try {
       // CP 무관 전체 조회. 단계 선택 시 해당 bucket 필터, 미선택 시 전체 표시.
-      const r = await metadataApi.listContents({ size: 100 })
+      const r = await metadataApi.listContents({ size: 500 })
       const filtered = activeStage !== null
         ? r.items.filter((c) => contentBucket(c) === activeStage)
         : r.items
@@ -3042,6 +3113,24 @@ export default function PipelineMonitoringPage() {
               ))}
             </div>
 
+            {/* 목록 보기 토글 (평면 / 계층 트리) */}
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-muted-foreground mr-1">목록:</span>
+              {(["flat", "tree"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setListViewMode(mode)}
+                  className={`px-2 py-0.5 rounded transition-colors ${
+                    listViewMode === mode
+                      ? "bg-amber-200 dark:bg-amber-800/50 text-amber-800 dark:text-amber-300 font-medium"
+                      : "text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  {mode === "flat" ? "평면" : "계층"}
+                </button>
+              ))}
+            </div>
+
             {/* S4 AUTO 임계값 입력 팝업 */}
             {s4ThresholdModal && (
               <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
@@ -3108,21 +3197,22 @@ export default function PipelineMonitoringPage() {
                     </div>
                   </div>
 
-                  {/* 중 — 콘텐츠 목록 */}
+                  {/* 중 — 콘텐츠/시리즈 목록 */}
                   <div className="col-span-1">
                     <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
                       <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
-                        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 목록</span>
+                        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠/시리즈 목록</span>
                         {testContents.length > 0 && (
                           <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">{testContents.length}건</span>
                         )}
                       </div>
                       <div className="p-3 space-y-3">
-                        <TestContentList
+                        <PipelineTreeList
                           contents={testContents}
                           loading={testContentsLoading}
                           selectedId={selectedContentId}
                           onSelect={handleSelectContent}
+                          viewMode={listViewMode}
                         />
                         {testContents.length > 0 && (
                           <S1BulkActionBar
@@ -3136,18 +3226,18 @@ export default function PipelineMonitoringPage() {
                     </div>
                   </div>
 
-                  {/* 우 — 콘텐츠 상세 (콘텐츠 없으면 숨김) */}
+                  {/* 우 — 상세 패널 (콘텐츠 없으면 숨김) */}
                   {testContents.length > 0 && (
                     <div className="col-span-1 space-y-3">
                       <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-background overflow-hidden">
                         <div className="px-4 py-2.5 border-b border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10">
-                          <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">콘텐츠 상세</span>
+                          <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">{detailLabel(selectedContentId, testContents)}</span>
                           {selectedContentId && (
                             <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">#{selectedContentId}</span>
                           )}
                         </div>
                         <div className="p-3 space-y-3">
-                          <SelectedContentMeta contentId={selectedContentId} />
+                          <PipelineDrilldownDetail contentId={selectedContentId} onSelect={handleSelectContent} />
                           {selectedContentId !== null && (
                             <S1BulkActionBar
                               stageContents={testContents.filter((c) => c.id === selectedContentId)}
@@ -3155,6 +3245,7 @@ export default function PipelineMonitoringPage() {
                               onDone={refreshTestSummary}
                               onDeleted={() => { setSelectedContentId(null); void refreshTestSummary() }}
                               onAfterAdvance={handleAfterAdvance}
+                              advanceLabelOverride={advanceCountLabel(selectedContentId, sameBucketSubtreeIds(selectedContentId, testContents), testContents)}
                             />
                           )}
                         </div>
@@ -3182,6 +3273,7 @@ export default function PipelineMonitoringPage() {
                   onAfterAdvance={handleAfterAdvance}
                   workerStatus={autoWorkerStatus}
                   logEvents={autoLogEvents}
+                  listViewMode={listViewMode}
                 />
               )}
 
@@ -3197,6 +3289,7 @@ export default function PipelineMonitoringPage() {
                   onAfterAdvance={handleAfterAdvance}
                   workerStatus={autoWorkerStatus}
                   logEvents={autoLogEvents}
+                  listViewMode={listViewMode}
                 />
               )}
 
@@ -3212,6 +3305,7 @@ export default function PipelineMonitoringPage() {
                   onAfterAdvance={handleAfterAdvance}
                   workerStatus={autoWorkerStatus}
                   logEvents={autoLogEvents}
+                  listViewMode={listViewMode}
                 />
               )}
 
@@ -3234,19 +3328,21 @@ export default function PipelineMonitoringPage() {
               {activeStage === 6 && (
                 <>
                   <div className="col-span-2 space-y-3">
-                    <TestContentList
+                    <PipelineTreeList
                       contents={testContents}
                       loading={testContentsLoading}
                       selectedId={selectedContentId}
                       onSelect={handleSelectContent}
+                      viewMode={listViewMode}
                     />
                     <StageBulkBar stageContents={testContents} activeStage={activeStage} onDone={refreshTestSummary} />
-                    <SelectedContentMeta contentId={selectedContentId} />
+                    <PipelineDrilldownDetail contentId={selectedContentId} onSelect={handleSelectContent} />
                     <SingleAdvanceDeleteBar
                       contentId={selectedContentId}
                       activeStage={activeStage}
                       onDone={refreshTestSummary}
                       onDeleted={() => { setSelectedContentId(null); void refreshTestSummary() }}
+                      stageContents={testContents}
                     />
                   </div>
                   <div className="col-span-3">

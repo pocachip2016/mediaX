@@ -23,9 +23,11 @@ interface ChildrenTableProps {
   parentType: "series" | "season"
   loading?: boolean
   onAdd?: () => void
+  /** router.push 대신 호출. 파이프라인 콘솔 드릴다운 용. */
+  onItemClick?: (id: number) => void
 }
 
-export function ChildrenTable({ children, parentType, loading, onAdd }: ChildrenTableProps) {
+export function ChildrenTable({ children, parentType, loading, onAdd, onItemClick }: ChildrenTableProps) {
   const router = useRouter()
   const isSeries = parentType === "series"
   const sectionLabel = isSeries ? "시즌 목록" : "에피소드 목록"
@@ -69,7 +71,13 @@ export function ChildrenTable({ children, parentType, loading, onAdd }: Children
               </tr>
             </thead>
             <tbody>
-              {children.map((item) => {
+              {[...children]
+                .sort((a, b) => {
+                  const aNum = isSeries ? (a.content.season_number ?? 0) : (a.content.episode_number ?? 0)
+                  const bNum = isSeries ? (b.content.season_number ?? 0) : (b.content.episode_number ?? 0)
+                  return aNum - bNum
+                })
+                .map((item) => {
                 const c = item.content
                 const num = isSeries
                   ? (c.season_number != null ? `S${String(c.season_number).padStart(2, "0")}` : "—")
@@ -80,7 +88,7 @@ export function ChildrenTable({ children, parentType, loading, onAdd }: Children
                 return (
                   <tr
                     key={c.id}
-                    onClick={() => router.push(`/programming/contents/${c.id}`)}
+                    onClick={() => onItemClick ? onItemClick(c.id) : router.push(`/programming/contents/${c.id}`)}
                     className="border-t border-border cursor-pointer hover:bg-accent/40 transition-colors"
                   >
                     <td className="px-3 py-2 font-mono text-muted-foreground">{num}</td>

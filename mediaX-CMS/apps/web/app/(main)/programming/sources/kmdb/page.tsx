@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database, ChevronLeft, ChevronRight } from "lucide-react"
+import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database, ChevronLeft, ChevronRight, Film } from "lucide-react"
+import Image from "next/image"
 import {
   kmdbApi,
   type ExternalSourceStats,
@@ -77,6 +78,53 @@ function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: s
   )
 }
 
+// ── 상세 패널 ─────────────────────────────────────────────
+
+function KmdbDetailPanel({ item, onClose }: { item: KmdbCacheItem; onClose: () => void }) {
+  const fields: Array<[string, string | null]> = [
+    ["영문제목", item.title_eng],
+    ["DOCID",    item.docid],
+    ["제작연도", item.prod_year != null ? String(item.prod_year) : null],
+    ["장르",     item.genre],
+    ["국가",     item.nation],
+    ["수집일",   formatDate(item.last_fetched_at)],
+  ]
+  return (
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden sticky top-4">
+      <div className="px-4 py-3 bg-muted/50 border-b flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold truncate flex-1">{item.title}</span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex justify-center">
+          {item.poster_url ? (
+            <Image src={item.poster_url} alt={item.title} width={120} height={180} className="rounded object-cover border border-border" unoptimized />
+          ) : (
+            <div className="w-[120px] h-[180px] rounded border border-dashed border-border flex items-center justify-center text-muted-foreground">
+              <Film className="w-8 h-8" />
+            </div>
+          )}
+        </div>
+        <div className="flex justify-center">
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+            KMDB 영화
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {fields.map(([label, value]) => value != null && (
+            <div key={label} className="flex gap-2">
+              <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+              <span className="text-xs flex-1 break-all">{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 메인 컴포넌트 ─────────────────────────────────────────
 
 const CACHE_SIZE = 50
@@ -99,6 +147,7 @@ export default function KmdbPage() {
   const [cachePage,  setCachePage]  = useState(1)
   const [cacheSearch, setCacheSearch] = useState("")
   const [applied, setApplied] = useState("")
+  const [selectedItem, setSelectedItem] = useState<KmdbCacheItem | null>(null)
 
   const fetchStats = useCallback(async () => {
     try {
@@ -203,61 +252,74 @@ export default function KmdbPage() {
           <button onClick={applyCacheSearch}
             className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">검색</button>
         </div>
-        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">DOCID</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">제목</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">제작연도</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">장르</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">국가</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden xl:table-cell">마지막 수집</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cache.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">결과가 없습니다.</td></tr>
-              ) : cache.map((item) => (
-                <tr key={item.docid} className="border-t hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 tabular-nums text-muted-foreground font-mono text-xs">{item.docid}</td>
-                  <td className="px-4 py-3">
-                    <span className="font-medium">{item.title}</span>
-                    {item.title_eng && <span className="ml-1.5 text-xs text-muted-foreground">{item.title_eng}</span>}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">{item.prod_year ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.genre ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.nation ?? "-"}</td>
-                  <td className="px-4 py-3 text-muted-foreground tabular-nums hidden xl:table-cell">{formatDate(item.last_fetched_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {/* 페이지네이션 */}
-        {cacheTotal > CACHE_SIZE && (() => {
-          const totalPages = Math.ceil(cacheTotal / CACHE_SIZE)
-          return (
-            <div className="flex items-center justify-center gap-1 mt-3">
-              <button onClick={() => setCachePage((p) => Math.max(1, p - 1))} disabled={cachePage === 1}
-                className="p-1.5 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              {buildPages(cachePage, totalPages).map((p, i) =>
-                p === "…"
-                  ? <span key={`ellipsis-${i}`} className="px-1.5 text-muted-foreground text-sm">…</span>
-                  : <button key={p} onClick={() => setCachePage(p)}
-                      className={`min-w-[32px] h-8 rounded-md text-sm font-medium transition-colors ${cachePage === p ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-                      {p}
-                    </button>
-              )}
-              <button onClick={() => setCachePage((p) => Math.min(totalPages, p + 1))} disabled={cachePage === totalPages}
-                className="p-1.5 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                <ChevronRight className="w-4 h-4" />
-              </button>
+        <div className={`grid gap-4 items-start ${selectedItem ? "xl:grid-cols-[1fr_280px]" : ""}`}>
+          <div className="space-y-3">
+            <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">DOCID</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">제목</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">제작연도</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">장르</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">국가</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden xl:table-cell">마지막 수집</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cache.length === 0 ? (
+                    <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">결과가 없습니다.</td></tr>
+                  ) : cache.map((item) => {
+                    const isSelected = selectedItem?.docid === item.docid
+                    return (
+                      <tr
+                        key={item.docid}
+                        onClick={() => setSelectedItem(isSelected ? null : item)}
+                        className={`border-t hover:bg-muted/30 transition-colors cursor-pointer ${isSelected ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}
+                      >
+                        <td className="px-4 py-3 tabular-nums text-muted-foreground font-mono text-xs">{item.docid}</td>
+                        <td className="px-4 py-3">
+                          <span className="font-medium">{item.title}</span>
+                          {item.title_eng && <span className="ml-1.5 text-xs text-muted-foreground">{item.title_eng}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">{item.prod_year ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.genre ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{item.nation ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground tabular-nums hidden xl:table-cell">{formatDate(item.last_fetched_at)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-          )
-        })()}
+            {/* 페이지네이션 */}
+            {cacheTotal > CACHE_SIZE && (() => {
+              const totalPages = Math.ceil(cacheTotal / CACHE_SIZE)
+              return (
+                <div className="flex items-center justify-center gap-1">
+                  <button onClick={() => setCachePage((p) => Math.max(1, p - 1))} disabled={cachePage === 1}
+                    className="p-1.5 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {buildPages(cachePage, totalPages).map((p, i) =>
+                    p === "…"
+                      ? <span key={`ellipsis-${i}`} className="px-1.5 text-muted-foreground text-sm">…</span>
+                      : <button key={p} onClick={() => setCachePage(p)}
+                          className={`min-w-[32px] h-8 rounded-md text-sm font-medium transition-colors ${cachePage === p ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+                          {p}
+                        </button>
+                  )}
+                  <button onClick={() => setCachePage((p) => Math.min(totalPages, p + 1))} disabled={cachePage === totalPages}
+                    className="p-1.5 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )
+            })()}
+          </div>
+
+          {selectedItem && <KmdbDetailPanel item={selectedItem} onClose={() => setSelectedItem(null)} />}
+        </div>
       </div>
     </div>
   )

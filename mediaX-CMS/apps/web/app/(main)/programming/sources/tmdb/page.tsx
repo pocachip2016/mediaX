@@ -116,6 +116,51 @@ function BarChart({ data }: { data: TmdbCacheStats["last_7d_daily"] }) {
   )
 }
 
+function TmdbDetailPanel({ item, onClose }: { item: TmdbCacheRecentItem; onClose: () => void }) {
+  const fields: Array<[string, string | null]> = [
+    ["원제",    item.original_title],
+    ["출시일",  item.release_date ?? item.first_air_date],
+    ["인기도",  item.popularity != null ? item.popularity.toFixed(1) : null],
+    ["평점",    item.vote_average != null ? `${item.vote_average.toFixed(1)} / 10` : null],
+    ["TMDB ID", String(item.id)],
+    ["수집일",  formatDate(item.fetched_at)],
+  ]
+  return (
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden sticky top-4">
+      <div className="px-4 py-3 bg-muted/50 border-b flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold truncate flex-1">{item.title}</span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex justify-center">
+          {item.poster_url ? (
+            <Image src={item.poster_url} alt={item.title} width={120} height={180} className="rounded object-cover border border-border" unoptimized />
+          ) : (
+            <div className="w-[120px] h-[180px] rounded border border-dashed border-border flex items-center justify-center text-muted-foreground">
+              {item.kind === "movie" ? <Film className="w-8 h-8" /> : <Tv className="w-8 h-8" />}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-center">
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${item.kind === "movie" ? "bg-primary/10 text-primary" : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"}`}>
+            {item.kind === "movie" ? "영화" : "TV 시리즈"}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {fields.map(([label, value]) => value != null && (
+            <div key={label} className="flex gap-2">
+              <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+              <span className="text-xs flex-1 truncate">{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function TmdbPage() {
   const [stats, setStats] = useState<TmdbCacheStats>(MOCK_STATS)
   const [logs,  setLogs]  = useState<TmdbSyncLogItem[]>(MOCK_LOGS)
@@ -128,6 +173,7 @@ export default function TmdbPage() {
   const [cacheTotal,   setCacheTotal]   = useState(MOCK_CACHE.length)
   const [cachePage,    setCachePage]    = useState(1)
   const [cacheLoading, setCacheLoading] = useState(false)
+  const [selectedItem, setSelectedItem] = useState<TmdbCacheRecentItem | null>(null)
 
   const SIZE = 20
 
@@ -297,92 +343,105 @@ export default function TmdbPage() {
         </div>
       </div>
 
-      {/* 캐시 목록 테이블 */}
-      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 border-b">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">제목</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">원제</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">유형</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">출시일</th>
-              <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">인기도</th>
-              <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">평점</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden xl:table-cell">수집일</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cacheLoading ? (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />불러오는 중...
-              </td></tr>
-            ) : cacheItems.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                TMDB 캐시 항목이 없습니다.
-              </td></tr>
-            ) : cacheItems.map((item) => (
-              <tr key={`${item.kind}-${item.id}`} className="border-t hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded overflow-hidden bg-muted shrink-0 relative" style={{ width: 28, height: 40 }}>
-                      {item.poster_url ? (
-                        <Image src={item.poster_url} alt={item.title} fill className="object-cover" unoptimized />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                          {item.kind === "movie" ? <Film className="w-3 h-3" /> : <Tv className="w-3 h-3" />}
+      {/* 캐시 목록 + 상세 패널 */}
+      <div className={`grid gap-4 items-start ${selectedItem ? "xl:grid-cols-[1fr_280px]" : ""}`}>
+        <div className="space-y-3">
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 border-b">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">제목</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">원제</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">유형</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">출시일</th>
+                  <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">인기도</th>
+                  <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">평점</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden xl:table-cell">수집일</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cacheLoading ? (
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />불러오는 중...
+                  </td></tr>
+                ) : cacheItems.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                    TMDB 캐시 항목이 없습니다.
+                  </td></tr>
+                ) : cacheItems.map((item) => {
+                  const isSelected = selectedItem?.id === item.id && selectedItem?.kind === item.kind
+                  return (
+                    <tr
+                      key={`${item.kind}-${item.id}`}
+                      onClick={() => setSelectedItem(isSelected ? null : item)}
+                      className={`border-t hover:bg-muted/30 transition-colors cursor-pointer ${isSelected ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded overflow-hidden bg-muted shrink-0 relative" style={{ width: 28, height: 40 }}>
+                            {item.poster_url ? (
+                              <Image src={item.poster_url} alt={item.title} fill className="object-cover" unoptimized />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                {item.kind === "movie" ? <Film className="w-3 h-3" /> : <Tv className="w-3 h-3" />}
+                              </div>
+                            )}
+                          </div>
+                          <span className="font-medium truncate">{item.title}</span>
                         </div>
-                      )}
-                    </div>
-                    <span className="font-medium truncate">{item.title}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground text-xs truncate max-w-[160px] hidden sm:table-cell">{item.original_title ?? "-"}</td>
-                <td className="px-4 py-3 hidden md:table-cell">
-                  <span className="flex items-center gap-1 text-muted-foreground text-xs">
-                    {item.kind === "movie" ? <><Film className="w-3 h-3" />영화</> : <><Tv className="w-3 h-3" />TV</>}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">
-                  {item.release_date ?? item.first_air_date ?? "-"}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground hidden lg:table-cell">
-                  {item.popularity != null ? item.popularity.toFixed(1) : "-"}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums font-medium hidden lg:table-cell">
-                  {item.vote_average != null ? item.vote_average.toFixed(1) : "-"}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground tabular-nums hidden xl:table-cell">
-                  {formatDate(item.fetched_at)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs truncate max-w-[160px] hidden sm:table-cell">{item.original_title ?? "-"}</td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <span className="flex items-center gap-1 text-muted-foreground text-xs">
+                          {item.kind === "movie" ? <><Film className="w-3 h-3" />영화</> : <><Tv className="w-3 h-3" />TV</>}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground tabular-nums hidden md:table-cell">
+                        {item.release_date ?? item.first_air_date ?? "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground hidden lg:table-cell">
+                        {item.popularity != null ? item.popularity.toFixed(1) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium hidden lg:table-cell">
+                        {item.vote_average != null ? item.vote_average.toFixed(1) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground tabular-nums hidden xl:table-cell">
+                        {formatDate(item.fetched_at)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
 
-      {/* 페이지네이션 */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1">
-          <button onClick={() => setCachePage((p) => Math.max(1, p - 1))} disabled={cachePage === 1}
-            className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          {buildPages(cachePage, totalPages).map((p, i) =>
-            p === "…" ? (
-              <span key={`e${i}`} className="px-2 text-muted-foreground">…</span>
-            ) : (
-              <button key={p} onClick={() => setCachePage(p)}
-                className={`min-w-[36px] h-9 px-2 rounded-md text-sm transition-colors ${
-                  p === cachePage ? "bg-primary text-primary-foreground font-medium" : "hover:bg-muted text-muted-foreground"
-                }`}>{p}</button>
-            )
+          {/* 페이지네이션 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-1">
+              <button onClick={() => setCachePage((p) => Math.max(1, p - 1))} disabled={cachePage === 1}
+                className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              {buildPages(cachePage, totalPages).map((p, i) =>
+                p === "…" ? (
+                  <span key={`e${i}`} className="px-2 text-muted-foreground">…</span>
+                ) : (
+                  <button key={p} onClick={() => setCachePage(p)}
+                    className={`min-w-[36px] h-9 px-2 rounded-md text-sm transition-colors ${
+                      p === cachePage ? "bg-primary text-primary-foreground font-medium" : "hover:bg-muted text-muted-foreground"
+                    }`}>{p}</button>
+                )
+              )}
+              <button onClick={() => setCachePage((p) => Math.min(totalPages, p + 1))} disabled={cachePage === totalPages}
+                className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           )}
-          <button onClick={() => setCachePage((p) => Math.min(totalPages, p + 1))} disabled={cachePage === totalPages}
-            className="p-2 rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            <ChevronRight className="w-4 h-4" />
-          </button>
         </div>
-      )}
+
+        {selectedItem && <TmdbDetailPanel item={selectedItem} onClose={() => setSelectedItem(null)} />}
+      </div>
     </div>
   )
 }

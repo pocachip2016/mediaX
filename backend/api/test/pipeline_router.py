@@ -134,9 +134,11 @@ def cleanup_stage_contents(
 def revert_stage(req: RevertRequest, db: Session = Depends(get_db)):
     """[이전단계로] — 현재 bucket에서 이전 bucket으로 되돌림. status + current_stage 역진.
     bucket 1(생성): terminal — skip.
-    bucket 6(반려): S8_REVIEW + status=ai (re-review와 동일)."""
+    bucket 6(반려): S8_REVIEW + status=ai (re-review와 동일).
+    컨테이너(시리즈/시즌)의 경우 같은 bucket에 있는 자손(시즌·에피)도 함께 되돌림."""
     from api.programming.metadata.stage_events import record_stage_event
     from api.programming.metadata.models.content import PipelineStage, StageEventType
+    from api.test.pipeline_auto_service import expand_same_bucket_descendants
 
     _STAGE_BUCKET: dict[str, int] = {
         PipelineStage.S1_INTAKE.value:         1,
@@ -159,9 +161,10 @@ def revert_stage(req: RevertRequest, db: Session = Depends(get_db)):
         6: (PipelineStage.S8_REVIEW,      ContentStatus.ai),        # 반려 → 검수
     }
 
+    expanded = expand_same_bucket_descendants(db, req.ids)
     results: dict[int, str] = {}
     reverted = 0
-    for cid in req.ids:
+    for cid in expanded:
         c = db.query(Content).filter(Content.id == cid, Content.is_deleted.is_(False)).first()
         if not c:
             results[cid] = "not_found"
@@ -187,7 +190,7 @@ def revert_stage(req: RevertRequest, db: Session = Depends(get_db)):
         reverted += 1
 
     db.commit()
-    return RevertResponse(reverted=reverted, skipped=len(req.ids) - reverted, results=results)
+    return RevertResponse(reverted=reverted, skipped=len(expanded) - reverted, results=results)
 
 
 @router.get("/auto-log", dependencies=[Depends(require_pipeline_test)])
@@ -439,19 +442,21 @@ class AiTaskResponse(BaseModel):
 @router.post("/advance", response_model=AdvanceResponse,
              dependencies=[Depends(require_pipeline_test)])
 def advance_stage(req: AdvanceRequest, db: Session = Depends(get_db)):
-    """[다음단계로] — 현재 단계를 완료하고 다음 bucket 진입 stage로 이동."""
-    from api.test.pipeline_auto_service import advance_one
+    """[다음단계로] — 현재 단계를 완료하고 다음 bucket 진입 stage로 이동.
+    컨테이너(시리즈/시즌)의 경우 같은 bucket에 있는 자손(시즌·에피)도 함께 이동."""
+    from api.test.pipeline_auto_service import advance_one, expand_same_bucket_descendants
 
+    expanded = expand_same_bucket_descendants(db, req.ids)
     results: dict[int, str] = {}
     advanced = 0
-    for cid in req.ids:
+    for cid in expanded:
         r = advance_one(db, cid, actor="user")
         results[cid] = r["result"]
         if r["result"] == "ok":
             advanced += 1
 
     db.commit()
-    return AdvanceResponse(advanced=advanced, skipped=len(req.ids) - advanced, results=results)
+    return AdvanceResponse(advanced=advanced, skipped=len(expanded) - advanced, results=results)
 
 
 @router.post("/approve", response_model=ReviewActionResponse,
