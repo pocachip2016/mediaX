@@ -74,7 +74,9 @@ services:
   worker:
     build: ./backend
     restart: unless-stopped
-    command: celery -A workers.celery_app worker --loglevel=info -Q design.high,design.normal,design.brand_check,design.cdn,ingest,analytics,metadata,pipeline_fast
+    # dev: watchmedo auto-restart로 코드 변경 시 worker 자동 재기동(uvicorn --reload의 worker판).
+    # Celery는 핫리로드가 없어, 미적용 시 bind mount로 파일이 바뀌어도 옛 코드가 task를 처리한다.
+    command: watchmedo auto-restart --directory=/app --pattern=*.py --recursive --ignore-patterns=*/.* -- celery -A workers.celery_app worker --loglevel=info -Q design.high,design.normal,design.brand_check,design.cdn,ingest,analytics,metadata,pipeline_fast
     volumes:
       - ./backend:/app
     env_file:
@@ -96,7 +98,8 @@ services:
     build: ./backend
     restart: unless-stopped
     # ADR-010: AI 단계 전용 워커 — concurrency 2(ai_concurrency 기본값) + pipeline_ai 큐 전용
-    command: celery -A workers.celery_app worker --loglevel=info -Q pipeline_ai --concurrency=2
+    # dev: watchmedo auto-restart로 코드 변경 시 자동 재기동 (worker와 동일 정책).
+    command: watchmedo auto-restart --directory=/app --pattern=*.py --recursive --ignore-patterns=*/.* -- celery -A workers.celery_app worker --loglevel=info -Q pipeline_ai --concurrency=2
     volumes:
       - ./backend:/app
     env_file:
