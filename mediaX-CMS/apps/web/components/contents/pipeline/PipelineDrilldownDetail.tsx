@@ -103,13 +103,19 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
 
   // ── Leaf (movie / episode) — 기존 SelectedContentMeta 스타일 유지 ──────────
   if (isLeafType(detail.content_type)) {
-    const fields: Array<[string, string | null]> = [
+    const inh = detail.inherited_meta
+    type FieldRow = [string, string | null, boolean?]
+    const directCast = (detail.credits ?? []).filter((c) => /actor|cast|주연|출연/i.test(c.role)).map((c) => c.person.name_ko).join(", ") || null
+    const directDir = (detail.credits ?? []).filter((c) => /director|감독/i.test(c.role)).map((c) => c.person.name_ko).join(", ") || null
+    const inheritedCast = !directCast && inh?.cast_credits ? (inh.cast_credits as {name_ko:string}[]).map((c) => c.name_ko).join(", ") || null : null
+    const inheritedDir = !directDir && inh?.director_credits ? (inh.director_credits as {name_ko:string}[]).map((c) => c.name_ko).join(", ") || null : null
+    const fields: FieldRow[] = [
       ["제작연도", detail.production_year != null ? String(detail.production_year) : null],
       ["국가", detail.country ?? null],
       ["장르", (detail.genres ?? []).map((g) => g.genre.name_ko).join(", ") || null],
       ["러닝타임", detail.runtime_minutes != null ? `${detail.runtime_minutes}분` : null],
-      ["출연", (detail.credits ?? []).filter((c) => /actor|cast|주연|출연/i.test(c.role)).map((c) => c.person.name_ko).join(", ") || null],
-      ["감독", (detail.credits ?? []).filter((c) => /director|감독/i.test(c.role)).map((c) => c.person.name_ko).join(", ") || null],
+      ["출연", directCast ?? inheritedCast, !!inheritedCast],
+      ["감독", directDir ?? inheritedDir, !!inheritedDir],
     ]
     const synopsis = detail.metadata_record?.final_synopsis ?? detail.metadata_record?.ai_synopsis ?? detail.metadata_record?.cp_synopsis ?? null
     return (
@@ -146,10 +152,13 @@ export function PipelineDrilldownDetail({ contentId, refreshKey = 0, onSelect }:
               <span className="text-[10px] text-muted-foreground">{TYPE_LABEL[detail.content_type] ?? detail.content_type}</span>
             </div>
             <div className="space-y-0.5 text-xs">
-              {fields.map(([label, value]) => (
+              {fields.map(([label, value, inherited]) => (
                 <div key={label} className="flex gap-2">
                   <span className="text-muted-foreground w-14 shrink-0">{label}</span>
-                  <span className="truncate flex-1">{value ?? "—"}</span>
+                  <span className="truncate flex-1">
+                    {value ?? "—"}
+                    {inherited && value && <span className="ml-1 text-[10px] text-muted-foreground">(상속)</span>}
+                  </span>
                 </div>
               ))}
             </div>

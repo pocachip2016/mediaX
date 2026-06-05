@@ -109,6 +109,7 @@ export interface ContentDetail extends ContentOut {
   genres: ContentGenreOut[]
   credits: ContentCreditOut[]
   external_sources: ExternalSourceOut[]
+  inherited_meta?: Record<string, unknown> | null
 }
 
 export interface PaginatedContents {

@@ -250,7 +250,7 @@ def recompute_quality_score(db: Session, content_id: int) -> float | None:
     배점(합 100): synopsis 22(길이 tier) / genre 14 / cast 12 / director 12 /
                   country 10 / production_year 10 / runtime 10 / title 10
     """
-    from api.programming.metadata.models.content import Content, ContentMetadata
+    from api.programming.metadata.models.content import Content, ContentMetadata, ContentType
     from api.programming.metadata.models.person import CreditRole
 
     content = (
@@ -288,11 +288,23 @@ def recompute_quality_score(db: Session, content_id: int) -> float | None:
     if (meta and (meta.final_genre or meta.ai_genre_primary or meta.cp_genre)) or len(content.genres) > 0:
         score += w["genre"]
 
-    # cast / director — ContentCredit 관계
+    # cast / director — ContentCredit 관계 (season/episode는 조상 상속 폴백)
     roles = {cc.role for cc in content.credits}
-    if CreditRole.actor in roles:
+    has_actor = CreditRole.actor in roles
+    has_director = CreditRole.director in roles
+
+    if not has_actor or not has_director:
+        if content.content_type in (ContentType.season, ContentType.episode):
+            from api.programming.metadata.inheritance import resolve_inherited_metadata
+            inh = resolve_inherited_metadata(content, db) or {}
+            if not has_actor and "cast_credits" in inh:
+                has_actor = True
+            if not has_director and "director_credits" in inh:
+                has_director = True
+
+    if has_actor:
         score += w["cast"]
-    if CreditRole.director in roles:
+    if has_director:
         score += w["director"]
 
     # Content 직접 필드

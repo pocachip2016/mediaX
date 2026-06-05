@@ -6,6 +6,7 @@ import pytest
 from api.programming.metadata.inheritance import resolve_inherited_metadata
 from api.programming.metadata.models.content import Content, ContentType, ContentMetadata
 from api.programming.metadata.models.image import ContentImage, ImageType
+from api.programming.metadata.models.person import PersonMaster, ContentCredit, CreditRole
 from api.programming.metadata.models.taxonomy import ContentGenre
 from api.programming.metadata.schemas import ContentCreate
 from api.programming.metadata.service import create_content, get_content_hierarchy
@@ -45,6 +46,13 @@ def _add_poster(db, content_id, url="http://img/p.jpg"):
     img = ContentImage(content_id=content_id, image_type=ImageType.poster,
                        url=url, is_primary=True)
     db.add(img); db.flush()
+
+
+def _add_credit(db, content_id, role, name_ko="홍길동"):
+    p = PersonMaster(name_ko=name_ko)
+    db.add(p); db.flush()
+    db.add(ContentCredit(content_id=content_id, person_id=p.id, role=role, cast_order=1))
+    db.flush()
 
 
 # ── movie/series → None ───────────────────────────────────────────────────────
@@ -145,6 +153,58 @@ def test_no_inherit_if_season_is_complete(db):
     # season 이 모두 채워져 있으면 inherit 불필요
     result = resolve_inherited_metadata(season, db)
     assert result is None
+
+
+# ── cast / director 상속 ─────────────────────────────────────────────────────
+
+def test_season_inherits_cast_credits(db):
+    """시즌에 actor 없고 부모 시리즈에 actor 있으면 cast_credits 상속."""
+    series = _make_series(db)
+    _add_credit(db, series.id, CreditRole.actor, "배우A")
+    season = _make_season(db, series.id)
+
+    result = resolve_inherited_metadata(season, db)
+    assert result is not None
+    assert "cast_credits" in result
+    names = [c["name_ko"] for c in result["cast_credits"]]
+    assert "배우A" in names
+
+
+def test_season_inherits_director_credits(db):
+    """시즌에 director 없고 부모 시리즈에 director 있으면 director_credits 상속."""
+    series = _make_series(db)
+    _add_credit(db, series.id, CreditRole.director, "감독A")
+    season = _make_season(db, series.id)
+
+    result = resolve_inherited_metadata(season, db)
+    assert result is not None
+    assert "director_credits" in result
+    names = [c["name_ko"] for c in result["director_credits"]]
+    assert "감독A" in names
+
+
+def test_episode_inherits_cast_via_chain(db):
+    """에피소드 → 시즌(크레딧 없음) → 시리즈(actor 있음) 체인 상속."""
+    series = _make_series(db, year=2023, country="KR")
+    _add_credit(db, series.id, CreditRole.actor, "배우B")
+    season = _make_season(db, series.id)
+    episode = _make_episode(db, season.id)
+
+    result = resolve_inherited_metadata(episode, db)
+    assert result is not None
+    assert "cast_credits" in result
+
+
+def test_no_cast_inherit_if_direct_credits_exist(db):
+    """시즌에 직접 actor 있으면 cast_credits 상속 안 함."""
+    series = _make_series(db)
+    _add_credit(db, series.id, CreditRole.actor, "부모배우")
+    season = _make_season(db, series.id)
+    _add_credit(db, season.id, CreditRole.actor, "자식배우")  # direct credit
+
+    result = resolve_inherited_metadata(season, db)
+    # cast_credits 상속 없음 (직접 있으니까)
+    assert result is None or "cast_credits" not in (result or {})
 
 
 # ── hierarchy endpoint includes inherited_meta ────────────────────────────────

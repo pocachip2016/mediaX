@@ -4429,6 +4429,13 @@ print('  ✓ episode → tv routing OK')
     echo "=== PASS ==="
     ;;
 
+  child-inheritance)
+    echo "=== child-inheritance: 시즌/에피소드 cast/director 상속 + quality_score 채점 ==="
+    python3 -m pytest tests/test_quality_score_recompute.py -k "inherit" -v
+    python3 -m pytest tests/api/programming/test_inheritance.py -k "cast or director" -v
+    echo "=== PASS ==="
+    ;;
+
   mh-gap-aware)
     echo "=== mh-gap-aware: gap analyzer 상속-aware ==="
     python3 -m pytest tests/meta_core/test_gap.py -v

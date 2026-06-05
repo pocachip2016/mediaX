@@ -7,7 +7,7 @@
 - (없음)
 
 ## Next (이번 마일스톤)
-- [ ] **dev-child-inheritance** — 시즌/에피소드 상속을 quality_score 채점·detail 노출에 배선(현재 staging/gap만) + cast/director 상속 확장 → 자식 노드 rejected 해소. 5스텝 플랜 수립 완료, 미착수
+(없음)
 
 ## Later (백로그)
 - [ ] 1.2 카탈로그 모듈 스텁 → 실구현 전환
@@ -16,6 +16,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-child-inheritance** — 시즌/에피소드 cast·director 상속 → quality_score 채점 반영 + FE (상속) 표시 + inheritance/quality_score 테스트 5건 + verify.sh child-inheritance 스텝 (2026-06-05)
 - [x] **feat(series-meta)** — TmdbTvCache→ContentMetadata 시리즈 6필드 보강(apply_series_meta_from_cache, S2 AUTO 배선, 멱등, series 한정) + alembic 0038 + FE 표시 + worker watchmedo 핫리로드 인프라(stale 코드 차단) + apply_migration 훅. 우영우/오징어게임/무빙 백필 (2026-06-05)
 - [x] **feat(pipeline)** — cascade advance(시리즈/시즌 동일버킷 자손 포함) + 계층 상세 메타 패널(포스터+필드→하위목록) + 외부소스 master-detail(TMDB/KOBIS/KMDB 행 클릭 상세) + 건수 breakdown 라벨(N시즌/M편) + 부모 브레드크럼 (2026-06-05)
 - [x] **feat(pipeline-tree-drilldown)** — 계층 트리 + 타입별 드릴다운 (PipelineTreeList 평면/계층 토글 + PipelineDrilldownDetail 타입 디스패치 + ChildrenTable ASC 정렬 + list_contents size 100→500) (2026-06-05)
@@ -30,7 +31,6 @@
 - [x] **dev-stage-bulk-buttons** — S2/S3/S4 개별+전체 다음단계 버튼 통일(2건↑ 전체 버튼 표시) (2026-06-01)
 - [x] **dev-seed-dedup** — 시드 멱등화 — 전체 카탈로그 중복검사 + skipped_in_pipeline/registered 리포트 + pytest 4건 (2026-06-01)
 - [x] **dev-s6-rejected-card** — S6 반려/실패 버킷 + RejectedPanel + 재검수 복귀 + bucket 6 분기 + pytest 5건 (2026-06-01)
-- [x] **dev-s4-review-cleanup** — S4 검수 단일선택 통일(승인/반려/재검수) + BE 3엔드포인트 + 0035 REJECTED enum + pytest 7건 (2026-06-01)
 - [x] **dev-pipeline-review-edit** — S2 멀티소스배지 + S4 검수 인라인 편집(9필드 클릭→적용) + short_synopsis 한국어 강제 + result_preview 버그픽스 + PipelineBoard 정리 (2026-06-01)
 - [x] **dev-s3-enrich-boost-panel** — S3 통합 보강 패널 — RAG/AI번역/AI축약 3버튼 + 전체 필드 테이블(현재값 항상 표시) + 유사값 자동 ✓(runtime/country/cast/genres) + synopsis_ko·en 필드 (2026-05-31)
 - [x] **dev-rag-field-extract** — Wikidata/Wikipedia RAG 보강 — ExternalSourceType enum + 0034 migration + reference_extract 서비스 + /test/pipeline/reference-extract 엔드포인트 + FE STEP B UI + E2E 검증 (2026-05-31)

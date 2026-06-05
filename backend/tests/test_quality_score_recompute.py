@@ -124,3 +124,75 @@ def test_no_external_mapping_component(db):
     _add_credit(db, c.id, CreditRole.director)
     # 외부 소스를 만들지 않아도 모든 기본 필드가 차 있으면 100 → 매핑 비의존 확인
     assert recompute_quality_score(db, c.id) == 100.0
+
+
+# ── 상속 채점 (season/episode) ─────────────────────────────────────────────────
+
+def _episode_with_parent_credits(db):
+    """credits 없는 에피소드 + 시리즈에 actor/director 크레딧 — 상속 채점 테스트용."""
+    from api.programming.metadata.models.content import ContentStatus
+    series = Content(
+        title="부모 시리즈", content_type=ContentType.series,
+        cp_name="TEST_GUARD", status=ContentStatus.ai,
+        country="한국", production_year=2023,
+    )
+    db.add(series); db.flush()
+    _add_credit(db, series.id, CreditRole.actor)
+    _add_credit(db, series.id, CreditRole.director)
+
+    season = Content(
+        title="시즌1", content_type=ContentType.season,
+        cp_name="TEST_GUARD", status=ContentStatus.ai,
+        parent_id=series.id,
+    )
+    db.add(season); db.flush()
+
+    episode = Content(
+        title="에피소드1", content_type=ContentType.episode,
+        cp_name="TEST_GUARD", status=ContentStatus.ai,
+        parent_id=season.id,
+        country="한국", production_year=2023, runtime_minutes=45,
+    )
+    db.add(episode); db.flush()
+    db.add(ContentMetadata(
+        content_id=episode.id, quality_score=0.0,
+        ai_synopsis="줄" * 200, ai_genre_primary="드라마",
+    ))
+    db.flush()
+    return episode
+
+
+def test_episode_inherits_cast_director_for_quality_score(db):
+    """직접 크레딧 없는 에피소드가 부모 시리즈 크레딧을 상속해 임계값(90) 이상 달성."""
+    ep = _episode_with_parent_credits(db)
+    # title 10 + synopsis 22 + genre 14 + country 10 + year 10 + runtime 10
+    # + cast(상속) 12 + director(상속) 12 = 100
+    score = recompute_quality_score(db, ep.id)
+    assert score is not None
+    assert score >= 90.0
+
+
+def test_episode_without_any_credits_below_threshold(db):
+    """부모에도 크레딧 없으면 상속 없음 → 점수 < 90."""
+    from api.programming.metadata.models.content import ContentStatus
+    series = Content(
+        title="빈 시리즈", content_type=ContentType.series,
+        cp_name="TEST_GUARD", status=ContentStatus.ai,
+    )
+    db.add(series); db.flush()
+    episode = Content(
+        title="에피소드", content_type=ContentType.episode,
+        cp_name="TEST_GUARD", status=ContentStatus.ai,
+        parent_id=series.id,
+        country="한국", production_year=2023, runtime_minutes=45,
+    )
+    db.add(episode); db.flush()
+    db.add(ContentMetadata(
+        content_id=episode.id, quality_score=0.0,
+        ai_synopsis="줄" * 200, ai_genre_primary="드라마",
+    ))
+    db.flush()
+    # 크레딧 없음 → cast 0 + director 0 → 76점
+    score = recompute_quality_score(db, episode.id)
+    assert score is not None
+    assert score < 90.0
