@@ -4,18 +4,18 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- (없음)
+(없음)
 
 ## Next (이번 마일스톤)
 (없음)
 
 ## Later (백로그)
-- [ ] 1.2 카탈로그 — 가격 정책(pricing + holdback) 구현
 - [ ] 1.3 큐레이션 모듈 설계 확정
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-catalog-pricing** — 가격 정책 + 홀드백 (1.2.2 + 1.2.3) — BE 4테이블/마이그레이션/pricing·holdback 서비스(25 테스트)/11 API + FE pricing·holdback 2페이지 + typecheck 통과 (2026-06-06)
 - [x] **feat(catalog-category-tree)** — 카탈로그 카테고리 트리(1.2.1) — BE 모델/마이그레이션/서비스(18 테스트)/API(15 테스트) + FE 트리 화면(읽기+생성+삭제+nav) (2026-06-06)
 - [x] **feat(contents-hierarchy)** — 콘텐츠 목록 계층 트리(평면/계층 토글, 기본 계층) + 파이프라인 S1 기본 트리 + lib/contentTree 공유 유틸 + 시즌/에피 포스터 숨김 (2026-06-06)
 - [x] **반려/실패 콘솔 S4 배치** — RejectedConsole 3컬럼(목록+이전단계 / 상세+필드편집+재검수 / WebSearch) + 승인·반려 AUTO 토글 숨김 + 승인 체크박스 폴링 풀림 수정(idsKey) + 반려 목록 밑 다음단계→이전단계 (2026-06-05)

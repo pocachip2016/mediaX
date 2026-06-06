@@ -5979,9 +5979,124 @@ for r in required:
     echo "=== PASS ==="
     ;;
 
+  # ── dev-catalog-pricing steps ──────────────────────────────────────────────
+  pricing-holdback-models|2.1)
+    echo "=== pricing-holdback-models: catalog/models.py Quality/PurchaseType enum + 4개 모델 ==="
+    cd "$BACKEND"
+    python3 -c "
+from api.programming.catalog.models import (
+    Quality, PurchaseType, Pricing, HoldbackPolicy, HoldbackSchedule, PriceChangeLog
+)
+assert [q.value for q in Quality] == ['SD','HD','FHD','UHD_4K']
+assert Pricing.__tablename__ == 'pricing'
+assert HoldbackPolicy.__tablename__ == 'holdback_policies'
+assert HoldbackSchedule.__tablename__ == 'holdback_schedules'
+assert PriceChangeLog.__tablename__ == 'price_change_log'
+print('  ✓ 모델 import + tablename 확인')
+"
+    echo "=== PASS ==="
+    ;;
+
+  pricing-holdback-migration|2.2)
+    echo "=== pricing-holdback-migration: alembic 0040 + Docker DB 4테이블 확인 ==="
+    VERSION=$(docker compose exec -T postgres psql -U media_ax -d media_ax \
+      -c "SELECT version_num FROM alembic_version;" 2>/dev/null | grep -E '^\s*[0-9]' | tr -d ' ')
+    [ "$VERSION" = "0040" ] || { echo "FAIL: alembic_version=$VERSION (기대: 0040)"; exit 1; }
+    echo "  ✓ alembic_version=0040"
+    for TBL in pricing holdback_policies holdback_schedules price_change_log; do
+      EXISTS=$(docker compose exec -T postgres psql -U media_ax -d media_ax \
+        -c "\dt $TBL" 2>/dev/null | grep "$TBL" | wc -l)
+      [ "$EXISTS" -ge 1 ] || { echo "FAIL: 테이블 $TBL 없음"; exit 1; }
+      echo "  ✓ 테이블 $TBL 존재"
+    done
+    echo "=== PASS ==="
+    ;;
+
+  pricing-service|2.3)
+    echo "=== pricing-service: pricing_service.py + 단위테스트 ==="
+    cd "$BACKEND"
+    [ -f api/programming/catalog/pricing_service.py ] \
+      || { echo "FAIL: pricing_service.py 없음"; exit 1; }
+    echo "  ✓ pricing_service.py 존재"
+    python3 -m pytest tests/test_catalog_pricing.py -q --tb=short 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  holdback-service|2.4)
+    echo "=== holdback-service: holdback_service.py + 단위테스트 ==="
+    cd "$BACKEND"
+    [ -f api/programming/catalog/holdback_service.py ] \
+      || { echo "FAIL: holdback_service.py 없음"; exit 1; }
+    echo "  ✓ holdback_service.py 존재"
+    python3 -m pytest tests/test_catalog_holdback.py -q --tb=short 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  catalog-pricing-api|2.5)
+    echo "=== catalog-pricing-api: schemas + router 구조 + 서비스 회귀 ==="
+    cd "$BACKEND"
+
+    # 1. 라우터 엔드포인트 구조 확인
+    python3 -c "
+import ast, pathlib
+src = pathlib.Path('api/programming/catalog/router.py').read_text()
+checks = [
+    ('/contents/{content_id}/pricing', 'pricing GET'),
+    ('pricing/bulk', 'bulk POST'),
+    ('price-changes', 'price-changes GET'),
+    ('holdback/policies', 'holdback policies'),
+    ('holdback/apply', 'holdback apply'),
+    ('holdback/calendar', 'holdback calendar'),
+    ('activate', 'activate window'),
+]
+for path, label in checks:
+    assert path in src, f'FAIL: {label} 엔드포인트 없음 ({path})'
+    print(f'  ✓ {label} 엔드포인트 확인')
+"
+    # 2. schemas 확인
+    python3 -c "
+from api.programming.catalog.schemas import (
+    PricingSet, PricingOut, BulkPricingRequest, PriceChangeLogOut,
+    HoldbackPolicyCreate, HoldbackPolicyOut,
+    HoldbackApplyRequest, HoldbackScheduleOut, ActivateWindowRequest,
+)
+print('  ✓ pricing/holdback schemas import 확인')
+"
+    # 3. 서비스 단위테스트 회귀 (빠름)
+    python3 -m pytest tests/test_catalog_pricing.py tests/test_catalog_holdback.py -q --tb=short 2>&1 | tail -5
+    echo "=== PASS ==="
+    ;;
+
+  catalog-pricing-fe|2.6)
+    echo "=== catalog-pricing-fe: pricing/holdback 페이지 + api.ts + typecheck ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS"
+    [ -f "$FE_ROOT/apps/web/app/(main)/programming/catalog/pricing/page.tsx" ] \
+      || { echo "FAIL: pricing/page.tsx 없음"; exit 1; }
+    echo "  ✓ pricing/page.tsx 존재"
+    [ -f "$FE_ROOT/apps/web/app/(main)/programming/catalog/holdback/page.tsx" ] \
+      || { echo "FAIL: holdback/page.tsx 없음"; exit 1; }
+    echo "  ✓ holdback/page.tsx 존재"
+    grep -q "PriceMatrix\|priceMatrix\|getPriceMatrix" "$FE_ROOT/apps/web/lib/api.ts" \
+      || { echo "FAIL: api.ts PriceMatrix 없음"; exit 1; }
+    echo "  ✓ api.ts PriceMatrix 확인"
+    grep -q "HoldbackPolicy\|holdbackPolicy\|listPolicies" "$FE_ROOT/apps/web/lib/api.ts" \
+      || { echo "FAIL: api.ts HoldbackPolicy 없음"; exit 1; }
+    echo "  ✓ api.ts HoldbackPolicy 확인"
+    cd "$FE_ROOT"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"
+      echo "$TS_OUT" | grep "error TS" | head -10
+      exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
+    echo "  dev-catalog-pricing: 2.1~2.6 또는 pricing-holdback-models, pricing-holdback-migration, pricing-service, holdback-service, catalog-pricing-api, catalog-pricing-fe"
     exit 1
     ;;
 esac

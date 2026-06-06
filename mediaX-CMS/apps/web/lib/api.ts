@@ -1817,6 +1817,62 @@ export interface CategoryCreateRequest {
   slug?: string | null
 }
 
+export type Quality = "SD" | "HD" | "FHD" | "UHD_4K"
+export type PurchaseType = "single" | "series_episode" | "season_package" | "est_single" | "est_season"
+
+export type PriceMatrix = Record<PurchaseType, Record<Quality, number>>
+
+export interface PricingOut {
+  id: number
+  content_id: number
+  quality: Quality
+  purchase_type: PurchaseType
+  price: number
+  currency: string
+  is_active: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface PriceChangeLog {
+  id: number
+  content_id: number
+  quality: Quality
+  purchase_type: PurchaseType
+  old_price: number | null
+  new_price: number
+  changed_by: string | null
+  reason: string | null
+  batch_id: string | null
+  created_at: string | null
+}
+
+export interface HoldbackPolicy {
+  id: number
+  cp_name: string
+  window_no: number
+  name: string
+  offset_days_start: number
+  offset_days_end: number | null
+  price_rule: string
+  is_active: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface HoldbackSchedule {
+  id: number
+  content_id: number
+  window_no: number
+  start_date: string
+  end_date: string | null
+  price_id: number | null
+  source_policy_id: number | null
+  status: string
+  created_at: string | null
+  updated_at: string | null
+}
+
 export const catalogApi = {
   getTree: (opts?: { root_id?: number; counts?: boolean }) => {
     const qs = new URLSearchParams()
@@ -1838,4 +1894,84 @@ export const catalogApi = {
     request<void>(`/api/programming/catalog/categories/${id}`, {
       method: "DELETE",
     }),
+
+  // ── 가격 정책 ──────────────────────────────────────────────────────────────
+
+  getPriceMatrix: (contentId: number) =>
+    request<PriceMatrix>(`/api/programming/catalog/contents/${contentId}/pricing`),
+
+  setPrice: (contentId: number, data: {
+    quality: Quality; purchase_type: PurchaseType; price: number
+    changed_by?: string; reason?: string
+  }) =>
+    request<PricingOut>(`/api/programming/catalog/contents/${contentId}/pricing`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  bulkUpdatePricing: (data: {
+    items: Array<{ content_id: number; quality: Quality; purchase_type: PurchaseType; price: number }>
+    changed_by?: string; reason?: string
+  }) =>
+    request<PricingOut[]>("/api/programming/catalog/pricing/bulk", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  listPriceChanges: (contentId: number, limit = 50) =>
+    request<PriceChangeLog[]>(
+      `/api/programming/catalog/contents/${contentId}/price-changes?limit=${limit}`
+    ),
+
+  deletePrice: (contentId: number, quality: Quality, purchaseType: PurchaseType) =>
+    request<void>(
+      `/api/programming/catalog/contents/${contentId}/pricing?quality=${quality}&purchase_type=${purchaseType}`,
+      { method: "DELETE" }
+    ),
+
+  // ── 홀드백 ────────────────────────────────────────────────────────────────
+
+  listHoldbackPolicies: (cpName?: string) => {
+    const qs = cpName ? `?cp_name=${encodeURIComponent(cpName)}` : ""
+    return request<HoldbackPolicy[]>(`/api/programming/catalog/holdback/policies${qs}`)
+  },
+
+  upsertHoldbackPolicy: (data: {
+    cp_name: string; window_no: number; name: string
+    offset_days_start: number; offset_days_end?: number | null
+    price_rule: string; is_active?: boolean
+  }) =>
+    request<HoldbackPolicy>("/api/programming/catalog/holdback/policies", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteHoldbackPolicy: (policyId: number) =>
+    request<void>(`/api/programming/catalog/holdback/policies/${policyId}`, {
+      method: "DELETE",
+    }),
+
+  applyHoldback: (contentId: number, baseDate: string) =>
+    request<HoldbackSchedule[]>(
+      `/api/programming/catalog/contents/${contentId}/holdback/apply`,
+      { method: "POST", body: JSON.stringify({ base_date: baseDate }) }
+    ),
+
+  listHoldbackSchedules: (contentId: number) =>
+    request<HoldbackSchedule[]>(`/api/programming/catalog/contents/${contentId}/holdback`),
+
+  activateWindow: (
+    contentId: number,
+    windowNo: number,
+    data: { quality?: Quality; purchase_type?: PurchaseType; price?: number; changed_by?: string }
+  ) =>
+    request<HoldbackSchedule>(
+      `/api/programming/catalog/contents/${contentId}/holdback/${windowNo}/activate`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+
+  holdbackCalendar: (start: string, end: string) =>
+    request<HoldbackSchedule[]>(
+      `/api/programming/catalog/holdback/calendar?start=${start}&end=${end}`
+    ),
 }
