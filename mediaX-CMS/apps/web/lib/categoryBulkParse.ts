@@ -26,7 +26,16 @@ export interface DiffResult {
   dupCount: number
 }
 
-// ── TEST 데이터 ───────────────────────────────────────────────────────────────
+// ── 프리셋 ───────────────────────────────────────────────────────────────────
+
+export interface CategoryPreset {
+  id: string
+  label: string
+  description: string
+  text: string
+}
+
+// ── TEST 데이터 (첫 프리셋의 text 로 재사용) ─────────────────────────────────
 
 export const CATEGORY_TEST_DATA = `영화
   액션
@@ -57,6 +66,69 @@ export const CATEGORY_TEST_DATA = `영화
   영국/유럽
   일본
   중국/아시아`.trim()
+
+export const CATEGORY_PRESETS: CategoryPreset[] = [
+  {
+    id: "vod-basic",
+    label: "영화 VOD 기본",
+    description: "영화·시리즈·키즈·외국 콘텐츠 기본 구조",
+    text: CATEGORY_TEST_DATA,
+  },
+  {
+    id: "genre-focused",
+    label: "장르 중심",
+    description: "장르별 세부 분류 — 스트리밍 서비스 표준 구조",
+    text: `액션/어드벤처
+  블록버스터
+  마샬아츠
+  슈퍼히어로
+드라마
+  로맨스
+  멜로
+  가족
+  범죄/스릴러
+코미디
+  로맨틱 코미디
+  시트콤
+  블랙 코미디
+공포/미스터리
+  심리 스릴러
+  슬래셔
+  초자연
+SF/판타지
+  우주 SF
+  사이버펑크
+  판타지 어드벤처
+다큐멘터리
+  자연/환경
+  역사
+  인물`.trim(),
+  },
+  {
+    id: "country-based",
+    label: "국가별",
+    description: "제작국가 기준 분류",
+    text: `한국
+  영화
+  드라마
+  예능
+미국/캐나다
+  영화
+  드라마
+  애니메이션
+영국/유럽
+  영화
+  드라마
+일본
+  영화
+  드라마
+  애니메이션
+  예능
+중국/아시아
+  영화
+  드라마`.trim(),
+  },
+]
 
 // ── 파서 유틸 ─────────────────────────────────────────────────────────────────
 

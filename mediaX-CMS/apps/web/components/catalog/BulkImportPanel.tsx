@@ -21,7 +21,7 @@ export function BulkImportPanel({
 }: {
   existingTree: CategoryNode[]
   initialText?: string
-  onClose: () => void
+  onClose?: () => void
   onCommit: () => Promise<void>
 }) {
   const [text, setText] = useState(initialText)
@@ -71,7 +71,7 @@ export function BulkImportPanel({
     try {
       await catalogApi.bulkCreate({ nodes: parseResult.nodes })
       await onCommit()
-      onClose()
+      onClose?.()
     } catch (err) {
       setCommitError(err instanceof Error ? err.message : "일괄 생성 실패")
       setPhase("preview")
@@ -80,16 +80,18 @@ export function BulkImportPanel({
 
   return (
     <div className="flex h-full flex-col">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <span className="text-sm font-medium">일괄 입력</span>
-        <button
-          onClick={onClose}
-          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {/* 헤더 (onClose 없으면 숨김 — InputPanel 탭 내장 시) */}
+      {onClose && (
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <span className="text-sm font-medium">일괄 입력</span>
+          <button
+            onClick={onClose}
+            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {phase === "committing" ? (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">

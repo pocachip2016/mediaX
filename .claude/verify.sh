@@ -6167,6 +6167,55 @@ for r in required:
     echo "=== PASS ==="
     ;;
 
+  # ── catalog-workspace-redesign steps ─────────────────────────────────────────
+  catalog-workspace-input)
+    echo "=== catalog-workspace-input: InputPanel.tsx + CATEGORY_PRESETS + typecheck ==="
+    FE="$PROJECT/mediaX-CMS"
+    WEB="$FE/apps/web"
+    echo "--- InputPanel.tsx 존재 ---"
+    test -f "$WEB/components/catalog/InputPanel.tsx" || { echo "FAIL: InputPanel.tsx 없음"; exit 1; }
+    echo "--- CATEGORY_PRESETS export 확인 ---"
+    grep -q "CATEGORY_PRESETS" "$WEB/lib/categoryBulkParse.ts" || { echo "FAIL: CATEGORY_PRESETS 없음"; exit 1; }
+    echo "--- 탭 id(template/manual/bulk) 확인 ---"
+    grep -q '"template"' "$WEB/components/catalog/InputPanel.tsx" || { echo "FAIL: template 탭 없음"; exit 1; }
+    grep -q '"manual"' "$WEB/components/catalog/InputPanel.tsx" || { echo "FAIL: manual 탭 없음"; exit 1; }
+    grep -q '"bulk"' "$WEB/components/catalog/InputPanel.tsx" || { echo "FAIL: bulk 탭 없음"; exit 1; }
+    echo "--- typecheck ---"
+    cd "$FE" && npm run typecheck 2>&1 | tail -10
+    echo "=== PASS ==="
+    ;;
+
+  catalog-workspace-setlist)
+    echo "=== catalog-workspace-setlist: SetListPanel.tsx + SetDialogs.tsx + typecheck ==="
+    FE="$PROJECT/mediaX-CMS"
+    WEB="$FE/apps/web"
+    echo "--- SetListPanel.tsx 존재 ---"
+    test -f "$WEB/components/catalog/SetListPanel.tsx" || { echo "FAIL: SetListPanel.tsx 없음"; exit 1; }
+    echo "--- SetDialogs.tsx 존재 ---"
+    test -f "$WEB/components/catalog/SetDialogs.tsx" || { echo "FAIL: SetDialogs.tsx 없음"; exit 1; }
+    echo "--- 작업반영 버튼 텍스트 확인 ---"
+    grep -q "작업반영" "$WEB/components/catalog/SetListPanel.tsx" || { echo "FAIL: 작업반영 없음"; exit 1; }
+    echo "--- typecheck ---"
+    cd "$FE" && npm run typecheck 2>&1 | tail -10
+    echo "=== PASS ==="
+    ;;
+
+  catalog-workspace-layout)
+    echo "=== catalog-workspace-layout: 3컬럼 page.tsx + SetBar 미참조 + typecheck ==="
+    FE="$PROJECT/mediaX-CMS"
+    WEB="$FE/apps/web"
+    PAGE="$WEB/app/(main)/programming/catalog/page.tsx"
+    echo "--- InputPanel import 확인 ---"
+    grep -q "InputPanel" "$PAGE" || { echo "FAIL: InputPanel import 없음"; exit 1; }
+    echo "--- SetListPanel import 확인 ---"
+    grep -q "SetListPanel" "$PAGE" || { echo "FAIL: SetListPanel import 없음"; exit 1; }
+    echo "--- SetBar 미참조 확인 ---"
+    grep -q "SetBar" "$PAGE" && { echo "FAIL: SetBar가 아직 page.tsx에 참조됨"; exit 1; } || true
+    echo "--- typecheck ---"
+    cd "$FE" && npm run typecheck 2>&1 | tail -10
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
