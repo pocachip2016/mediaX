@@ -11,6 +11,8 @@ from api.programming.catalog.schemas import (
     CategoryUpdate,
     CategoryMoveRequest,
     CategoryMergeRequest,
+    BulkCategoryCreate,
+    BulkCategoryResult,
     ContentMapRequest,
     CategoryOut,
     CategoryTreeNode,
@@ -47,6 +49,21 @@ def get_category_tree(
 ):
     nodes = service.list_tree(db, root_id=root_id, include_counts=counts)
     return nodes
+
+
+@router.post("/categories/bulk", response_model=BulkCategoryResult, status_code=201)
+def bulk_create_categories(data: BulkCategoryCreate, db: Session = Depends(get_db)):
+    try:
+        created, skipped = service.bulk_create_categories(
+            db,
+            nodes=[n.model_dump() for n in data.nodes],
+            parent_id=data.parent_id,
+        )
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    tree = service.list_tree(db, root_id=data.parent_id, include_counts=True)
+    return {"created": created, "skipped": skipped, "tree": tree}
 
 
 @router.post("/categories", response_model=CategoryOut, status_code=201)

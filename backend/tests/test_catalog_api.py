@@ -87,6 +87,75 @@ def test_create_with_nonexistent_parent_404(client):
     assert res.status_code == 404
 
 
+# ── 일괄(Bulk) 생성 ──────────────────────────────────────────────────────────
+
+def test_bulk_create_nested(client):
+    payload = {
+        "nodes": [
+            {"name": "영화", "children": [{"name": "액션"}, {"name": "코미디"}]},
+            {"name": "시리즈", "children": [
+                {"name": "드라마", "children": [{"name": "미니시리즈"}]},
+            ]},
+        ]
+    }
+    res = client.post(f"{BASE}/categories/bulk", json=payload)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["created"] == 6
+    assert body["skipped"] == 0
+
+    tree = body["tree"]
+    names = {n["name"] for n in tree}
+    assert names == {"영화", "시리즈"}
+    movie = next(n for n in tree if n["name"] == "영화")
+    assert {c["name"] for c in movie["children"]} == {"액션", "코미디"}
+    series = next(n for n in tree if n["name"] == "시리즈")
+    drama = series["children"][0]
+    assert drama["name"] == "드라마"
+    assert drama["children"][0]["name"] == "미니시리즈"
+    assert drama["children"][0]["depth"] == 2
+
+
+def test_bulk_create_skips_duplicates(client):
+    client.post(f"{BASE}/categories", json={"name": "영화"})
+    payload = {
+        "nodes": [
+            {"name": "영화", "children": [{"name": "액션"}]},  # 영화 중복 → skip, 액션 신규
+            {"name": "키즈"},
+        ]
+    }
+    res = client.post(f"{BASE}/categories/bulk", json=payload)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["created"] == 2  # 액션 + 키즈
+    assert body["skipped"] == 1  # 영화
+
+    # 액션이 기존 "영화" 밑에 생성됐는지 확인
+    movie = next(n for n in body["tree"] if n["name"] == "영화")
+    assert {c["name"] for c in movie["children"]} == {"액션"}
+
+
+def test_bulk_create_under_parent(client):
+    root = client.post(f"{BASE}/categories", json={"name": "영화"}).json()
+    payload = {
+        "parent_id": root["id"],
+        "nodes": [{"name": "액션"}, {"name": "코미디"}],
+    }
+    res = client.post(f"{BASE}/categories/bulk", json=payload)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["created"] == 2
+    # tree는 parent 서브트리(영화) 1개 루트
+    assert len(body["tree"]) == 1
+    assert body["tree"][0]["name"] == "영화"
+    assert {c["name"] for c in body["tree"][0]["children"]} == {"액션", "코미디"}
+
+
+def test_bulk_create_nonexistent_parent_404(client):
+    res = client.post(f"{BASE}/categories/bulk", json={"parent_id": 9999, "nodes": [{"name": "x"}]})
+    assert res.status_code == 404
+
+
 # ── 수정 ─────────────────────────────────────────────────────────────────────
 
 def test_patch_rename(client):

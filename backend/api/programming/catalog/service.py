@@ -35,6 +35,49 @@ def create_category(
     return cat
 
 
+def bulk_create_categories(
+    db: Session,
+    nodes: list[dict],
+    parent_id: int | None = None,
+) -> tuple[int, int]:
+    """정규화된 nested 구조를 DFS로 생성. 동일 parent_id+name 존재 시 해당 노드는
+    skip하되 children 탐색은 기존 노드 밑에서 계속. (created, skipped) 카운트 반환.
+
+    nodes: [{"name": str, "children": [...]}, ...]
+    """
+    created = 0
+    skipped = 0
+
+    def _walk(items: list[dict], pid: int | None) -> None:
+        nonlocal created, skipped
+        for item in items:
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            existing = (
+                db.query(Category)
+                .filter(Category.parent_id == pid, Category.name == name)
+                .first()
+            )
+            if existing is not None:
+                skipped += 1
+                node = existing
+            else:
+                node = create_category(db, name=name, parent_id=pid)
+                created += 1
+            children = item.get("children") or []
+            if children:
+                _walk(children, node.id)
+
+    if parent_id is not None:
+        if db.query(Category).filter(Category.id == parent_id).first() is None:
+            raise ValueError(f"parent_id={parent_id} not found")
+
+    _walk(nodes, parent_id)
+    db.flush()
+    return created, skipped
+
+
 def rename_category(db: Session, category_id: int, name: str) -> Category:
     cat = db.query(Category).filter(Category.id == category_id).first()
     if cat is None:

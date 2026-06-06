@@ -1817,6 +1817,24 @@ export interface CategoryCreateRequest {
   slug?: string | null
 }
 
+export interface CategoryUpdateRequest {
+  name?: string
+  slug?: string | null
+  is_active?: boolean
+  sort_order?: number
+}
+
+export interface BulkCategoryNode {
+  name: string
+  children?: BulkCategoryNode[]
+}
+
+export interface BulkCategoryResult {
+  created: number
+  skipped: number
+  tree: CategoryNode[]
+}
+
 export type Quality = "SD" | "HD" | "FHD" | "UHD_4K"
 export type PurchaseType = "single" | "series_episode" | "season_package" | "est_single" | "est_season"
 
@@ -1890,10 +1908,29 @@ export const catalogApi = {
       body: JSON.stringify(data),
     }),
 
-  deleteCategory: (id: number) =>
-    request<void>(`/api/programming/catalog/categories/${id}`, {
-      method: "DELETE",
+  updateCategory: (id: number, data: CategoryUpdateRequest) =>
+    request<CategoryNode>(`/api/programming/catalog/categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
     }),
+
+  moveCategory: (id: number, data: { new_parent_id: number | null; new_sort_order?: number | null }) =>
+    request<CategoryNode>(`/api/programming/catalog/categories/${id}/move`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  bulkCreate: (data: { nodes: BulkCategoryNode[]; parent_id?: number | null }) =>
+    request<BulkCategoryResult>("/api/programming/catalog/categories/bulk", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number, cascade = false) =>
+    request<void>(
+      `/api/programming/catalog/categories/${id}${cascade ? "?cascade=true" : ""}`,
+      { method: "DELETE" }
+    ),
 
   // ── 가격 정책 ──────────────────────────────────────────────────────────────
 

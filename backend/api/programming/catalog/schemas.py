@@ -62,6 +62,29 @@ class CategoryTreeNode(CategoryOut):
 CategoryTreeNode.model_rebuild()
 
 
+# ── 일괄(Bulk) 입력 ───────────────────────────────────────────────────────────
+
+class BulkCategoryNode(BaseModel):
+    """일괄 입력용 정규화된 트리 노드 (파싱은 FE에서 수행)."""
+    name: str
+    children: list["BulkCategoryNode"] = []
+
+
+class BulkCategoryCreate(BaseModel):
+    nodes: list[BulkCategoryNode] = []
+    parent_id: Optional[int] = None
+
+
+class BulkCategoryResult(BaseModel):
+    created: int
+    skipped: int
+    tree: list[CategoryTreeNode] = []
+
+
+BulkCategoryNode.model_rebuild()
+BulkCategoryResult.model_rebuild()
+
+
 class ContentCategoryOut(BaseModel):
     id: int
     content_id: int
