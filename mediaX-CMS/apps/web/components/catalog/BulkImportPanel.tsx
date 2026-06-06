@@ -30,13 +30,20 @@ export function BulkImportPanel({
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null)
   const [commitError, setCommitError] = useState<string | null>(null)
 
+  // initialText 변경 시: 텍스트 + 상태 모두 초기화
   useEffect(() => {
     setText(initialText)
     setPhase("input")
     setParseResult(null)
     setDiffResult(null)
     setCommitError(null)
-  }, [initialText, existingTree])
+  }, [initialText])
+
+  // existingTree 변경 시: 파싱 상태만 초기화 (텍스트 유지)
+  useEffect(() => {
+    setParseResult(null)
+    setDiffResult(null)
+  }, [existingTree])
 
   // 포맷 자동 감지 (실시간)
   const detectedFormat = (() => {
