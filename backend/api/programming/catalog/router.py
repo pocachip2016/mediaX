@@ -1,8 +1,11 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from shared.database import get_db
 from api.programming.catalog import service
+from api.programming.catalog import pricing_service, holdback_service
 from api.programming.catalog.schemas import (
     CategoryCreate,
     CategoryUpdate,
@@ -12,6 +15,15 @@ from api.programming.catalog.schemas import (
     CategoryOut,
     CategoryTreeNode,
     ContentCategoryOut,
+    PricingSet,
+    PricingOut,
+    BulkPricingRequest,
+    PriceChangeLogOut,
+    HoldbackPolicyCreate,
+    HoldbackPolicyOut,
+    HoldbackApplyRequest,
+    HoldbackScheduleOut,
+    ActivateWindowRequest,
 )
 
 router = APIRouter()
@@ -155,3 +167,156 @@ def get_category_contents(category_id: int, db: Session = Depends(get_db)):
         ContentCategory.category_id == category_id
     ).all()
     return rows
+
+
+# ── 가격 정책 ─────────────────────────────────────────────────────────────────
+
+@router.get("/contents/{content_id}/pricing", response_model=dict)
+def get_price_matrix(content_id: int, db: Session = Depends(get_db)):
+    return pricing_service.get_price_matrix(db, content_id)
+
+
+@router.put("/contents/{content_id}/pricing", response_model=PricingOut)
+def set_price(content_id: int, data: PricingSet, db: Session = Depends(get_db)):
+    try:
+        row = pricing_service.set_price(
+            db,
+            content_id=content_id,
+            quality=data.quality,
+            purchase_type=data.purchase_type,
+            price=data.price,
+            changed_by=data.changed_by,
+            reason=data.reason,
+        )
+        db.commit()
+        db.refresh(row)
+        return row
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/pricing/bulk", response_model=list[PricingOut])
+def bulk_update_pricing(data: BulkPricingRequest, db: Session = Depends(get_db)):
+    rows = pricing_service.bulk_update(
+        db,
+        items=[i.model_dump() for i in data.items],
+        changed_by=data.changed_by,
+        reason=data.reason,
+    )
+    db.commit()
+    for r in rows:
+        db.refresh(r)
+    return rows
+
+
+@router.get("/contents/{content_id}/price-changes", response_model=list[PriceChangeLogOut])
+def list_price_changes(
+    content_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return pricing_service.list_price_changes(db, content_id, limit=limit)
+
+
+@router.delete("/contents/{content_id}/pricing", status_code=204)
+def delete_price(
+    content_id: int,
+    quality: str = Query(...),
+    purchase_type: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        pricing_service.delete_price(db, content_id, quality, purchase_type)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ── 홀드백 ────────────────────────────────────────────────────────────────────
+
+@router.get("/holdback/policies", response_model=list[HoldbackPolicyOut])
+def list_holdback_policies(
+    cp_name: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    return holdback_service.list_policies(db, cp_name=cp_name)
+
+
+@router.put("/holdback/policies", response_model=HoldbackPolicyOut)
+def upsert_holdback_policy(data: HoldbackPolicyCreate, db: Session = Depends(get_db)):
+    policy = holdback_service.upsert_policy(
+        db,
+        cp_name=data.cp_name,
+        window_no=data.window_no,
+        name=data.name,
+        offset_days_start=data.offset_days_start,
+        offset_days_end=data.offset_days_end,
+        price_rule=data.price_rule,
+        is_active=data.is_active,
+    )
+    db.commit()
+    db.refresh(policy)
+    return policy
+
+
+@router.delete("/holdback/policies/{policy_id}", status_code=204)
+def delete_holdback_policy(policy_id: int, db: Session = Depends(get_db)):
+    try:
+        holdback_service.delete_policy(db, policy_id)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/contents/{content_id}/holdback/apply", response_model=list[HoldbackScheduleOut])
+def apply_holdback(
+    content_id: int,
+    data: HoldbackApplyRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        schedules = holdback_service.apply_policy_to_content(db, content_id, base_date=data.base_date)
+        db.commit()
+        for s in schedules:
+            db.refresh(s)
+        return schedules
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/contents/{content_id}/holdback", response_model=list[HoldbackScheduleOut])
+def list_holdback_schedules(content_id: int, db: Session = Depends(get_db)):
+    return holdback_service.list_schedules(db, content_id)
+
+
+@router.post("/contents/{content_id}/holdback/{window_no}/activate", response_model=HoldbackScheduleOut)
+def activate_holdback_window(
+    content_id: int,
+    window_no: int,
+    data: ActivateWindowRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        s = holdback_service.activate_window(
+            db,
+            content_id=content_id,
+            window_no=window_no,
+            quality=data.quality,
+            purchase_type=data.purchase_type,
+            price=data.price,
+            changed_by=data.changed_by,
+        )
+        db.commit()
+        db.refresh(s)
+        return s
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/holdback/calendar", response_model=list[HoldbackScheduleOut])
+def holdback_calendar(
+    start: date = Query(..., description="시작일 (YYYY-MM-DD)"),
+    end: date = Query(..., description="종료일 (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+):
+    return holdback_service.calendar(db, start_date=start, end_date=end)

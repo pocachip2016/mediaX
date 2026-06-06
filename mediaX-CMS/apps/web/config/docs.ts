@@ -41,7 +41,9 @@ export const docsNav: NavSection[] = [
         title: "카탈로그",
         href: "/programming/catalog",
         items: [
-          { title: "카테고리 트리", href: "/programming/catalog", label: "NEW" },
+          { title: "카테고리 트리", href: "/programming/catalog" },
+          { title: "가격 정책", href: "/programming/catalog/pricing", label: "NEW" },
+          { title: "홀드백", href: "/programming/catalog/holdback", label: "NEW" },
         ],
       },
       {
