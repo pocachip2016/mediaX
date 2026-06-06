@@ -8,6 +8,27 @@ from pydantic import BaseModel
 from api.programming.catalog.models import Quality, PurchaseType
 
 
+class CategorySetOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    category_count: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CategorySetCommit(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class CategorySetUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
 class CategoryBase(BaseModel):
     name: str
     parent_id: Optional[int] = None

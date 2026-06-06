@@ -243,7 +243,7 @@ def list_tree(
     def _build(parent_id: int | None) -> list[dict]:
         nodes = (
             db.query(Category)
-            .filter(Category.parent_id == parent_id)
+            .filter(Category.parent_id == parent_id, Category.set_id.is_(None))
             .order_by(Category.sort_order)
             .all()
         )
@@ -255,7 +255,7 @@ def list_tree(
         return result
 
     if root_id is not None:
-        root = db.query(Category).filter(Category.id == root_id).first()
+        root = db.query(Category).filter(Category.id == root_id, Category.set_id.is_(None)).first()
         if root is None:
             return []
         d = _to_dict(root)

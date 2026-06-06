@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from shared.database import get_db
 from api.programming.catalog import service
-from api.programming.catalog import pricing_service, holdback_service
+from api.programming.catalog import pricing_service, holdback_service, set_service
 from api.programming.catalog.schemas import (
     CategoryCreate,
     CategoryUpdate,
@@ -17,6 +17,9 @@ from api.programming.catalog.schemas import (
     CategoryOut,
     CategoryTreeNode,
     ContentCategoryOut,
+    CategorySetOut,
+    CategorySetCommit,
+    CategorySetUpdate,
     PricingSet,
     PricingOut,
     BulkPricingRequest,
@@ -337,3 +340,53 @@ def holdback_calendar(
     db: Session = Depends(get_db),
 ):
     return holdback_service.calendar(db, start_date=start, end_date=end)
+
+
+# ── 카테고리 세트 ──────────────────────────────────────────────────────────────
+
+@router.get("/sets", response_model=list[CategorySetOut])
+def list_sets(db: Session = Depends(get_db)):
+    return set_service.list_sets(db)
+
+
+@router.post("/sets", response_model=CategorySetOut, status_code=201)
+def commit_set(data: CategorySetCommit, db: Session = Depends(get_db)):
+    result = set_service.commit_draft(db, name=data.name, description=data.description)
+    db.commit()
+    return result
+
+
+@router.patch("/sets/{set_id}", response_model=CategorySetOut)
+def update_set(set_id: int, data: CategorySetUpdate, db: Session = Depends(get_db)):
+    try:
+        result = set_service.update_set(db, set_id, name=data.name, description=data.description)
+        db.commit()
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/sets/{set_id}", status_code=204)
+def delete_set(set_id: int, db: Session = Depends(get_db)):
+    try:
+        set_service.delete_set(db, set_id)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/sets/{set_id}/load")
+def load_set(set_id: int, db: Session = Depends(get_db)):
+    try:
+        cleared, loaded = set_service.load_set(db, set_id)
+        db.commit()
+        return {"cleared": cleared, "loaded": loaded}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/sets/clear-draft")
+def clear_draft(db: Session = Depends(get_db)):
+    cleared = set_service.clear_draft(db)
+    db.commit()
+    return {"cleared": cleared}

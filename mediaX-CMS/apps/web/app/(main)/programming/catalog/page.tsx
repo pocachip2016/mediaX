@@ -3,10 +3,11 @@
 import { useEffect, useState, useCallback } from "react"
 import { Plus, RefreshCw, FolderPlus, Upload, FlaskConical } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { catalogApi, type CategoryNode, type CategoryCreateRequest, type CategoryUpdateRequest } from "@/lib/api"
+import { catalogApi, type CategoryNode, type CategorySet, type CategoryCreateRequest, type CategoryUpdateRequest } from "@/lib/api"
 import { CategoryTreeDnd } from "@/components/catalog/CategoryTreeDnd"
 import { CategoryDetailPanel } from "@/components/catalog/CategoryDetailPanel"
 import { BulkImportPanel } from "@/components/catalog/BulkImportPanel"
+import { SetBar } from "@/components/catalog/SetBar"
 import { CATEGORY_TEST_DATA } from "@/lib/categoryBulkParse"
 
 type RightPanelMode = "idle" | "bulk"
@@ -74,6 +75,7 @@ export default function CatalogCategoryPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [rightPanel, setRightPanel] = useState<RightPanelMode>("idle")
   const [bulkInitialText, setBulkInitialText] = useState("")
+  const [sets, setSets] = useState<CategorySet[]>([])
 
   const fetchTree = useCallback(async () => {
     try {
@@ -94,9 +96,19 @@ export default function CatalogCategoryPage() {
     }
   }, [])
 
+  const fetchSets = useCallback(async () => {
+    try {
+      const data = await catalogApi.listSets()
+      setSets(data)
+    } catch {
+      // 세트 로드 실패는 트리 작업에 영향 없음
+    }
+  }, [])
+
   useEffect(() => {
     void fetchTree()
-  }, [fetchTree])
+    void fetchSets()
+  }, [fetchTree, fetchSets])
 
   const handleAdd = useCallback(
     async (name: string, parentId: number | null) => {
@@ -125,8 +137,46 @@ export default function CatalogCategoryPage() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
+    await Promise.all([fetchTree(), fetchSets()])
+  }, [fetchTree, fetchSets])
+
+  const handleSaveSet = useCallback(
+    async (name: string, description?: string) => {
+      await catalogApi.commitSet({ name, description })
+      await Promise.all([fetchTree(), fetchSets()])
+    },
+    [fetchTree, fetchSets],
+  )
+
+  const handleClearDraft = useCallback(async () => {
+    await catalogApi.clearDraft()
     await fetchTree()
   }, [fetchTree])
+
+  const handleLoadSet = useCallback(
+    async (id: number) => {
+      await catalogApi.loadSet(id)
+      await Promise.all([fetchTree(), fetchSets()])
+      setSelectedNode(null)
+    },
+    [fetchTree, fetchSets],
+  )
+
+  const handleRenameSet = useCallback(
+    async (id: number, name: string) => {
+      await catalogApi.updateSet(id, { name })
+      await fetchSets()
+    },
+    [fetchSets],
+  )
+
+  const handleDeleteSet = useCallback(
+    async (id: number) => {
+      await catalogApi.deleteSet(id)
+      await fetchSets()
+    },
+    [fetchSets],
+  )
 
   const handleSelect = useCallback((node: CategoryNode) => {
     setSelectedNode((prev) => (prev?.id === node.id ? null : node))
@@ -192,6 +242,16 @@ export default function CatalogCategoryPage() {
           </button>
         </div>
       </div>
+
+      {/* 세트 바 */}
+      <SetBar
+        sets={sets}
+        onSave={handleSaveSet}
+        onClear={handleClearDraft}
+        onLoad={handleLoadSet}
+        onRename={handleRenameSet}
+        onDelete={handleDeleteSet}
+      />
 
       {/* 루트 추가 폼 */}
       {addingRoot && (

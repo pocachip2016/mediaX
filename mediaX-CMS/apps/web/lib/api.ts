@@ -1796,6 +1796,15 @@ export const distributionApi = {
 
 // ── 카탈로그 카테고리 트리 (1.2.1) ───────────────────────────────────────────
 
+export interface CategorySet {
+  id: number
+  name: string
+  description: string | null
+  category_count: number
+  created_at: string | null
+  updated_at: string | null
+}
+
 export interface CategoryNode {
   id: number
   name: string
@@ -1931,6 +1940,36 @@ export const catalogApi = {
       `/api/programming/catalog/categories/${id}${cascade ? "?cascade=true" : ""}`,
       { method: "DELETE" }
     ),
+
+  // ── 카테고리 세트 ────────────────────────────────────────────────────────────
+
+  listSets: () =>
+    request<CategorySet[]>("/api/programming/catalog/sets"),
+
+  commitSet: (data: { name: string; description?: string }) =>
+    request<CategorySet>("/api/programming/catalog/sets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSet: (id: number, data: { name?: string; description?: string }) =>
+    request<CategorySet>(`/api/programming/catalog/sets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSet: (id: number) =>
+    request<void>(`/api/programming/catalog/sets/${id}`, { method: "DELETE" }),
+
+  loadSet: (id: number) =>
+    request<{ cleared: number; loaded: number }>(`/api/programming/catalog/sets/${id}/load`, {
+      method: "POST",
+    }),
+
+  clearDraft: () =>
+    request<{ cleared: number }>("/api/programming/catalog/sets/clear-draft", {
+      method: "POST",
+    }),
 
   // ── 가격 정책 ──────────────────────────────────────────────────────────────
 

@@ -6093,10 +6093,85 @@ print('  ✓ pricing/holdback schemas import 확인')
     echo "=== PASS ==="
     ;;
 
+  # ── catalog-sets steps ───────────────────────────────────────────────────────
+  catalog-sets-api)
+    echo "=== catalog-sets-api: set_service + router 6종 + pytest ==="
+    cd "$BACKEND"
+    python3 -m pytest tests/test_catalog_sets.py -q --tb=short 2>&1 | tail -25
+    python3 -c "
+from main import app
+routes = [r.path for r in app.routes]
+required = [
+    '/api/programming/catalog/sets',
+    '/api/programming/catalog/sets/{set_id}',
+    '/api/programming/catalog/sets/{set_id}/load',
+    '/api/programming/catalog/sets/clear-draft',
+]
+for r in required:
+    assert r in routes, f'FAIL: 라우트 없음 — {r}'
+    print(f'  ✓ {r}')
+"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-sets-fe-api)
+    echo "=== catalog-sets-fe-api: api.ts CategorySet 타입 + 6종 메서드 + typecheck ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS"
+    API_TS="$FE_ROOT/apps/web/lib/api.ts"
+    grep -q "CategorySet" "$API_TS" || { echo "FAIL: CategorySet 타입 없음"; exit 1; }
+    echo "  ✓ CategorySet 타입 확인"
+    grep -q "listSets" "$API_TS" || { echo "FAIL: listSets 없음"; exit 1; }
+    grep -q "commitSet" "$API_TS" || { echo "FAIL: commitSet 없음"; exit 1; }
+    grep -q "loadSet" "$API_TS" || { echo "FAIL: loadSet 없음"; exit 1; }
+    grep -q "clearDraft" "$API_TS" || { echo "FAIL: clearDraft 없음"; exit 1; }
+    echo "  ✓ api.ts 메서드 4종 확인 (listSets/commitSet/loadSet/clearDraft)"
+    cd "$FE_ROOT"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"
+      echo "$TS_OUT" | grep "error TS" | head -10
+      exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-sets-fe)
+    echo "=== catalog-sets-fe: SetBar 컴포넌트 + page 배선 + typecheck ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS"
+    PAGE="$FE_ROOT/apps/web/app/(main)/programming/catalog/page.tsx"
+    SETBAR="$FE_ROOT/apps/web/components/catalog/SetBar.tsx"
+    [ -f "$SETBAR" ] || { echo "FAIL: SetBar.tsx 없음"; exit 1; }
+    echo "  ✓ SetBar.tsx 존재"
+    grep -q "SetBar" "$PAGE" || { echo "FAIL: page.tsx에 SetBar import 없음"; exit 1; }
+    echo "  ✓ page.tsx SetBar 참조 확인"
+    grep -q "listSets\|fetchSets" "$PAGE" || { echo "FAIL: page.tsx listSets/fetchSets 없음"; exit 1; }
+    echo "  ✓ page.tsx fetchSets 배선 확인"
+    grep -q "commitSet\|loadSet\|clearDraft" "$PAGE" || { echo "FAIL: page.tsx commit/load/clear 핸들러 없음"; exit 1; }
+    echo "  ✓ page.tsx commit/load/clear 핸들러 확인"
+    cd "$FE_ROOT"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러 발생"
+      echo "$TS_OUT" | grep "error TS" | head -10
+      exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-sets-e2e)
+    echo "=== catalog-sets-e2e: 전체 사이클 e2e 테스트 ==="
+    cd "$BACKEND"
+    python3 -m pytest tests/test_catalog_sets.py -k e2e -q --tb=short 2>&1 | tail -20
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
     echo "  dev-catalog-pricing: 2.1~2.6 또는 pricing-holdback-models, pricing-holdback-migration, pricing-service, holdback-service, catalog-pricing-api, catalog-pricing-fe"
+    echo "  catalog-sets: catalog-sets-api, catalog-sets-fe-api, catalog-sets-fe, catalog-sets-e2e"
     exit 1
     ;;
 esac
