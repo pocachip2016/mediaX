@@ -36,7 +36,7 @@ export function BulkImportPanel({
     setParseResult(null)
     setDiffResult(null)
     setCommitError(null)
-  }, [initialText])
+  }, [initialText, existingTree])
 
   // 포맷 자동 감지 (실시간)
   const detectedFormat = (() => {
