@@ -254,6 +254,8 @@ def list_tree(
             result.append(d)
         return result
 
+    return _build(root_id)
+
 
 def list_tree_by_set(db: Session, set_id: int) -> list[dict]:
     """특정 세트 소속 카테고리를 중첩 트리로 반환."""

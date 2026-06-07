@@ -19,27 +19,48 @@ export function getCustomTemplates(): CustomTemplate[] {
   }
 }
 
+function _persist(all: CustomTemplate[]): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(KEY, JSON.stringify(all))
+    window.dispatchEvent(new CustomEvent("custom-templates-changed"))
+  }
+}
+
+export function findTemplateByLabel(label: string): CustomTemplate | undefined {
+  return getCustomTemplates().find(
+    (t) => t.label.trim().toLowerCase() === label.trim().toLowerCase(),
+  )
+}
+
 export function addCustomTemplate(
   t: Omit<CustomTemplate, "id">,
 ): CustomTemplate {
-  const template: CustomTemplate = {
-    ...t,
-    id: Date.now().toString(),
-  }
+  const template: CustomTemplate = { ...t, id: Date.now().toString() }
   const all = getCustomTemplates()
   all.push(template)
-  if (typeof window !== "undefined") {
-    localStorage.setItem(KEY, JSON.stringify(all))
-  }
+  _persist(all)
   return template
 }
 
-export function deleteCustomTemplate(id: string): void {
+export function upsertCustomTemplate(
+  t: Omit<CustomTemplate, "id">,
+): CustomTemplate {
   const all = getCustomTemplates()
-  const filtered = all.filter((t) => t.id !== id)
-  if (typeof window !== "undefined") {
-    localStorage.setItem(KEY, JSON.stringify(filtered))
+  const idx = all.findIndex(
+    (x) => x.label.trim().toLowerCase() === t.label.trim().toLowerCase(),
+  )
+  if (idx >= 0) {
+    const updated: CustomTemplate = { id: all[idx]!.id, ...t }
+    all[idx] = updated
+    _persist(all)
+    return updated
   }
+  return addCustomTemplate(t)
+}
+
+export function deleteCustomTemplate(id: string): void {
+  const filtered = getCustomTemplates().filter((t) => t.id !== id)
+  _persist(filtered)
 }
 
 export function serializeTree(

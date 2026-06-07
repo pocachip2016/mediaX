@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, Save, Trash2, BookmarkPlus } from "lucide-react"
+import { RefreshCw, Save, Trash2 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { catalogApi, type CategoryNode, type CategorySet, type CategoryCreateRequest, type CategoryUpdateRequest } from "@/lib/api"
 import { CategoryTreeDnd } from "@/components/catalog/CategoryTreeDnd"
@@ -9,7 +9,7 @@ import { CategoryDetailPanel } from "@/components/catalog/CategoryDetailPanel"
 import { InputPanel } from "@/components/catalog/InputPanel"
 import { SetListPanel } from "@/components/catalog/SetListPanel"
 import { SaveSetDialog, ConfirmDialog } from "@/components/catalog/SetDialogs"
-import { addCustomTemplate, serializeTree } from "@/lib/customTemplates"
+import { addCustomTemplate, upsertCustomTemplate, findTemplateByLabel, serializeTree } from "@/lib/customTemplates"
 
 // ── 페이지 ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +25,7 @@ export default function CatalogCategoryPage() {
   const [templateSaveOpen, setTemplateSaveOpen] = useState(false)
   const [templateSaveInitialName, setTemplateInitialName] = useState("")
   const [templateSaveText, setTemplateSaveText] = useState("")
+  const [templateOverwrite, setTemplateOverwrite] = useState<{ label: string; description: string; text: string } | null>(null)
 
   const fetchTree = useCallback(async () => {
     try {
@@ -137,12 +138,15 @@ export default function CatalogCategoryPage() {
   }, [tree])
 
   const handleSaveAsTemplate = useCallback(async (name: string, description?: string) => {
-    try {
-      addCustomTemplate({ label: name, description: description ?? "", text: templateSaveText })
+    const desc = description ?? ""
+    const existing = findTemplateByLabel(name)
+    if (existing) {
+      setTemplateOverwrite({ label: name, description: desc, text: templateSaveText })
       setTemplateSaveOpen(false)
-    } catch (e) {
-      console.error("Failed to save template:", e)
+      return
     }
+    addCustomTemplate({ label: name, description: desc, text: templateSaveText })
+    setTemplateSaveOpen(false)
   }, [templateSaveText])
 
   const handleSaveSetAsTemplate = useCallback(async (set: CategorySet) => {
@@ -206,10 +210,9 @@ export default function CatalogCategoryPage() {
               <p className="text-sm font-medium">카테고리 작업중</p>
               <button
                 onClick={() => openTemplateSave()}
-                title="현재 작업트리를 템플릿으로 저장"
-                className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="rounded border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
-                <BookmarkPlus className="h-4 w-4" />
+                템플릿저장
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -279,7 +282,7 @@ export default function CatalogCategoryPage() {
                 className="flex items-center gap-1 rounded-md border bg-card px-2.5 py-1 text-xs hover:bg-muted"
               >
                 <Save className="h-3 w-3" />
-                세트로 저장
+                카테고리저장
               </button>
               <button
                 onClick={() => setConfirmClear(true)}
@@ -295,7 +298,12 @@ export default function CatalogCategoryPage() {
 
       {/* 저장 모달 */}
       {saveOpen && (
-        <SaveSetDialog onSave={handleSaveSet} onClose={() => setSaveOpen(false)} />
+        <SaveSetDialog
+          title="카테고리저장"
+          subtitle="현재 작업 트리를 카테고리 목록에 저장합니다. 작업 트리는 유지됩니다."
+          onSave={handleSaveSet}
+          onClose={() => setSaveOpen(false)}
+        />
       )}
 
       {/* 템플릿으로 저장 모달 */}
@@ -306,6 +314,20 @@ export default function CatalogCategoryPage() {
           initialName={templateSaveInitialName}
           onSave={handleSaveAsTemplate}
           onClose={() => setTemplateSaveOpen(false)}
+        />
+      )}
+
+      {/* 템플릿 이름 중복 덮어쓰기 확인 */}
+      {templateOverwrite && (
+        <ConfirmDialog
+          title={`이미 "${templateOverwrite.label}" 템플릿이 존재합니다`}
+          message="같은 이름의 템플릿이 이미 있습니다. 기존 템플릿을 덮어쓰시겠습니까?"
+          confirmLabel="Overwrite"
+          onConfirm={async () => {
+            upsertCustomTemplate(templateOverwrite)
+            setTemplateOverwrite(null)
+          }}
+          onClose={() => setTemplateOverwrite(null)}
         />
       )}
 

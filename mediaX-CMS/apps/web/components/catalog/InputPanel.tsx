@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FolderPlus, Trash2 } from "lucide-react"
+import { FolderPlus, Trash2, Search } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import type { CategoryNode } from "@/lib/api"
 import { CATEGORY_PRESETS } from "@/lib/categoryBulkParse"
@@ -77,18 +77,22 @@ export function InputPanel({
     getCustomTemplates(),
   )
 
+  const [customTemplateSearch, setCustomTemplateSearch] = useState("")
+
   useEffect(() => {
-    const handleStorageChange = () => {
-      setCustomTemplates(getCustomTemplates())
+    const refresh = () => setCustomTemplates(getCustomTemplates())
+    window.addEventListener("storage", refresh)
+    window.addEventListener("custom-templates-changed", refresh)
+    return () => {
+      window.removeEventListener("storage", refresh)
+      window.removeEventListener("custom-templates-changed", refresh)
     }
-    window.addEventListener("storage", handleStorageChange)
-    return () => window.removeEventListener("storage", handleStorageChange)
   }, [])
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "template", label: "템플릿" },
-    { id: "manual", label: "수동" },
-    { id: "bulk", label: "일괄" },
+    { id: "manual", label: "건별" },
+    { id: "bulk", label: "대량(CSV)" },
   ]
 
   return (
@@ -141,9 +145,26 @@ export function InputPanel({
             {customTemplates.length > 0 && (
               <>
                 <div className="pt-2 mt-2 border-t">
-                  <p className="text-xs font-medium text-muted-foreground pb-2">내 템플릿</p>
+                  <p className="text-xs font-medium text-muted-foreground pb-2">내 템플릿 ({customTemplates.length})</p>
+                  {customTemplates.length >= 3 && (
+                    <div className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 mb-2">
+                      <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <input
+                        value={customTemplateSearch}
+                        onChange={(e) => setCustomTemplateSearch(e.target.value)}
+                        placeholder="템플릿 검색..."
+                        className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                      />
+                    </div>
+                  )}
                 </div>
-                {customTemplates.map((template) => (
+                {customTemplates
+                  .filter((t) =>
+                    customTemplateSearch
+                      ? t.label.toLowerCase().includes(customTemplateSearch.toLowerCase())
+                      : true,
+                  )
+                  .map((template) => (
                   <div
                     key={template.id}
                     className="flex items-start gap-2 rounded-md border bg-background p-3"

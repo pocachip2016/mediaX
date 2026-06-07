@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Pencil, Trash2, FolderOpen, Play, BookmarkPlus, Search } from "lucide-react"
+import { Pencil, Trash2, FolderOpen, Play, Search } from "lucide-react"
 import type { CategorySet } from "@/lib/api"
 import { ConfirmDialog, InlineRename } from "@/components/catalog/SetDialogs"
 
@@ -182,13 +182,6 @@ function SetCard({
         {!isRenaming && (
           <div className="flex shrink-0 items-center gap-0.5">
             <button
-              onClick={onSaveAsTemplate}
-              title="템플릿으로 저장"
-              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <BookmarkPlus className="h-3 w-3" />
-            </button>
-            <button
               onClick={onRenameStart}
               title="이름 변경"
               className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -218,14 +211,22 @@ function SetCard({
         <span>{dateStr}</span>
       </div>
 
-      {/* 작업반영 버튼 */}
-      <button
-        onClick={onLoad}
-        className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary/10 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
-      >
-        <Play className="h-3 w-3" />
-        작업반영
-      </button>
+      {/* 하단 액션 버튼 */}
+      <div className="flex gap-1.5">
+        <button
+          onClick={onSaveAsTemplate}
+          className="flex flex-1 items-center justify-center gap-1 rounded-md border py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          템플릿저장
+        </button>
+        <button
+          onClick={onLoad}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary/10 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+        >
+          <Play className="h-3 w-3" />
+          작업반영
+        </button>
+      </div>
     </div>
   )
 }
