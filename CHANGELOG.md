@@ -1,5 +1,35 @@
 # CHANGELOG — mediaX
 
+## 2026-06-07
+
+- **feat(catalog-workspace-redesign)** — 3컬럼 레이아웃(InputPanel 탭/프리셋+SetListPanel 작업반영) + SetBar→SetDialogs/SetListPanel 리팩터 + BulkImportPanel onClose 옵셔널
+- **feat(catalog-sets)** — 카테고리 세트 다중 저장 관리 (set_service + router 6종 + SetBar UI + 17테스트 + e2e)
+- **feat(catalog-category-workspace)** — DnD(@dnd-kit 3존)/BulkImport(indent·path)/TEST데이터 30+노드/인라인 rename/CategoryDetailPanel + CategorySet 모델·0041 마이그레이션 + bulk API(13테스트)
+
+## 2026-06-06
+
+- **dev-catalog-pricing** — 가격 정책 + 홀드백 (1.2.2 + 1.2.3) — BE 4테이블/마이그레이션/pricing·holdback 서비스(25 테스트)/11 API + FE pricing·holdback 2페이지 + typecheck 통과
+- **feat(catalog-category-tree)** — 카탈로그 카테고리 트리(1.2.1) — BE 모델/마이그레이션/서비스(18 테스트)/API(15 테스트) + FE 트리 화면(읽기+생성+삭제+nav)
+- **feat(contents-hierarchy)** — 콘텐츠 목록 계층 트리(평면/계층 토글, 기본 계층) + 파이프라인 S1 기본 트리 + lib/contentTree 공유 유틸 + 시즌/에피 포스터 숨김
+
+## 2026-06-05
+
+- **revert/재검수 단계 AUTO OFF** — revert/re-review 시 도착 단계(검수 s4_auto) 자동 OFF + auto_hold 미사용(재-ON 시 재개) + RevertResponse.disabled_stages + FE 토글 동기화(syncStageAuto). reject hold 유지. e2e/backward-hold 신정책 테스트
+- **dev-child-inheritance** — 시즌/에피소드 상속을 quality_score 채점에 완전 배선 + 스칼라 필드 자식 DB autofill(apply_parent_inheritance, empty-only·멱등, title/synopsis 제외) + FE (상속) 표시 + 테스트 8건
+- **feat(series-meta)** — TmdbTvCache→ContentMetadata 시리즈 6필드 보강 + alembic 0038 + FE 표시 + worker watchmedo 핫리로드 인프라 + apply_migration 훅
+- **feat(pipeline)** — cascade advance + 계층 상세 메타 패널 + 외부소스 master-detail + 건수 breakdown 라벨 + 부모 브레드크럼
+
+## 2026-06-04
+
+- **dev-pipeline-auto-worker** — 파이프라인 진행 엔진 FE→Celery 워커 이관 (ADR-010): Beat 15s tick + bucket 병행 + AI per-item fan-out + SKIP LOCKED claim + 멱등 advance/approve + auto_hold + FE 콘솔 모니터화. Steps 0~8 + 운영픽스 4종 + UX복원 + S4 미승인 자동 반려
+
+## 2026-06-03
+
+- **dev-auto-headless BE 회귀 pytest** — enrich_content KMDB 한도 초과 graceful degrade 단위 테스트 3건
+- **dev-stage-auto-autofill 회귀 가드** — recompute_quality_score 단위 테스트 9케이스 + verify.sh `stage-auto-autofill-guard`
+- **dev-s4-auto-residual** — S4 AUTO 잔류 유지(임계값 미만 미승인) + s4ReviewedRef 재검수 차단 + 임계값 변경 시 재평가
+- **dev-auto-headless** — AUTO 헤드리스 단계 자동 연쇄(뷰 비종속): run-to-stable runAutoPipeline + per-stage 취소 + 콘솔별 stage-게이트 패널 + null-고착·stale-클로저·revert-clear 픽스 + BE KMDB graceful degrade + quality_score 완성도 기반 재계산. PR #18
+
 ## 2026-05-31
 
 - **dev-pipeline-console-controls A1–C1** — BE 상태머신 분리 + AiTask registry + 5개 Phase1 LLM 태스크(translate/short/genre/mood/keywords) + FE ContentStatus 마이그레이션(raw/enriched/ai)

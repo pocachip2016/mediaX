@@ -10,23 +10,15 @@
 - [ ] 1.3 큐레이션 모듈 설계 확정
 
 ## Later (백로그)
-- [ ] 1.3 큐레이션 모듈 설계 확정
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **feat(catalog-workspace-ux)** — 3컬럼 헤더(카테고리 등록/목록/작업중) + 컬럼 순서 재배치 + 커스텀 템플릿 CRUD(localStorage·중복Overwrite·즉시반영) + 템플릿저장 버튼(목록카드·작업중헤더) + 카테고리목록 검색/페이징 + BE GET /sets/{id}/tree + 대량(CSV) 파일업로드(드래그&드롭·템플릿다운·txt들여쓰기보존) + 탭/버튼 라벨 정비 (2026-06-07)
 - [x] **feat(catalog-workspace-redesign)** — 3컬럼 레이아웃(InputPanel 탭/프리셋+SetListPanel 작업반영) + SetBar→SetDialogs/SetListPanel 리팩터 + BulkImportPanel onClose 옵셔널 (2026-06-07)
 - [x] **feat(catalog-sets)** — 카테고리 세트 다중 저장 관리 (Step B~E: set_service + router 6종 + SetBar UI + 17테스트 + e2e) (2026-06-07)
 - [x] **feat(catalog-category-workspace)** — 카탈로그 카테고리 트리 워크스페이스 — DnD(@dnd-kit 3존)/BulkImport(indent·path)/TEST데이터 30+노드/인라인 rename/CategoryDetailPanel + CategorySet 모델·0041 마이그레이션 + bulk API(13테스트) (2026-06-07)
 - [x] **dev-catalog-pricing** — 가격 정책 + 홀드백 (1.2.2 + 1.2.3) — BE 4테이블/마이그레이션/pricing·holdback 서비스(25 테스트)/11 API + FE pricing·holdback 2페이지 + typecheck 통과 (2026-06-06)
-- [x] **feat(catalog-category-tree)** — 카탈로그 카테고리 트리(1.2.1) — BE 모델/마이그레이션/서비스(18 테스트)/API(15 테스트) + FE 트리 화면(읽기+생성+삭제+nav) (2026-06-06)
-- [x] **feat(contents-hierarchy)** — 콘텐츠 목록 계층 트리(평면/계층 토글, 기본 계층) + 파이프라인 S1 기본 트리 + lib/contentTree 공유 유틸 + 시즌/에피 포스터 숨김 (2026-06-06)
-- [x] **revert/재검수 단계 AUTO OFF** — revert/re-review 시 도착 단계(검수 s4_auto) 자동 OFF + auto_hold 미사용(재-ON 시 재개) + RevertResponse.disabled_stages + FE 토글 동기화(syncStageAuto). reject hold 유지. e2e/backward-hold 신정책 테스트 (2026-06-05)
-- [x] **dev-child-inheritance** — 시즌/에피소드 상속을 quality_score 채점에 완전 배선(synopsis/genre/country/year/cast/director) + 스칼라 필드(year/country) 자식 DB autofill(apply_parent_inheritance, empty-only·멱등, title/synopsis 제외) + FE (상속) 표시 + 테스트 8건 + 우영우 시즌1 22→78·에피 32→88 보정 (2026-06-05)
-- [x] **feat(series-meta)** — TmdbTvCache→ContentMetadata 시리즈 6필드 보강(apply_series_meta_from_cache, S2 AUTO 배선, 멱등, series 한정) + alembic 0038 + FE 표시 + worker watchmedo 핫리로드 인프라(stale 코드 차단) + apply_migration 훅. 우영우/오징어게임/무빙 백필 (2026-06-05)
-- [x] **feat(pipeline)** — cascade advance(시리즈/시즌 동일버킷 자손 포함) + 계층 상세 메타 패널(포스터+필드→하위목록) + 외부소스 master-detail(TMDB/KOBIS/KMDB 행 클릭 상세) + 건수 breakdown 라벨(N시즌/M편) + 부모 브레드크럼 (2026-06-05)
-- [x] **feat(pipeline-tree-drilldown)** — 계층 트리 + 타입별 드릴다운 (PipelineTreeList 평면/계층 토글 + PipelineDrilldownDetail 타입 디스패치 + ChildrenTable ASC 정렬 + list_contents size 100→500) (2026-06-05)
-- [x] **dev-pipeline-auto-worker** — 파이프라인 진행 엔진 FE→Celery 워커 이관 (ADR-010): Beat 15s tick + bucket 병행 + AI per-item fan-out(pipeline_ai 큐) + SKIP LOCKED claim + 멱등 advance/approve + auto_hold(수동 override) + FE 콘솔 모니터화(auto-status/auto-log 폴링·처리건 스크롤 로그·advance 시 목록 제거). Steps 0~8 + 운영픽스 4종 + UX복원 + S4 미승인 자동 반려(bucket 6, 잔류 폐지) (2026-06-04)
 - [x] **fix(tmdb-cache)** — TMDB 캐시 목록 정렬 불안정 해소 (id tiebreaker 추가 — popularity/last_fetched_at 비유일 정렬 + daily sync 값 변동으로 새로고침마다 행 섞임) (2026-05-30)
 - [x] **dev-auto-headless BE 회귀 pytest** — enrich_content KMDB 한도 초과 graceful degrade(kmdb:daily_limit, 500 아님) 단위 테스트 3건 + verify.sh `auto-headless-be`. KMDB 한도는 _fetch_kmdb_with_cache 1개만 monkeypatch로 시뮬레이션 (2026-06-03)
 - [x] **dev-stage-auto-autofill 회귀 가드** — recompute_quality_score 단위 테스트 9케이스(mock 없음) + verify.sh `stage-auto-autofill-guard`(pytest + 빈필드보존/status불변/재계산 grep 가드). empty-only는 grep 가드로 대체 (2026-06-03)
