@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from "react"
-import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Upload, Zap } from "lucide-react"
+import { RefreshCw, CheckCircle, AlertCircle, Mail, Search, GitMerge, Database, FlaskConical, Trash2, Plus, Zap } from "lucide-react"
 import {
   metadataApi,
   pipelineTestApi,
@@ -12,7 +12,6 @@ import {
   type ContentOut,
   type ContentDetail,
   type ContentType,
-  type BatchJobOut,
   type BulkActionResponse,
   type AiTaskSetting,
   type AiTaskResponse,
@@ -30,6 +29,7 @@ import { PipelineBoard } from "@/components/contents/pipeline/PipelineBoard"
 import { PipelineTreeList } from "@/components/contents/pipeline/PipelineTreeList"
 import { PipelineDrilldownDetail } from "@/components/contents/pipeline/PipelineDrilldownDetail"
 import { isLeafType } from "@/components/contents/detail/contentType"
+import { BulkUploadForm } from "@/components/contents/upload/BulkUploadForm"
 
 const ENABLE_TEST = process.env.NEXT_PUBLIC_ENABLE_PIPELINE_TEST === "true"
 
@@ -985,93 +985,7 @@ function AddContentInlinePanel({ onRefresh }: { onRefresh: () => void }) {
 }
 
 function BulkUploadEmbed({ onRefresh }: { onRefresh: () => void }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [result, setResult] = useState<BatchJobOut | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    const f = e.dataTransfer.files[0]
-    if (f) setFile(f)
-  }, [])
-
-  const handleUpload = async () => {
-    if (!file) return
-    setUploading(true)
-    setResult(null)
-    setError(null)
-    try {
-      const formData = new FormData()
-      formData.append("file", file)
-      const r = await metadataApi.uploadBatch(formData, false)
-      setResult(r)
-      setFile(null)
-      onRefresh()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "업로드 실패")
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">CSV 벌크 업로드</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">CSV/Excel → 다수 콘텐츠 일괄 등록 · /upload/batch 재사용</p>
-      </div>
-
-      <label
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
-        className="block border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,.xlsx,.xls"
-          className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); e.target.value = "" }}
-        />
-        <Upload className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-        {file ? (
-          <p className="text-sm font-medium text-primary">{file.name} ({(file.size / 1024).toFixed(1)} KB)</p>
-        ) : (
-          <>
-            <p className="text-sm text-muted-foreground">CSV/Excel 드래그 또는 클릭</p>
-            <p className="text-xs text-muted-foreground mt-1">최대 10MB · <span className="font-mono">title</span> 컬럼 필수</p>
-          </>
-        )}
-      </label>
-
-      {error && (
-        <div className="text-xs text-red-600 dark:text-red-400 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10">{error}</div>
-      )}
-      {result && (
-        <div className="text-xs px-3 py-2 rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 text-green-700 dark:text-green-400">
-          ✓ 업로드 완료: job #{result.id} · 성공 {result.success_count}건 / 실패 {result.failed_count}건 (총 {result.total_count}건)
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleUpload}
-          disabled={uploading || !file}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium disabled:opacity-50 transition-colors"
-        >
-          {uploading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-          업로드 시작
-        </button>
-        {file && (
-          <button onClick={() => setFile(null)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            취소
-          </button>
-        )}
-      </div>
-    </div>
-  )
+  return <BulkUploadForm autoProcess={false} onUploaded={() => onRefresh()} />
 }
 
 const CREATION_TABS = [
