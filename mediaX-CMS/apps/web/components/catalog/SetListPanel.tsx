@@ -29,9 +29,20 @@ export function SetListPanel({
   const [confirmLoad, setConfirmLoad] = useState<CategorySet | null>(null)
   const [loadMode, setLoadMode] = useState<LoadMode>("replace")
   const [loadDupPolicy, setLoadDupPolicy] = useState<DupPolicy>("merge")
+  const [mergePreview, setMergePreview] = useState<{ new_count: number; dup_count: number } | null>(null)
+  const [mergePreviewLoading, setMergePreviewLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [page, setPage] = useState(0)
+
+  useEffect(() => {
+    if (!confirmLoad || loadMode !== "merge") { setMergePreview(null); return }
+    setMergePreviewLoading(true)
+    catalogApi.previewLoadSet(confirmLoad.id)
+      .then(setMergePreview)
+      .catch(() => setMergePreview(null))
+      .finally(() => setMergePreviewLoading(false))
+  }, [confirmLoad, loadMode])
 
   const q = searchQuery.toLowerCase()
   const filteredSets = sets.filter(
@@ -151,21 +162,34 @@ export function SetListPanel({
                 ))}
               </div>
               {loadMode === "merge" && (
-                <div className="flex rounded-md border overflow-hidden">
-                  {(["merge", "overwrite", "reject"] as const).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setLoadDupPolicy(p)}
-                      className={cn(
-                        "flex-1 py-1.5 text-xs font-medium transition-colors",
-                        loadDupPolicy === p ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:bg-muted",
-                      )}
-                    >
-                      {p === "merge" ? "중복skip" : p === "overwrite" ? "덮어쓰기" : "거부"}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="flex rounded-md border overflow-hidden">
+                    {(["merge", "overwrite", "reject"] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setLoadDupPolicy(p)}
+                        className={cn(
+                          "flex-1 py-1.5 text-xs font-medium transition-colors",
+                          loadDupPolicy === p ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        {p === "merge" ? "중복skip" : p === "overwrite" ? "덮어쓰기" : "거부"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs">
+                    {mergePreviewLoading ? (
+                      <span className="text-muted-foreground animate-pulse">분석 중…</span>
+                    ) : mergePreview ? (
+                      <>
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">신규 {mergePreview.new_count}개</span>
+                        <span className="text-muted-foreground">/</span>
+                        <span className="font-medium text-amber-600 dark:text-amber-400">중복 {mergePreview.dup_count}개</span>
+                      </>
+                    ) : null}
+                  </div>
+                </>
               )}
             </div>
           }

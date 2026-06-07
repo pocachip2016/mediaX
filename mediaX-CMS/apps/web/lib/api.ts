@@ -1964,6 +1964,9 @@ export const catalogApi = {
   deleteSet: (id: number) =>
     request<void>(`/api/programming/catalog/sets/${id}`, { method: "DELETE" }),
 
+  previewLoadSet: (id: number) =>
+    request<{ new_count: number; dup_count: number }>(`/api/programming/catalog/sets/${id}/load-preview`),
+
   loadSet: (id: number, opts?: { mode?: "replace" | "merge"; dup_policy?: DupPolicy }) =>
     request<{ cleared: number; loaded: number }>(`/api/programming/catalog/sets/${id}/load`, {
       ...(opts ? { body: JSON.stringify(opts) } : {}),

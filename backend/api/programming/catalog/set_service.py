@@ -41,6 +41,39 @@ def commit_draft(db: Session, name: str, description: str | None = None) -> dict
     }
 
 
+def preview_load_set(db: Session, set_id: int) -> dict:
+    """병합 시 신규/중복 노드 수를 미리 계산 (DB 변경 없음)."""
+    s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
+    if s is None:
+        raise ValueError(f"set_id={set_id} not found")
+
+    nodes = service.list_tree_by_set(db, set_id=set_id)
+    dup_count = 0
+
+    def _walk(items: list[dict], pid: int | None) -> None:
+        nonlocal dup_count
+        for item in items:
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            existing = (
+                db.query(Category)
+                .filter(
+                    Category.parent_id == pid,
+                    Category.name == name,
+                    Category.set_id.is_(None),
+                )
+                .first()
+            )
+            if existing is not None:
+                dup_count += 1
+                _walk(item.get("children") or [], existing.id)
+
+    _walk(nodes, None)
+    total = db.query(func.count(Category.id)).filter(Category.set_id == set_id).scalar() or 0
+    return {"new_count": total - dup_count, "dup_count": dup_count}
+
+
 def load_set(
     db: Session,
     set_id: int,

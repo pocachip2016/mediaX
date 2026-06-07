@@ -396,6 +396,14 @@ def get_set_tree(set_id: int, db: Session = Depends(get_db)):
     return nodes
 
 
+@router.get("/sets/{set_id}/load-preview")
+def preview_load_set(set_id: int, db: Session = Depends(get_db)):
+    try:
+        return set_service.preview_load_set(db, set_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/sets/{set_id}/load")
 def load_set(
     set_id: int,
