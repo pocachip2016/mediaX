@@ -14,11 +14,11 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **feat(catalog-workspace-ux2)** — 네비 카탈로그→카테고리관리/생성 + 건별탭 서브토글(단건/텍스트일괄) + 대량(CSV) 파일전용 + SetListPanel 단일행+클릭 인라인 트리미리보기(◀템플릿저장·▶작업반영) (2026-06-07)
 - [x] **feat(catalog-workspace-ux)** — 3컬럼 헤더(카테고리 등록/목록/작업중) + 컬럼 순서 재배치 + 커스텀 템플릿 CRUD(localStorage·중복Overwrite·즉시반영) + 템플릿저장 버튼(목록카드·작업중헤더) + 카테고리목록 검색/페이징 + BE GET /sets/{id}/tree + 대량(CSV) 파일업로드(드래그&드롭·템플릿다운·txt들여쓰기보존) + 탭/버튼 라벨 정비 (2026-06-07)
 - [x] **feat(catalog-workspace-redesign)** — 3컬럼 레이아웃(InputPanel 탭/프리셋+SetListPanel 작업반영) + SetBar→SetDialogs/SetListPanel 리팩터 + BulkImportPanel onClose 옵셔널 (2026-06-07)
 - [x] **feat(catalog-sets)** — 카테고리 세트 다중 저장 관리 (Step B~E: set_service + router 6종 + SetBar UI + 17테스트 + e2e) (2026-06-07)
 - [x] **feat(catalog-category-workspace)** — 카탈로그 카테고리 트리 워크스페이스 — DnD(@dnd-kit 3존)/BulkImport(indent·path)/TEST데이터 30+노드/인라인 rename/CategoryDetailPanel + CategorySet 모델·0041 마이그레이션 + bulk API(13테스트) (2026-06-07)
-- [x] **dev-catalog-pricing** — 가격 정책 + 홀드백 (1.2.2 + 1.2.3) — BE 4테이블/마이그레이션/pricing·holdback 서비스(25 테스트)/11 API + FE pricing·holdback 2페이지 + typecheck 통과 (2026-06-06)
 - [x] **fix(tmdb-cache)** — TMDB 캐시 목록 정렬 불안정 해소 (id tiebreaker 추가 — popularity/last_fetched_at 비유일 정렬 + daily sync 값 변동으로 새로고침마다 행 섞임) (2026-05-30)
 - [x] **dev-auto-headless BE 회귀 pytest** — enrich_content KMDB 한도 초과 graceful degrade(kmdb:daily_limit, 500 아님) 단위 테스트 3건 + verify.sh `auto-headless-be`. KMDB 한도는 _fetch_kmdb_with_cache 1개만 monkeypatch로 시뮬레이션 (2026-06-03)
 - [x] **dev-stage-auto-autofill 회귀 가드** — recompute_quality_score 단위 테스트 9케이스(mock 없음) + verify.sh `stage-auto-autofill-guard`(pytest + 빈필드보존/status불변/재계산 grep 가드). empty-only는 grep 가드로 대체 (2026-06-03)

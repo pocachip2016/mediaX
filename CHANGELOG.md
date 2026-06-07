@@ -2,6 +2,7 @@
 
 ## 2026-06-07
 
+- **feat(catalog-workspace-ux2)** — 네비 카탈로그→카테고리관리/생성 + 건별탭 서브토글(단건/텍스트일괄) + 대량(CSV) 파일전용 + SetListPanel 단일행+클릭 인라인 트리미리보기(◀템플릿저장·▶작업반영)
 - **feat(catalog-workspace-redesign)** — 3컬럼 레이아웃(InputPanel 탭/프리셋+SetListPanel 작업반영) + SetBar→SetDialogs/SetListPanel 리팩터 + BulkImportPanel onClose 옵셔널
 - **feat(catalog-sets)** — 카테고리 세트 다중 저장 관리 (set_service + router 6종 + SetBar UI + 17테스트 + e2e)
 - **feat(catalog-category-workspace)** — DnD(@dnd-kit 3존)/BulkImport(indent·path)/TEST데이터 30+노드/인라인 rename/CategoryDetailPanel + CategorySet 모델·0041 마이그레이션 + bulk API(13테스트)
