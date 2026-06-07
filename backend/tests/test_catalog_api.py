@@ -156,6 +156,69 @@ def test_bulk_create_nonexistent_parent_404(client):
     assert res.status_code == 404
 
 
+# ── dup_policy ──────────────────────────────────────────────────────────────────
+
+def test_bulk_dup_policy_merge_default(client):
+    """dup_policy 미지정 시 merge — 기존 노드 유지, 신규 자식만 추가."""
+    root = client.post(f"{BASE}/categories", json={"name": "영화"}).json()
+    client.post(f"{BASE}/categories", json={"name": "액션", "parent_id": root["id"]})
+    payload = {"nodes": [{"name": "영화", "children": [{"name": "코미디"}]}]}
+    res = client.post(f"{BASE}/categories/bulk", json=payload)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["created"] == 1  # 코미디
+    assert body["skipped"] == 1  # 영화
+    assert body["overwritten"] == 0
+    movie = next(n for n in body["tree"] if n["name"] == "영화")
+    assert {c["name"] for c in movie["children"]} == {"액션", "코미디"}  # 기존 유지
+
+
+def test_bulk_dup_policy_overwrite(client):
+    """overwrite — 중복 노드의 기존 자식을 삭제하고 입력 구조로 교체."""
+    root = client.post(f"{BASE}/categories", json={"name": "영화"}).json()
+    client.post(f"{BASE}/categories", json={"name": "액션", "parent_id": root["id"]})
+    payload = {
+        "nodes": [{"name": "영화", "children": [{"name": "코미디"}]}],
+        "dup_policy": "overwrite",
+    }
+    res = client.post(f"{BASE}/categories/bulk", json=payload)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["overwritten"] == 1  # 영화
+    assert body["created"] == 1  # 코미디 (신규)
+    movie = next(n for n in body["tree"] if n["name"] == "영화")
+    assert {c["name"] for c in movie["children"]} == {"코미디"}  # 액션 삭제됨
+
+
+def test_bulk_dup_policy_reject(client):
+    """reject — 중복이 하나라도 있으면 409, 아무것도 생성 안 함."""
+    client.post(f"{BASE}/categories", json={"name": "영화"})
+    payload = {
+        "nodes": [
+            {"name": "영화", "children": [{"name": "액션"}]},
+            {"name": "키즈"},
+        ],
+        "dup_policy": "reject",
+    }
+    res = client.post(f"{BASE}/categories/bulk", json=payload)
+    assert res.status_code == 409
+    assert "영화" in res.json()["detail"]
+    # 키즈도 생성되지 않아야 함 (전체 거부)
+    tree = client.get(f"{BASE}/categories/tree").json()
+    assert {n["name"] for n in tree} == {"영화"}
+
+
+def test_bulk_dup_policy_reject_no_conflict(client):
+    """reject — 충돌 없으면 정상 생성."""
+    payload = {
+        "nodes": [{"name": "영화", "children": [{"name": "액션"}]}],
+        "dup_policy": "reject",
+    }
+    res = client.post(f"{BASE}/categories/bulk", json=payload)
+    assert res.status_code == 201
+    assert res.json()["created"] == 2
+
+
 # ── 수정 ─────────────────────────────────────────────────────────────────────
 
 def test_patch_rename(client):

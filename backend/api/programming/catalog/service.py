@@ -35,47 +35,102 @@ def create_category(
     return cat
 
 
+def _find_conflicts(
+    db: Session,
+    nodes: list[dict],
+    parent_id: int | None,
+    path_prefix: list[str],
+) -> list[str]:
+    """입력 트리를 DFS하며 기존 DB에 동일 (parent_id, name) 경로가 있는 노드의
+    전체 경로를 수집. 신규 노드의 자손은 전부 신규이므로 탐색하지 않는다."""
+    conflicts: list[str] = []
+    for item in nodes:
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        path = path_prefix + [name]
+        existing = (
+            db.query(Category)
+            .filter(
+                Category.parent_id == parent_id,
+                Category.name == name,
+                Category.set_id.is_(None),
+            )
+            .first()
+        )
+        if existing is not None:
+            conflicts.append("/".join(path))
+            conflicts.extend(
+                _find_conflicts(db, item.get("children") or [], existing.id, path)
+            )
+    return conflicts
+
+
 def bulk_create_categories(
     db: Session,
     nodes: list[dict],
     parent_id: int | None = None,
-) -> tuple[int, int]:
-    """정규화된 nested 구조를 DFS로 생성. 동일 parent_id+name 존재 시 해당 노드는
-    skip하되 children 탐색은 기존 노드 밑에서 계속. (created, skipped) 카운트 반환.
+    dup_policy: str = "merge",
+) -> tuple[int, int, int]:
+    """정규화된 nested 구조를 DFS로 생성. dup_policy로 동일 (parent_id, name) 충돌 처리.
+
+    - merge: 기존 노드 유지, children 탐색은 기존 노드 밑에서 계속 (skip 카운트)
+    - overwrite: 기존 노드 유지하되 입력에 children이 있으면 기존 직속 자식
+      서브트리를 cascade 삭제 후 입력 구조로 재생성 (overwritten 카운트)
+    - reject: 충돌이 하나라도 있으면 ValueError (아무것도 생성 안 함)
 
     nodes: [{"name": str, "children": [...]}, ...]
+    반환: (created, skipped, overwritten)
     """
+    if parent_id is not None:
+        if db.query(Category).filter(Category.id == parent_id).first() is None:
+            raise ValueError(f"parent_id={parent_id} not found")
+
+    if dup_policy == "reject":
+        conflicts = _find_conflicts(db, nodes, parent_id, [])
+        if conflicts:
+            raise ValueError("duplicate categories: " + ", ".join(conflicts))
+
     created = 0
     skipped = 0
+    overwritten = 0
 
     def _walk(items: list[dict], pid: int | None) -> None:
-        nonlocal created, skipped
+        nonlocal created, skipped, overwritten
         for item in items:
             name = (item.get("name") or "").strip()
             if not name:
                 continue
             existing = (
                 db.query(Category)
-                .filter(Category.parent_id == pid, Category.name == name)
+                .filter(
+                    Category.parent_id == pid,
+                    Category.name == name,
+                    Category.set_id.is_(None),
+                )
                 .first()
             )
+            children = item.get("children") or []
             if existing is not None:
-                skipped += 1
                 node = existing
+                if dup_policy == "overwrite" and children:
+                    old_children = (
+                        db.query(Category).filter(Category.parent_id == existing.id).all()
+                    )
+                    for ch in old_children:
+                        delete_category(db, ch.id, cascade=True)
+                    overwritten += 1
+                else:
+                    skipped += 1
             else:
                 node = create_category(db, name=name, parent_id=pid)
                 created += 1
-            children = item.get("children") or []
             if children:
                 _walk(children, node.id)
 
-    if parent_id is not None:
-        if db.query(Category).filter(Category.id == parent_id).first() is None:
-            raise ValueError(f"parent_id={parent_id} not found")
-
     _walk(nodes, parent_id)
     db.flush()
-    return created, skipped
+    return created, skipped, overwritten
 
 
 def rename_category(db: Session, category_id: int, name: str) -> Category:
@@ -254,7 +309,16 @@ def list_tree(
             result.append(d)
         return result
 
-    return _build(root_id)
+    if root_id is not None:
+        root_cat = db.query(Category).filter(
+            Category.id == root_id, Category.set_id.is_(None)
+        ).first()
+        if root_cat is None:
+            return []
+        d = _to_dict(root_cat)
+        d["children"] = _build(root_cat.id)
+        return [d]
+    return _build(None)
 
 
 def list_tree_by_set(db: Session, set_id: int) -> list[dict]:

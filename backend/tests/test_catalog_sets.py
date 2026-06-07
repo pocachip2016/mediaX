@@ -190,6 +190,56 @@ def test_load_not_found(client):
     assert r.status_code == 404
 
 
+def test_load_replace_mode_explicit(client):
+    """mode=replace 명시 시 기존 동작과 동일하게 draft 교체."""
+    _make_draft(client, ("영화", "드라마"))
+    set_id = client.post(f"{BASE}/sets", json={"name": "세트A"}).json()["id"]
+    client.post(f"{BASE}/sets/clear-draft")
+    client.post(f"{BASE}/categories", json={"name": "애니"})
+
+    r = client.post(f"{BASE}/sets/{set_id}/load", json={"mode": "replace"})
+    assert r.status_code == 200
+    names = {n["name"] for n in client.get(f"{BASE}/categories/tree").json()}
+    assert names == {"영화", "드라마"}
+
+
+def test_load_merge_mode_keeps_existing(client):
+    """mode=merge 시 draft를 비우지 않고 세트 트리를 병합한다."""
+    _make_draft(client, ("영화", "드라마"))
+    set_id = client.post(f"{BASE}/sets", json={"name": "세트A"}).json()["id"]
+    client.post(f"{BASE}/sets/clear-draft")
+    client.post(f"{BASE}/categories", json={"name": "애니"})
+
+    r = client.post(f"{BASE}/sets/{set_id}/load", json={"mode": "merge"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["cleared"] == 0
+    assert body["loaded"] == 2  # 영화, 드라마 신규 추가
+    names = {n["name"] for n in client.get(f"{BASE}/categories/tree").json()}
+    assert names == {"애니", "영화", "드라마"}
+
+
+def test_load_merge_dedup_merge_policy(client):
+    """merge 모드 + dup_policy=merge: 동일 경로는 기존 유지, 신규만 추가."""
+    root_id = client.post(f"{BASE}/categories", json={"name": "영화"}).json()["id"]
+    client.post(f"{BASE}/categories", json={"name": "액션", "parent_id": root_id})
+    set_id = client.post(f"{BASE}/sets", json={"name": "세트A"}).json()["id"]
+    # draft에 영화(중복) + 코미디 자식 남기고 clear 후 재구성
+    client.post(f"{BASE}/sets/clear-draft")
+    root2 = client.post(f"{BASE}/categories", json={"name": "영화"}).json()["id"]
+    client.post(f"{BASE}/categories", json={"name": "코미디", "parent_id": root2})
+
+    r = client.post(
+        f"{BASE}/sets/{set_id}/load",
+        json={"mode": "merge", "dup_policy": "merge"},
+    )
+    assert r.status_code == 200
+    tree = client.get(f"{BASE}/categories/tree").json()
+    assert len(tree) == 1  # 영화 루트 하나로 병합
+    child_names = {c["name"] for c in tree[0]["children"]}
+    assert child_names == {"코미디", "액션"}  # 둘 다 보존
+
+
 # ── clear-draft ───────────────────────────────────────────────────────────────
 
 def test_clear_draft(client):

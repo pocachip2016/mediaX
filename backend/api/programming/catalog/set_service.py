@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from api.programming.catalog import service
 from api.programming.catalog.models import Category, CategorySet
 
 
@@ -40,10 +41,30 @@ def commit_draft(db: Session, name: str, description: str | None = None) -> dict
     }
 
 
-def load_set(db: Session, set_id: int) -> tuple[int, int]:
+def load_set(
+    db: Session,
+    set_id: int,
+    mode: str = "replace",
+    dup_policy: str = "merge",
+) -> tuple[int, int]:
+    """세트를 draft로 불러오기.
+
+    - replace: draft 전체 비우고 세트 트리 복사 (기존 동작)
+    - merge: draft 유지하고 세트 트리를 dup_policy에 따라 병합
+    반환: (cleared, loaded)  — merge 시 cleared=0
+    """
     s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
     if s is None:
         raise ValueError(f"set_id={set_id} not found")
+
+    if mode == "merge":
+        nodes = service.list_tree_by_set(db, set_id=set_id)
+        created, _skipped, _overwritten = service.bulk_create_categories(
+            db, nodes, parent_id=None, dup_policy=dup_policy
+        )
+        db.flush()
+        return 0, created
+
     cleared = clear_draft(db)
     db.flush()
     loaded = _copy_tree(db, src_set_id=set_id, dst_set_id=None)

@@ -20,6 +20,7 @@ from api.programming.catalog.schemas import (
     CategorySetOut,
     CategorySetCommit,
     CategorySetUpdate,
+    LoadSetRequest,
     PricingSet,
     PricingOut,
     BulkPricingRequest,
@@ -57,16 +58,25 @@ def get_category_tree(
 @router.post("/categories/bulk", response_model=BulkCategoryResult, status_code=201)
 def bulk_create_categories(data: BulkCategoryCreate, db: Session = Depends(get_db)):
     try:
-        created, skipped = service.bulk_create_categories(
+        created, skipped, overwritten = service.bulk_create_categories(
             db,
             nodes=[n.model_dump() for n in data.nodes],
             parent_id=data.parent_id,
+            dup_policy=data.dup_policy,
         )
         db.commit()
     except ValueError as e:
+        # reject 정책의 중복 충돌 → 409, 그 외(parent 없음 등) → 404
+        if str(e).startswith("duplicate categories:"):
+            raise HTTPException(status_code=409, detail=str(e))
         raise HTTPException(status_code=404, detail=str(e))
     tree = service.list_tree(db, root_id=data.parent_id, include_counts=True)
-    return {"created": created, "skipped": skipped, "tree": tree}
+    return {
+        "created": created,
+        "skipped": skipped,
+        "overwritten": overwritten,
+        "tree": tree,
+    }
 
 
 @router.post("/categories", response_model=CategoryOut, status_code=201)
@@ -387,12 +397,20 @@ def get_set_tree(set_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/sets/{set_id}/load")
-def load_set(set_id: int, db: Session = Depends(get_db)):
+def load_set(
+    set_id: int,
+    data: LoadSetRequest = LoadSetRequest(),
+    db: Session = Depends(get_db),
+):
     try:
-        cleared, loaded = set_service.load_set(db, set_id)
+        cleared, loaded = set_service.load_set(
+            db, set_id, mode=data.mode, dup_policy=data.dup_policy
+        )
         db.commit()
         return {"cleared": cleared, "loaded": loaded}
     except ValueError as e:
+        if str(e).startswith("duplicate categories:"):
+            raise HTTPException(status_code=409, detail=str(e))
         raise HTTPException(status_code=404, detail=str(e))
 
 

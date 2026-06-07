@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
 from api.programming.catalog.models import Quality, PurchaseType
+
+
+DupPolicy = Literal["merge", "overwrite", "reject"]
 
 
 class CategorySetOut(BaseModel):
@@ -94,12 +97,19 @@ class BulkCategoryNode(BaseModel):
 class BulkCategoryCreate(BaseModel):
     nodes: list[BulkCategoryNode] = []
     parent_id: Optional[int] = None
+    dup_policy: DupPolicy = "merge"
 
 
 class BulkCategoryResult(BaseModel):
     created: int
     skipped: int
+    overwritten: int = 0
     tree: list[CategoryTreeNode] = []
+
+
+class LoadSetRequest(BaseModel):
+    mode: Literal["replace", "merge"] = "replace"
+    dup_policy: DupPolicy = "merge"
 
 
 BulkCategoryNode.model_rebuild()
