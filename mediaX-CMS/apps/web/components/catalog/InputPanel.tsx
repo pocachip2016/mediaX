@@ -1,11 +1,13 @@
 "use client"
 
-import { useState } from "react"
-import { FolderPlus } from "lucide-react"
+import { useState, useEffect } from "react"
+import { FolderPlus, Trash2 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import type { CategoryNode } from "@/lib/api"
 import { CATEGORY_PRESETS } from "@/lib/categoryBulkParse"
 import { BulkImportPanel } from "@/components/catalog/BulkImportPanel"
+import { getCustomTemplates, deleteCustomTemplate } from "@/lib/customTemplates"
+import type { CustomTemplate } from "@/lib/customTemplates"
 
 type Tab = "template" | "manual" | "bulk"
 
@@ -71,6 +73,17 @@ export function InputPanel({
 }) {
   const [tab, setTab] = useState<Tab>("template")
   const [bulkText, setBulkText] = useState("")
+  const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>(() =>
+    getCustomTemplates(),
+  )
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setCustomTemplates(getCustomTemplates())
+    }
+    window.addEventListener("storage", handleStorageChange)
+    return () => window.removeEventListener("storage", handleStorageChange)
+  }, [])
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "template", label: "템플릿" },
@@ -80,6 +93,11 @@ export function InputPanel({
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-lg border bg-card">
+      {/* 패널 헤더 */}
+      <div className="shrink-0 border-b px-3 py-2.5">
+        <p className="text-sm font-medium">카테고리 등록</p>
+      </div>
+
       {/* 탭 헤더 */}
       <div className="flex shrink-0 border-b">
         {tabs.map((t) => (
@@ -103,6 +121,8 @@ export function InputPanel({
         {tab === "template" && (
           <div className="p-3 space-y-2">
             <p className="text-xs text-muted-foreground pb-1">프리셋을 선택하면 일괄 탭에 자동 주입됩니다.</p>
+
+            {/* 기본 프리셋 */}
             {CATEGORY_PRESETS.map((preset) => (
               <button
                 key={preset.id}
@@ -116,6 +136,42 @@ export function InputPanel({
                 <p className="mt-0.5 text-xs text-muted-foreground">{preset.description}</p>
               </button>
             ))}
+
+            {/* 커스텀 템플릿 */}
+            {customTemplates.length > 0 && (
+              <>
+                <div className="pt-2 mt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground pb-2">내 템플릿</p>
+                </div>
+                {customTemplates.map((template) => (
+                  <div
+                    key={template.id}
+                    className="flex items-start gap-2 rounded-md border bg-background p-3"
+                  >
+                    <button
+                      onClick={() => {
+                        setBulkText(template.text)
+                        setTab("bulk")
+                      }}
+                      className="flex-1 text-left hover:opacity-80 transition-opacity"
+                    >
+                      <p className="text-sm font-medium">{template.label}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{template.description}</p>
+                    </button>
+                    <button
+                      onClick={() => {
+                        deleteCustomTemplate(template.id)
+                        setCustomTemplates(getCustomTemplates())
+                      }}
+                      title="템플릿 삭제"
+                      className="shrink-0 rounded p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 

@@ -375,6 +375,17 @@ def delete_set(set_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/sets/{set_id}/tree", response_model=list[CategoryTreeNode])
+def get_set_tree(set_id: int, db: Session = Depends(get_db)):
+    from api.programming.catalog.models import CategorySet
+
+    s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
+    if s is None:
+        raise HTTPException(status_code=404, detail=f"set_id={set_id} not found")
+    nodes = service.list_tree_by_set(db, set_id=set_id)
+    return nodes
+
+
 @router.post("/sets/{set_id}/load")
 def load_set(set_id: int, db: Session = Depends(get_db)):
     try:

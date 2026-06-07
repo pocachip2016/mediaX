@@ -1971,6 +1971,9 @@ export const catalogApi = {
       method: "POST",
     }),
 
+  getSetTree: (setId: number) =>
+    request<CategoryNode[]>(`/api/programming/catalog/sets/${setId}/tree`),
+
   // ── 가격 정책 ──────────────────────────────────────────────────────────────
 
   getPriceMatrix: (contentId: number) =>

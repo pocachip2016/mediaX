@@ -254,15 +254,35 @@ def list_tree(
             result.append(d)
         return result
 
-    if root_id is not None:
-        root = db.query(Category).filter(Category.id == root_id, Category.set_id.is_(None)).first()
-        if root is None:
-            return []
-        d = _to_dict(root)
-        d["children"] = _build(root_id)
-        return [d]
 
-    return _build(None)
+def list_tree_by_set(db: Session, set_id: int) -> list[dict]:
+    """특정 세트 소속 카테고리를 중첩 트리로 반환."""
+    id_map: dict[int, dict] = {}
+    all_cats = (
+        db.query(Category)
+        .filter(Category.set_id == set_id)
+        .order_by(Category.sort_order)
+        .all()
+    )
+    for cat in all_cats:
+        id_map[cat.id] = {
+            "id": cat.id,
+            "name": cat.name,
+            "slug": cat.slug,
+            "depth": cat.depth,
+            "sort_order": cat.sort_order,
+            "is_active": cat.is_active,
+            "parent_id": cat.parent_id,
+            "children": [],
+        }
+    roots = []
+    for node in id_map.values():
+        pid = node["parent_id"]
+        if pid is None or pid not in id_map:
+            roots.append(node)
+        else:
+            id_map[pid]["children"].append(node)
+    return roots
 
 
 def map_content(

@@ -15,6 +15,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **feat(catalog-workspace-redesign)** — 3컬럼 레이아웃(InputPanel 탭/프리셋+SetListPanel 작업반영) + SetBar→SetDialogs/SetListPanel 리팩터 + BulkImportPanel onClose 옵셔널 (2026-06-07)
 - [x] **feat(catalog-sets)** — 카테고리 세트 다중 저장 관리 (Step B~E: set_service + router 6종 + SetBar UI + 17테스트 + e2e) (2026-06-07)
 - [x] **feat(catalog-category-workspace)** — 카탈로그 카테고리 트리 워크스페이스 — DnD(@dnd-kit 3존)/BulkImport(indent·path)/TEST데이터 30+노드/인라인 rename/CategoryDetailPanel + CategorySet 모델·0041 마이그레이션 + bulk API(13테스트) (2026-06-07)
 - [x] **dev-catalog-pricing** — 가격 정책 + 홀드백 (1.2.2 + 1.2.3) — BE 4테이블/마이그레이션/pricing·holdback 서비스(25 테스트)/11 API + FE pricing·holdback 2페이지 + typecheck 통과 (2026-06-06)

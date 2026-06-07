@@ -8,11 +8,17 @@ import { Save, X, Check } from "lucide-react"
 export function SaveSetDialog({
   onSave,
   onClose,
+  title,
+  subtitle,
+  initialName,
 }: {
   onSave: (name: string, description?: string) => Promise<void>
   onClose: () => void
+  title?: string
+  subtitle?: string
+  initialName?: string
 }) {
-  const [name, setName] = useState("")
+  const [name, setName] = useState(initialName ?? "")
   const [description, setDescription] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -31,9 +37,9 @@ export function SaveSetDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="mx-4 w-full max-w-sm rounded-lg border bg-card p-5 shadow-xl">
-        <h3 className="font-semibold">세트로 저장</h3>
+        <h3 className="font-semibold">{title ?? "세트로 저장"}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          현재 작업 트리를 새 세트로 스냅샷합니다. 작업 트리는 유지됩니다.
+          {subtitle ?? "현재 작업 트리를 새 세트로 스냅샷합니다. 작업 트리는 유지됩니다."}
         </p>
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           <div>

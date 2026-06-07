@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, Save, Trash2 } from "lucide-react"
+import { RefreshCw, Save, Trash2, BookmarkPlus } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 import { catalogApi, type CategoryNode, type CategorySet, type CategoryCreateRequest, type CategoryUpdateRequest } from "@/lib/api"
 import { CategoryTreeDnd } from "@/components/catalog/CategoryTreeDnd"
@@ -9,6 +9,7 @@ import { CategoryDetailPanel } from "@/components/catalog/CategoryDetailPanel"
 import { InputPanel } from "@/components/catalog/InputPanel"
 import { SetListPanel } from "@/components/catalog/SetListPanel"
 import { SaveSetDialog, ConfirmDialog } from "@/components/catalog/SetDialogs"
+import { addCustomTemplate, serializeTree } from "@/lib/customTemplates"
 
 // ── 페이지 ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,9 @@ export default function CatalogCategoryPage() {
   const [sets, setSets] = useState<CategorySet[]>([])
   const [saveOpen, setSaveOpen] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [templateSaveOpen, setTemplateSaveOpen] = useState(false)
+  const [templateSaveInitialName, setTemplateInitialName] = useState("")
+  const [templateSaveText, setTemplateSaveText] = useState("")
 
   const fetchTree = useCallback(async () => {
     try {
@@ -126,6 +130,33 @@ export default function CatalogCategoryPage() {
     setSelectedNode((prev) => (prev?.id === node.id ? null : node))
   }, [])
 
+  const openTemplateSave = useCallback((initialName: string = "", text?: string) => {
+    setTemplateInitialName(initialName)
+    setTemplateSaveText(text ?? serializeTree(tree))
+    setTemplateSaveOpen(true)
+  }, [tree])
+
+  const handleSaveAsTemplate = useCallback(async (name: string, description?: string) => {
+    try {
+      addCustomTemplate({ label: name, description: description ?? "", text: templateSaveText })
+      setTemplateSaveOpen(false)
+    } catch (e) {
+      console.error("Failed to save template:", e)
+    }
+  }, [templateSaveText])
+
+  const handleSaveSetAsTemplate = useCallback(async (set: CategorySet) => {
+    try {
+      const nodes = await catalogApi.getSetTree(set.id)
+      const text = serializeTree(nodes)
+      setTemplateInitialName(set.name)
+      setTemplateSaveText(text)
+      setTemplateSaveOpen(true)
+    } catch (e) {
+      console.error("Failed to load set tree:", e)
+    }
+  }, [])
+
   return (
     <div className="flex h-full flex-col gap-3 p-6">
       {/* 헤더 */}
@@ -157,52 +188,75 @@ export default function CatalogCategoryPage() {
           />
         </div>
 
-        {/* 중: Draft 작업트리 */}
+        {/* 중: 카테고리 목록 */}
+        <div className="w-80 shrink-0">
+          <SetListPanel
+            sets={sets}
+            onLoad={handleLoadSet}
+            onRename={handleRenameSet}
+            onDelete={handleDeleteSet}
+            onSaveAsTemplate={handleSaveSetAsTemplate}
+          />
+        </div>
+
+        {/* 우: Draft 작업트리 */}
         <div className="flex min-h-0 flex-1 flex-col gap-2">
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-card">
-            {loading ? (
-              <div className="space-y-2 p-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div
-                    key={i}
-                    className="h-6 animate-pulse rounded bg-muted"
-                    style={{ width: `${50 + i * 8}%` }}
-                  />
-                ))}
-              </div>
-            ) : error ? (
-              <div className="flex flex-col items-center gap-2 py-12 text-sm text-destructive">
-                <p>{error}</p>
-                <button
-                  onClick={() => { setLoading(true); void fetchTree() }}
-                  className="text-muted-foreground underline hover:text-foreground"
-                >
-                  다시 시도
-                </button>
-              </div>
-            ) : selectedNode ? (
-              <CategoryDetailPanel
-                node={selectedNode}
-                allNodes={tree}
-                onRefresh={fetchTree}
-                onDeselect={() => setSelectedNode(null)}
-                onAddChild={(parentId) => {
-                  handleAdd("새 카테고리", parentId).catch(() => null)
-                }}
-              />
-            ) : (
-              <div className="p-2">
-                <CategoryTreeDnd
-                  nodes={tree}
-                  onAdd={handleAdd}
-                  onDelete={handleDelete}
-                  onUpdate={handleUpdate}
-                  onSelect={handleSelect}
-                  selectedId={null}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+            <div className="shrink-0 border-b px-3 py-2.5 flex items-center justify-between">
+              <p className="text-sm font-medium">카테고리 작업중</p>
+              <button
+                onClick={() => openTemplateSave()}
+                title="현재 작업트리를 템플릿으로 저장"
+                className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <BookmarkPlus className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="space-y-2 p-4">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div
+                      key={i}
+                      className="h-6 animate-pulse rounded bg-muted"
+                      style={{ width: `${50 + i * 8}%` }}
+                    />
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center gap-2 py-12 text-sm text-destructive">
+                  <p>{error}</p>
+                  <button
+                    onClick={() => { setLoading(true); void fetchTree() }}
+                    className="text-muted-foreground underline hover:text-foreground"
+                  >
+                    다시 시도
+                  </button>
+                </div>
+              ) : selectedNode ? (
+                <CategoryDetailPanel
+                  node={selectedNode}
+                  allNodes={tree}
                   onRefresh={fetchTree}
+                  onDeselect={() => setSelectedNode(null)}
+                  onAddChild={(parentId) => {
+                    handleAdd("새 카테고리", parentId).catch(() => null)
+                  }}
                 />
-              </div>
-            )}
+              ) : (
+                <div className="p-2">
+                  <CategoryTreeDnd
+                    nodes={tree}
+                    onAdd={handleAdd}
+                    onDelete={handleDelete}
+                    onUpdate={handleUpdate}
+                    onSelect={handleSelect}
+                    selectedId={null}
+                    onRefresh={fetchTree}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Draft 하단 액션 바 */}
@@ -237,21 +291,22 @@ export default function CatalogCategoryPage() {
             </div>
           </div>
         </div>
-
-        {/* 우: 저장된 세트 목록 */}
-        <div className="w-80 shrink-0">
-          <SetListPanel
-            sets={sets}
-            onLoad={handleLoadSet}
-            onRename={handleRenameSet}
-            onDelete={handleDeleteSet}
-          />
-        </div>
       </div>
 
       {/* 저장 모달 */}
       {saveOpen && (
         <SaveSetDialog onSave={handleSaveSet} onClose={() => setSaveOpen(false)} />
+      )}
+
+      {/* 템플릿으로 저장 모달 */}
+      {templateSaveOpen && (
+        <SaveSetDialog
+          title="템플릿으로 저장"
+          subtitle="현재 카테고리 구조를 재사용 가능한 템플릿으로 저장합니다."
+          initialName={templateSaveInitialName}
+          onSave={handleSaveAsTemplate}
+          onClose={() => setTemplateSaveOpen(false)}
+        />
       )}
 
       {/* CLEAR 확정 모달 */}
