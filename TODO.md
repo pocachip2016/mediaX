@@ -14,6 +14,9 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **feat(catalog-merge-preview)** — 세트 병합 시 신규/중복 카운트 표시 (preview_load_set + GET /sets/{id}/load-preview + SetListPanel 배지) (2026-06-07)
+- [x] **refactor(bulk-upload-shared)** — upload 폼 BulkUploadForm 공유화 + pipeline 대량(CSV) 동일 기능화 (upload 345→24줄, embed 87→3줄) (2026-06-07)
+- [x] **feat(contents-nav)** — 콘텐츠 관리 메뉴 정비 + 외부 소스 하위 이동 + TMDB/KOBIS/KMDB 백링크 (2026-06-07)
 - [x] **feat(catalog-workspace-ux3)** — Step 2 FE 완료 (api.ts dup_policy/loadSet opts + SaveSetDialog 템플릿 체크박스 + SetListPanel/BulkImportPanel 중복정책 UI + page.tsx 헤더 버튼 제거 + verify.sh 신규 case 3종) (2026-06-08)
 - [x] **feat(catalog-workspace-ux2)** — 네비 카탈로그→카테고리관리/생성 + 건별탭 서브토글(단건/텍스트일괄) + 대량(CSV) 파일전용 + SetListPanel 단일행+클릭 인라인 트리미리보기(◀템플릿저장·▶작업반영) (2026-06-07)
 - [x] **feat(catalog-workspace-ux)** — 3컬럼 헤더(카테고리 등록/목록/작업중) + 컬럼 순서 재배치 + 커스텀 템플릿 CRUD(localStorage·중복Overwrite·즉시반영) + 템플릿저장 버튼(목록카드·작업중헤더) + 카테고리목록 검색/페이징 + BE GET /sets/{id}/tree + 대량(CSV) 파일업로드(드래그&드롭·템플릿다운·txt들여쓰기보존) + 탭/버튼 라벨 정비 (2026-06-07)
