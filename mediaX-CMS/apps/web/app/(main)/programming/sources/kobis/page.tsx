@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database, ChevronLeft, ChevronRight } from "lucide-react"
+import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react"
+import Link from "next/link"
 import {
   kobisApi,
   type ExternalSourceStats,
@@ -178,6 +179,12 @@ export default function KobisPage() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Link href="/programming/sources" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              외부 소스
+            </Link>
+          </div>
           <h2 className="text-2xl font-semibold tracking-tight">KOBIS</h2>
           <p className="text-sm text-muted-foreground mt-1">한국영화진흥위원회 — 매핑 현황 및 콘텐츠 탐색</p>
         </div>

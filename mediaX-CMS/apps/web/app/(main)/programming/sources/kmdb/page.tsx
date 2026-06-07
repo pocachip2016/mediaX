@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database, ChevronLeft, ChevronRight, Film } from "lucide-react"
+import { RefreshCw, Search, X, CheckCircle, XCircle, AlertCircle, Clock, Database, ChevronLeft, ChevronRight, Film, ArrowLeft } from "lucide-react"
 import Image from "next/image"
+import Link from "next/link"
 import {
   kmdbApi,
   type ExternalSourceStats,
@@ -178,6 +179,12 @@ export default function KmdbPage() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Link href="/programming/sources" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              외부 소스
+            </Link>
+          </div>
           <h2 className="text-2xl font-semibold tracking-tight">KMDB</h2>
           <p className="text-sm text-muted-foreground mt-1">한국영상자료원 — 캐시 현황</p>
         </div>

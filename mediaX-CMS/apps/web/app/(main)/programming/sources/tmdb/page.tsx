@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Search, X, ChevronLeft, ChevronRight, RefreshCw, Film, Tv, Database, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { Search, X, ChevronLeft, ChevronRight, RefreshCw, Film, Tv, Database, Clock, CheckCircle, XCircle, AlertCircle, ArrowLeft } from "lucide-react"
 import { tmdbCacheApi, type TmdbCacheStats, type TmdbSyncLogItem, type TmdbCacheRecentItem } from "@/lib/api"
+import Link from "next/link"
 import Image from "next/image"
 
 // ── Mock 데이터 ───────────────────────────────────────────
@@ -217,6 +218,12 @@ export default function TmdbPage() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Link href="/programming/sources" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              외부 소스
+            </Link>
+          </div>
           <h2 className="text-2xl font-semibold tracking-tight">TMDB</h2>
           <p className="text-sm text-muted-foreground mt-1">
             로컬 TMDB 캐시 DB 수집 현황 — 영화 {stats.oldest_movie_year ?? "?"}~{stats.newest_movie_year ?? "?"}
