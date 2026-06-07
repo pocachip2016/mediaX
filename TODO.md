@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-(없음)
+- [ ] **feat(catalog-workspace-ux3)** — Step 2 FE 진행 중 (lib/api.ts dup_policy/loadSet opts 추가 + SaveSetDialog 템플릿 체크박스 + page.tsx 헤더 버튼 제거)
 
 ## Next (이번 마일스톤)
 - [ ] 1.3 큐레이션 모듈 설계 확정
