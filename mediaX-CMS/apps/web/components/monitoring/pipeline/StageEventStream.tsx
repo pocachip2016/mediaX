@@ -133,8 +133,8 @@ export function StageEventStream({ initialLimit = 100 }: StageEventStreamProps) 
             {events.length === 0 ? (
               <tr><td colSpan={8} className="px-2 py-4 text-center text-slate-400">이벤트 없음</td></tr>
             ) : (
-              events.map((ev) => (
-                <tr key={ev.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+              events.map((ev, idx) => (
+                <tr key={`${ev.id}-${idx}`} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <td className="px-2 py-1 text-slate-400 font-mono">{ev.id}</td>
                   <td className="px-2 py-1 text-slate-500 font-mono">
                     {new Date(ev.started_at).toLocaleTimeString("ko-KR", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}

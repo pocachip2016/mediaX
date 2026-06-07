@@ -30,18 +30,15 @@ export const docsNav: NavSection[] = [
         href: "/programming/contents",
         items: [
           { title: "콘텐츠 목록", href: "/programming/contents", label: "NEW" },
-          { title: "콘텐츠등록(단건)", href: "/programming/contents/new", label: "NEW" },
-          { title: "일괄 업로드(bulk)", href: "/programming/contents/upload", label: "NEW" },
           { title: "콘텐츠 등록", href: "/programming/contents/pipeline", label: "NEW" },
-          { title: "외부 검색", href: "/programming/contents/external", label: "NEW" },
-          { title: "AI Review Queue", href: "/programming/contents/review", label: "NEW" },
           {
-            title: "외부 소스",
+            title: "콘텐츠 소스",
             href: "/programming/sources",
             items: [
               { title: "TMDB", href: "/programming/sources/tmdb" },
               { title: "KOBIS", href: "/programming/sources/kobis" },
               { title: "KMDB", href: "/programming/sources/kmdb" },
+              { title: "WebSearch", href: "/programming/contents/external" },
             ],
           },
         ],
@@ -177,6 +174,12 @@ export const docsNav: NavSection[] = [
       {
         title: "파이프라인 로그",
         href: "/monitoring/pipeline/log",
+        label: "NEW",
+        items: [],
+      },
+      {
+        title: "AI Review Queue",
+        href: "/programming/contents/review",
         label: "NEW",
         items: [],
       },
