@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import { Save, X, Check } from "lucide-react"
 
 // ── 저장 모달 ─────────────────────────────────────────────────────────────────
@@ -11,15 +11,18 @@ export function SaveSetDialog({
   title,
   subtitle,
   initialName,
+  allowTemplate,
 }: {
-  onSave: (name: string, description?: string) => Promise<void>
+  onSave: (name: string, description?: string, alsoTemplate?: boolean) => Promise<void>
   onClose: () => void
   title?: string
   subtitle?: string
   initialName?: string
+  allowTemplate?: boolean
 }) {
   const [name, setName] = useState(initialName ?? "")
   const [description, setDescription] = useState("")
+  const [alsoTemplate, setAlsoTemplate] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -27,7 +30,7 @@ export function SaveSetDialog({
     if (!name.trim()) return
     setLoading(true)
     try {
-      await onSave(name.trim(), description.trim() || undefined)
+      await onSave(name.trim(), description.trim() || undefined, allowTemplate ? alsoTemplate : undefined)
       onClose()
     } finally {
       setLoading(false)
@@ -64,6 +67,18 @@ export function SaveSetDialog({
               className="h-8 w-full rounded border border-border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
+          {allowTemplate && (
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={alsoTemplate}
+                onChange={(e) => setAlsoTemplate(e.target.checked)}
+                disabled={loading}
+                className="h-3.5 w-3.5 accent-primary"
+              />
+              이 구조를 재사용 템플릿으로도 저장
+            </label>
+          )}
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
@@ -94,6 +109,7 @@ export function ConfirmDialog({
   title,
   message,
   warning,
+  extra,
   confirmLabel,
   onConfirm,
   onClose,
@@ -101,6 +117,7 @@ export function ConfirmDialog({
   title: string
   message: string
   warning?: string
+  extra?: React.ReactNode
   confirmLabel: string
   onConfirm: () => Promise<void>
   onClose: () => void
@@ -127,6 +144,7 @@ export function ConfirmDialog({
             {warning}
           </div>
         )}
+        {extra && <div className="mt-3">{extra}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onClose}

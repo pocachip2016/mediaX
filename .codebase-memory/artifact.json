@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "commit": "76bee00c27d1a97e6b1fc776f4cda0f5a58dc672",
+    "indexed_at": "2026-06-07T09:36:27Z",
+    "project": "home-ktalpha-Work-mediaX",
+    "nodes": 9102,
+    "edges": 18458,
+    "original_size": 13500416,
+    "compressed_size": 2925435,
+    "compression_level": 9
+}

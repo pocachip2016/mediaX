@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { RefreshCw, Save, Trash2 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { catalogApi, type CategoryNode, type CategorySet, type CategoryCreateRequest, type CategoryUpdateRequest } from "@/lib/api"
+import { catalogApi, type CategoryNode, type CategorySet, type CategoryCreateRequest, type CategoryUpdateRequest, type DupPolicy } from "@/lib/api"
 import { CategoryTreeDnd } from "@/components/catalog/CategoryTreeDnd"
 import { CategoryDetailPanel } from "@/components/catalog/CategoryDetailPanel"
 import { InputPanel } from "@/components/catalog/InputPanel"
@@ -89,11 +89,14 @@ export default function CatalogCategoryPage() {
   }, [fetchTree, fetchSets])
 
   const handleSaveSet = useCallback(
-    async (name: string, description?: string) => {
+    async (name: string, description?: string, alsoTemplate?: boolean) => {
       await catalogApi.commitSet({ name, description })
+      if (alsoTemplate) {
+        addCustomTemplate({ label: name, description: description ?? "", text: serializeTree(tree) })
+      }
       await Promise.all([fetchTree(), fetchSets()])
     },
-    [fetchTree, fetchSets],
+    [fetchTree, fetchSets, tree],
   )
 
   const handleClearDraft = useCallback(async () => {
@@ -103,8 +106,8 @@ export default function CatalogCategoryPage() {
   }, [fetchTree])
 
   const handleLoadSet = useCallback(
-    async (id: number) => {
-      await catalogApi.loadSet(id)
+    async (id: number, opts?: { mode?: "replace" | "merge"; dup_policy?: DupPolicy }) => {
+      await catalogApi.loadSet(id, opts)
       await Promise.all([fetchTree(), fetchSets()])
       setSelectedNode(null)
     },
@@ -130,12 +133,6 @@ export default function CatalogCategoryPage() {
   const handleSelect = useCallback((node: CategoryNode) => {
     setSelectedNode((prev) => (prev?.id === node.id ? null : node))
   }, [])
-
-  const openTemplateSave = useCallback((initialName: string = "", text?: string) => {
-    setTemplateInitialName(initialName)
-    setTemplateSaveText(text ?? serializeTree(tree))
-    setTemplateSaveOpen(true)
-  }, [tree])
 
   const handleSaveAsTemplate = useCallback(async (name: string, description?: string) => {
     const desc = description ?? ""
@@ -206,14 +203,8 @@ export default function CatalogCategoryPage() {
         {/* 우: Draft 작업트리 */}
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
-            <div className="shrink-0 border-b px-3 py-2.5 flex items-center justify-between">
+            <div className="shrink-0 border-b px-3 py-2.5">
               <p className="text-sm font-medium">카테고리 작업중</p>
-              <button
-                onClick={() => openTemplateSave()}
-                className="rounded border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                템플릿저장
-              </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {loading ? (
@@ -303,6 +294,7 @@ export default function CatalogCategoryPage() {
           subtitle="현재 작업 트리를 카테고리 목록에 저장합니다. 작업 트리는 유지됩니다."
           onSave={handleSaveSet}
           onClose={() => setSaveOpen(false)}
+          allowTemplate
         />
       )}
 

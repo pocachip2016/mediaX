@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Upload, X, FileText, Download } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { catalogApi, type CategoryNode } from "@/lib/api"
+import { catalogApi, type CategoryNode, type DupPolicy } from "@/lib/api"
 import {
   parseBulk,
   diffAgainstTree,
@@ -100,6 +100,7 @@ export function BulkImportPanel({
   const [fileRowCount, setFileRowCount] = useState(0)
   const [fileError, setFileError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [dupPolicy, setDupPolicy] = useState<DupPolicy>("merge")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // initialText 변경 시 텍스트 모드로 전환 + 초기화
@@ -181,7 +182,7 @@ export function BulkImportPanel({
     setPhase("committing")
     setCommitError(null)
     try {
-      await catalogApi.bulkCreate({ nodes: parseResult.nodes })
+      await catalogApi.bulkCreate({ nodes: parseResult.nodes, dup_policy: dupPolicy })
       await onCommit()
       onClose?.()
     } catch (err) {
@@ -416,6 +417,22 @@ export function BulkImportPanel({
                 {" · "}중복 skip{" "}
                 <span className="font-medium text-yellow-600">{diffResult.dupCount}건</span>
               </p>
+              {/* 중복 정책 선택 */}
+              <div className="flex rounded-md border overflow-hidden text-xs">
+                {(["merge", "overwrite", "reject"] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setDupPolicy(p)}
+                    className={cn(
+                      "flex-1 py-1 font-medium transition-colors",
+                      dupPolicy === p ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    {p === "merge" ? "중복skip" : p === "overwrite" ? "덮어쓰기" : "거부"}
+                  </button>
+                ))}
+              </div>
               {commitError && <p className="text-xs text-destructive">{commitError}</p>}
               <div className="flex gap-2">
                 <button
@@ -426,7 +443,7 @@ export function BulkImportPanel({
                 </button>
                 <button
                   onClick={() => void handleCommit()}
-                  disabled={diffResult.newCount === 0}
+                  disabled={dupPolicy === "merge" && diffResult.newCount === 0}
                   className="flex-1 rounded bg-primary py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
                   트리에 반영

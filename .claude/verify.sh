@@ -6216,11 +6216,63 @@ for r in required:
     echo "=== PASS ==="
     ;;
 
+  # ── catalog-workspace-ux3 steps ──────────────────────────────────────────────
+  catalog-workspace-ux3-api)
+    echo "=== catalog-workspace-ux3-api: DupPolicy 타입 + overwritten + loadSet opts + typecheck ==="
+    FE="$SCRIPT_DIR/../mediaX-CMS"
+    WEB="$FE/apps/web"
+    echo "--- DupPolicy 타입 확인 ---"
+    grep -q 'DupPolicy' "$WEB/lib/api.ts" || { echo "FAIL: DupPolicy 없음"; exit 1; }
+    echo "--- BulkCategoryResult.overwritten 확인 ---"
+    grep -q 'overwritten' "$WEB/lib/api.ts" || { echo "FAIL: overwritten 필드 없음"; exit 1; }
+    echo "--- bulkCreate dup_policy 확인 ---"
+    grep -q 'dup_policy.*DupPolicy' "$WEB/lib/api.ts" || { echo "FAIL: bulkCreate dup_policy 없음"; exit 1; }
+    echo "--- loadSet opts 확인 ---"
+    grep -q 'loadSet.*opts' "$WEB/lib/api.ts" || { echo "FAIL: loadSet opts 없음"; exit 1; }
+    echo "--- typecheck ---"
+    cd "$FE" && npm run typecheck 2>&1 | tail -10
+    echo "=== PASS ==="
+    ;;
+
+  catalog-workspace-ux3-template)
+    echo "=== catalog-workspace-ux3-template: allowTemplate + 헤더 버튼 제거 + typecheck ==="
+    FE="$SCRIPT_DIR/../mediaX-CMS"
+    WEB="$FE/apps/web"
+    echo "--- SaveSetDialog allowTemplate prop 확인 ---"
+    grep -q 'allowTemplate' "$WEB/components/catalog/SetDialogs.tsx" || { echo "FAIL: allowTemplate 없음"; exit 1; }
+    echo "--- page.tsx 작업중 헤더 템플릿저장 버튼 제거 확인 ---"
+    grep -q '템플릿저장' "$WEB/app/(main)/programming/catalog/page.tsx" \
+      && { echo "FAIL: 작업중 헤더 템플릿저장 버튼이 아직 page.tsx에 남아있음"; exit 1; } || true
+    echo "--- SetListPanel 행 템플릿저장 유지 확인 ---"
+    grep -q '템플릿저장' "$WEB/components/catalog/SetListPanel.tsx" || { echo "FAIL: SetListPanel 행 템플릿저장 없음"; exit 1; }
+    echo "--- typecheck ---"
+    cd "$FE" && npm run typecheck 2>&1 | tail -10
+    echo "=== PASS ==="
+    ;;
+
+  catalog-workspace-ux3-dup)
+    echo "=== catalog-workspace-ux3-dup: BulkImportPanel dupPolicy + SetListPanel mode + ConfirmDialog extra + typecheck ==="
+    FE="$SCRIPT_DIR/../mediaX-CMS"
+    WEB="$FE/apps/web"
+    echo "--- BulkImportPanel dupPolicy state 확인 ---"
+    grep -q 'dupPolicy' "$WEB/components/catalog/BulkImportPanel.tsx" || { echo "FAIL: BulkImportPanel dupPolicy 없음"; exit 1; }
+    echo "--- BulkImportPanel bulkCreate dup_policy 전달 확인 ---"
+    grep -q 'dup_policy.*dupPolicy' "$WEB/components/catalog/BulkImportPanel.tsx" || { echo "FAIL: BulkImportPanel dup_policy 전달 없음"; exit 1; }
+    echo "--- SetListPanel mode 셀렉터 확인 ---"
+    grep -q '"replace"' "$WEB/components/catalog/SetListPanel.tsx" || { echo "FAIL: SetListPanel mode 없음"; exit 1; }
+    echo "--- ConfirmDialog extra slot 확인 ---"
+    grep -q 'extra' "$WEB/components/catalog/SetDialogs.tsx" || { echo "FAIL: ConfirmDialog extra 없음"; exit 1; }
+    echo "--- typecheck ---"
+    cd "$FE" && npm run typecheck 2>&1 | tail -10
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
     echo "  dev-catalog-pricing: 2.1~2.6 또는 pricing-holdback-models, pricing-holdback-migration, pricing-service, holdback-service, catalog-pricing-api, catalog-pricing-fe"
     echo "  catalog-sets: catalog-sets-api, catalog-sets-fe-api, catalog-sets-fe, catalog-sets-e2e"
+    echo "  catalog-workspace-ux3: catalog-workspace-ux3-api, catalog-workspace-ux3-template, catalog-workspace-ux3-dup"
     exit 1
     ;;
 esac

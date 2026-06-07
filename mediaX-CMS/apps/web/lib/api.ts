@@ -1838,9 +1838,12 @@ export interface BulkCategoryNode {
   children?: BulkCategoryNode[]
 }
 
+export type DupPolicy = "merge" | "overwrite" | "reject"
+
 export interface BulkCategoryResult {
   created: number
   skipped: number
+  overwritten: number
   tree: CategoryNode[]
 }
 
@@ -1929,7 +1932,7 @@ export const catalogApi = {
       body: JSON.stringify(data),
     }),
 
-  bulkCreate: (data: { nodes: BulkCategoryNode[]; parent_id?: number | null }) =>
+  bulkCreate: (data: { nodes: BulkCategoryNode[]; parent_id?: number | null; dup_policy?: DupPolicy }) =>
     request<BulkCategoryResult>("/api/programming/catalog/categories/bulk", {
       method: "POST",
       body: JSON.stringify(data),
@@ -1961,8 +1964,9 @@ export const catalogApi = {
   deleteSet: (id: number) =>
     request<void>(`/api/programming/catalog/sets/${id}`, { method: "DELETE" }),
 
-  loadSet: (id: number) =>
+  loadSet: (id: number, opts?: { mode?: "replace" | "merge"; dup_policy?: DupPolicy }) =>
     request<{ cleared: number; loaded: number }>(`/api/programming/catalog/sets/${id}/load`, {
+      ...(opts ? { body: JSON.stringify(opts) } : {}),
       method: "POST",
     }),
 

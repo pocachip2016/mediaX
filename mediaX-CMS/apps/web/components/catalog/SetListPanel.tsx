@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { ChevronRight, Pencil, Trash2, Play, Search, FolderOpen } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { catalogApi, type CategorySet, type CategoryNode } from "@/lib/api"
+import { catalogApi, type CategorySet, type CategoryNode, type DupPolicy } from "@/lib/api"
 import { serializeTree } from "@/lib/customTemplates"
 import { ConfirmDialog, InlineRename } from "@/components/catalog/SetDialogs"
+
+type LoadMode = "replace" | "merge"
 
 const PAGE_SIZE = 10
 
@@ -17,7 +19,7 @@ export function SetListPanel({
   onSaveAsTemplate,
 }: {
   sets: CategorySet[]
-  onLoad: (id: number) => Promise<void>
+  onLoad: (id: number, opts?: { mode?: LoadMode; dup_policy?: DupPolicy }) => Promise<void>
   onRename: (id: number, name: string) => Promise<void>
   onDelete: (id: number) => Promise<void>
   onSaveAsTemplate: (set: CategorySet) => void
@@ -25,6 +27,8 @@ export function SetListPanel({
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [confirmLoad, setConfirmLoad] = useState<CategorySet | null>(null)
+  const [loadMode, setLoadMode] = useState<LoadMode>("replace")
+  const [loadDupPolicy, setLoadDupPolicy] = useState<DupPolicy>("merge")
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [page, setPage] = useState(0)
@@ -124,11 +128,47 @@ export function SetListPanel({
       {confirmLoad && (
         <ConfirmDialog
           title={`"${confirmLoad.name}" 작업반영`}
-          message="세트를 불러오면 현재 작업 트리가 교체됩니다."
-          warning="현재 작업 트리의 모든 카테고리가 사라집니다. 필요하면 먼저 현재 트리를 카테고리저장하세요."
+          message="세트를 불러올 방식을 선택하세요."
+          warning={loadMode === "replace" ? "현재 작업 트리의 모든 카테고리가 사라집니다. 필요하면 먼저 현재 트리를 카테고리저장하세요." : undefined}
           confirmLabel="작업반영"
-          onConfirm={() => onLoad(confirmLoad.id)}
+          onConfirm={() => onLoad(confirmLoad.id, { mode: loadMode, dup_policy: loadMode === "merge" ? loadDupPolicy : undefined })}
           onClose={() => setConfirmLoad(null)}
+          extra={
+            <div className="space-y-2 text-xs">
+              <div className="flex rounded-md border overflow-hidden">
+                {(["replace", "merge"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setLoadMode(m)}
+                    className={cn(
+                      "flex-1 py-1.5 text-xs font-medium transition-colors",
+                      loadMode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    {m === "replace" ? "전체교체" : "병합"}
+                  </button>
+                ))}
+              </div>
+              {loadMode === "merge" && (
+                <div className="flex rounded-md border overflow-hidden">
+                  {(["merge", "overwrite", "reject"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setLoadDupPolicy(p)}
+                      className={cn(
+                        "flex-1 py-1.5 text-xs font-medium transition-colors",
+                        loadDupPolicy === p ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:bg-muted",
+                      )}
+                    >
+                      {p === "merge" ? "중복skip" : p === "overwrite" ? "덮어쓰기" : "거부"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          }
         />
       )}
 

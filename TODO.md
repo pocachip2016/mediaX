@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] **feat(catalog-workspace-ux3)** — Step 2 FE 진행 중 (lib/api.ts dup_policy/loadSet opts 추가 + SaveSetDialog 템플릿 체크박스 + page.tsx 헤더 버튼 제거)
+(없음)
 
 ## Next (이번 마일스톤)
 - [ ] 1.3 큐레이션 모듈 설계 확정
@@ -14,6 +14,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **feat(catalog-workspace-ux3)** — Step 2 FE 완료 (api.ts dup_policy/loadSet opts + SaveSetDialog 템플릿 체크박스 + SetListPanel/BulkImportPanel 중복정책 UI + page.tsx 헤더 버튼 제거 + verify.sh 신규 case 3종) (2026-06-08)
 - [x] **feat(catalog-workspace-ux2)** — 네비 카탈로그→카테고리관리/생성 + 건별탭 서브토글(단건/텍스트일괄) + 대량(CSV) 파일전용 + SetListPanel 단일행+클릭 인라인 트리미리보기(◀템플릿저장·▶작업반영) (2026-06-07)
 - [x] **feat(catalog-workspace-ux)** — 3컬럼 헤더(카테고리 등록/목록/작업중) + 컬럼 순서 재배치 + 커스텀 템플릿 CRUD(localStorage·중복Overwrite·즉시반영) + 템플릿저장 버튼(목록카드·작업중헤더) + 카테고리목록 검색/페이징 + BE GET /sets/{id}/tree + 대량(CSV) 파일업로드(드래그&드롭·템플릿다운·txt들여쓰기보존) + 탭/버튼 라벨 정비 (2026-06-07)
 - [x] **feat(catalog-workspace-redesign)** — 3컬럼 레이아웃(InputPanel 탭/프리셋+SetListPanel 작업반영) + SetBar→SetDialogs/SetListPanel 리팩터 + BulkImportPanel onClose 옵셔널 (2026-06-07)
