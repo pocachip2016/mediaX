@@ -78,15 +78,17 @@ function csvToPathText(raw: string, filename: string): { text: string; rowCount:
 export function BulkImportPanel({
   existingTree,
   initialText = "",
+  lockedMode,
   onClose,
   onCommit,
 }: {
   existingTree: CategoryNode[]
   initialText?: string
+  lockedMode?: InputMode
   onClose?: () => void
   onCommit: () => Promise<void>
 }) {
-  const [inputMode, setInputMode] = useState<InputMode>("file")
+  const [inputMode, setInputMode] = useState<InputMode>(lockedMode ?? "file")
   const [text, setText] = useState(initialText)
   const [phase, setPhase] = useState<Phase>("input")
   const [parseResult, setParseResult] = useState<ParseResult | null>(null)
@@ -210,8 +212,8 @@ export function BulkImportPanel({
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3">
 
-            {/* 모드 토글 (input 단계만) */}
-            {phase === "input" && (
+            {/* 모드 토글 (input 단계, lockedMode 없을 때만) */}
+            {phase === "input" && !lockedMode && (
               <div className="flex rounded-md border overflow-hidden shrink-0">
                 <button
                   onClick={() => { setInputMode("file"); resetInput() }}

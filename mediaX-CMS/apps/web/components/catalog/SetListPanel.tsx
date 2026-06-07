@@ -1,8 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { Pencil, Trash2, FolderOpen, Play, Search } from "lucide-react"
-import type { CategorySet } from "@/lib/api"
+import { useState, useEffect } from "react"
+import { ChevronRight, Pencil, Trash2, Play, Search, FolderOpen } from "lucide-react"
+import { cn } from "@workspace/ui/lib/utils"
+import { catalogApi, type CategorySet, type CategoryNode } from "@/lib/api"
+import { serializeTree } from "@/lib/customTemplates"
 import { ConfirmDialog, InlineRename } from "@/components/catalog/SetDialogs"
 
 const PAGE_SIZE = 10
@@ -20,8 +22,9 @@ export function SetListPanel({
   onDelete: (id: number) => Promise<void>
   onSaveAsTemplate: (set: CategorySet) => void
 }) {
-  const [confirmLoad, setConfirmLoad] = useState<CategorySet | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
   const [renamingId, setRenamingId] = useState<number | null>(null)
+  const [confirmLoad, setConfirmLoad] = useState<CategorySet | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [page, setPage] = useState(0)
@@ -38,6 +41,11 @@ export function SetListPanel({
   const handleSearchChange = (v: string) => {
     setSearchQuery(v)
     setPage(0)
+  }
+
+  const handleRowClick = (id: number) => {
+    setSelectedId((prev) => (prev === id ? null : id))
+    setRenamingId(null)
   }
 
   return (
@@ -61,22 +69,24 @@ export function SetListPanel({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-2">
+        <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {pagedSets.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
               <FolderOpen className="h-8 w-8 opacity-20" />
               <p className="text-xs text-center">
-                {searchQuery ? "검색 결과가 없습니다." : "저장된 세트가 없습니다.\n작업 트리를 세트로 저장하세요."}
+                {searchQuery ? "검색 결과가 없습니다." : "저장된 세트가 없습니다."}
               </p>
             </div>
           ) : (
             pagedSets.map((s) => (
-              <SetCard
+              <SetRow
                 key={s.id}
                 set={s}
+                isSelected={selectedId === s.id}
                 isRenaming={renamingId === s.id}
+                onSelect={() => handleRowClick(s.id)}
                 onLoad={() => setConfirmLoad(s)}
-                onRenameStart={() => setRenamingId(s.id)}
+                onRenameStart={() => { setRenamingId(s.id); setSelectedId(s.id) }}
                 onRenameCancel={() => setRenamingId(null)}
                 onRenameSave={async (name) => { await onRename(s.id, name); setRenamingId(null) }}
                 onDeleteStart={() => setDeletingId(s.id)}
@@ -115,14 +125,14 @@ export function SetListPanel({
         <ConfirmDialog
           title={`"${confirmLoad.name}" 작업반영`}
           message="세트를 불러오면 현재 작업 트리가 교체됩니다."
-          warning="현재 작업 트리의 모든 카테고리가 사라집니다. 필요하면 먼저 현재 트리를 세트로 저장하세요."
+          warning="현재 작업 트리의 모든 카테고리가 사라집니다. 필요하면 먼저 현재 트리를 카테고리저장하세요."
           confirmLabel="작업반영"
           onConfirm={() => onLoad(confirmLoad.id)}
           onClose={() => setConfirmLoad(null)}
         />
       )}
 
-      {/* 세트 삭제 확정 모달 */}
+      {/* 삭제 확정 모달 */}
       {deletingId !== null && (() => {
         const target = sets.find((s) => s.id === deletingId)
         if (!target) return null
@@ -140,11 +150,13 @@ export function SetListPanel({
   )
 }
 
-// ── 세트 카드 ─────────────────────────────────────────────────────────────────
+// ── 목록 행 ───────────────────────────────────────────────────────────────────
 
-function SetCard({
+function SetRow({
   set,
+  isSelected,
   isRenaming,
+  onSelect,
   onLoad,
   onRenameStart,
   onRenameCancel,
@@ -153,7 +165,9 @@ function SetCard({
   onSaveAsTemplate,
 }: {
   set: CategorySet
+  isSelected: boolean
   isRenaming: boolean
+  onSelect: () => void
   onLoad: () => void
   onRenameStart: () => void
   onRenameCancel: () => void
@@ -161,72 +175,109 @@ function SetCard({
   onDeleteStart: () => void
   onSaveAsTemplate: () => void
 }) {
+  const [treeText, setTreeText] = useState<string | null>(null)
+  const [treeLoading, setTreeLoading] = useState(false)
+
+  useEffect(() => {
+    if (!isSelected) return
+    if (treeText !== null) return
+    setTreeLoading(true)
+    catalogApi
+      .getSetTree(set.id)
+      .then((nodes: CategoryNode[]) => setTreeText(serializeTree(nodes) || "(비어 있음)"))
+      .catch(() => setTreeText("⚠ 트리 로드 실패"))
+      .finally(() => setTreeLoading(false))
+  }, [isSelected, set.id, treeText])
+
   const d = set.created_at ? new Date(set.created_at) : null
   const dateStr = d
-    ? `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`
+    ? `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`
     : "—"
 
   return (
-    <div className="rounded-md border bg-background p-3 space-y-2">
-      {/* 이름 행 */}
-      <div className="flex items-start justify-between gap-1">
-        {isRenaming ? (
-          <InlineRename
-            initialName={set.name}
-            onSave={onRenameSave}
-            onCancel={onRenameCancel}
-          />
-        ) : (
-          <p className="text-sm font-medium leading-tight break-all">{set.name}</p>
+    <div>
+      {/* 단일 행 */}
+      <button
+        onClick={onSelect}
+        className={cn(
+          "flex w-full items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-muted/60",
+          isSelected && "bg-muted",
         )}
-        {!isRenaming && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              onClick={onRenameStart}
-              title="이름 변경"
-              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <Pencil className="h-3 w-3" />
-            </button>
-            <button
-              onClick={onDeleteStart}
-              title="삭제"
-              className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
+      >
+        <ChevronRight
+          className={cn(
+            "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+            isSelected && "rotate-90",
+          )}
+        />
+        <span className="flex-1 truncate text-sm">{set.name}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{set.category_count}개</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{dateStr}</span>
+      </button>
+
+      {/* 인라인 미리보기 */}
+      {isSelected && (
+        <div className="mx-2 mb-1 rounded-md border bg-background">
+          {/* 액션 바 */}
+          {isRenaming ? (
+            <div className="p-2">
+              <InlineRename
+                initialName={set.name}
+                onSave={onRenameSave}
+                onCancel={onRenameCancel}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 border-b px-2 py-1.5">
+              {/* 템플릿저장 — 가장 왼쪽 */}
+              <button
+                onClick={onSaveAsTemplate}
+                className="flex items-center gap-0.5 rounded border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Play className="h-3 w-3 scale-x-[-1]" />
+                템플릿저장
+              </button>
+              {/* 편집 액션 */}
+              <button
+                onClick={onRenameStart}
+                title="이름 변경"
+                className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+              <button
+                onClick={onDeleteStart}
+                title="삭제"
+                className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+              {/* 작업반영 — 오른쪽 끝 */}
+              <button
+                onClick={onLoad}
+                className="ml-auto flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+              >
+                <Play className="h-3 w-3" />
+                작업반영
+              </button>
+            </div>
+          )}
+
+          {/* 트리 미리보기 */}
+          <div className="max-h-52 overflow-y-auto p-2">
+            {set.description && (
+              <p className="mb-1.5 text-[10px] text-muted-foreground leading-snug">{set.description}</p>
+            )}
+            {treeLoading ? (
+              <p className="text-[10px] text-muted-foreground animate-pulse">로딩 중…</p>
+            ) : (
+              <pre className="whitespace-pre font-mono text-[10px] leading-[1.6] text-foreground/80">
+                {treeText}
+              </pre>
+            )}
           </div>
-        )}
-      </div>
-
-      {/* 설명 */}
-      {set.description && (
-        <p className="text-xs text-muted-foreground leading-snug">{set.description}</p>
+        </div>
       )}
-
-      {/* 메타 */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">{set.category_count}개</span>
-        <span>·</span>
-        <span>{dateStr}</span>
-      </div>
-
-      {/* 하단 액션 버튼 */}
-      <div className="flex gap-1.5">
-        <button
-          onClick={onSaveAsTemplate}
-          className="flex flex-1 items-center justify-center gap-1 rounded-md border py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        >
-          템플릿저장
-        </button>
-        <button
-          onClick={onLoad}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary/10 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
-        >
-          <Play className="h-3 w-3" />
-          작업반영
-        </button>
-      </div>
     </div>
   )
 }

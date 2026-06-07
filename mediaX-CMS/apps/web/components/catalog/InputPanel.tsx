@@ -73,6 +73,7 @@ export function InputPanel({
 }) {
   const [tab, setTab] = useState<Tab>("template")
   const [bulkText, setBulkText] = useState("")
+  const [manualSubTab, setManualSubTab] = useState<"single" | "text">("single")
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>(() =>
     getCustomTemplates(),
   )
@@ -132,7 +133,8 @@ export function InputPanel({
                 key={preset.id}
                 onClick={() => {
                   setBulkText(preset.text)
-                  setTab("bulk")
+                  setTab("manual")
+                  setManualSubTab("text")
                 }}
                 className="w-full rounded-md border bg-background p-3 text-left hover:bg-muted transition-colors"
               >
@@ -172,7 +174,8 @@ export function InputPanel({
                     <button
                       onClick={() => {
                         setBulkText(template.text)
-                        setTab("bulk")
+                        setTab("manual")
+                        setManualSubTab("text")
                       }}
                       className="flex-1 text-left hover:opacity-80 transition-opacity"
                     >
@@ -197,13 +200,43 @@ export function InputPanel({
         )}
 
         {tab === "manual" && (
-          <ManualAddForm onAddRoot={onAddRoot} />
+          <div className="flex h-full flex-col">
+            {/* 서브토글 */}
+            <div className="flex shrink-0 border-b">
+              {(["single", "text"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setManualSubTab(m)}
+                  className={cn(
+                    "flex-1 py-1.5 text-xs font-medium transition-colors",
+                    manualSubTab === m
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {m === "single" ? "단건 추가" : "텍스트 일괄"}
+                </button>
+              ))}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {manualSubTab === "single" ? (
+                <ManualAddForm onAddRoot={onAddRoot} />
+              ) : (
+                <BulkImportPanel
+                  existingTree={existingTree}
+                  initialText={bulkText}
+                  lockedMode="text"
+                  onCommit={onCommit}
+                />
+              )}
+            </div>
+          </div>
         )}
 
         {tab === "bulk" && (
           <BulkImportPanel
             existingTree={existingTree}
-            initialText={bulkText}
+            lockedMode="file"
             onCommit={onCommit}
           />
         )}
