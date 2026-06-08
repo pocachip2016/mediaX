@@ -36,11 +36,14 @@ router = APIRouter()
 
 
 def _get_category_or_404(db: Session, category_id: int):
-    from api.programming.catalog.models import Category
-    cat = db.query(Category).filter(Category.id == category_id).first()
-    if cat is None:
+    from api.programming.scheduling.models import NodeKind, ProgrammingNode
+    node = db.query(ProgrammingNode).filter(
+        ProgrammingNode.id == category_id,
+        ProgrammingNode.kind == NodeKind.container,
+    ).first()
+    if node is None:
         raise HTTPException(status_code=404, detail=f"Category {category_id} not found")
-    return cat
+    return node
 
 
 # ── 카테고리 트리 ──────────────────────────────────────────────────────────────
@@ -86,10 +89,13 @@ def create_category(data: CategoryCreate, db: Session = Depends(get_db)):
             db, name=data.name, parent_id=data.parent_id, sort_order=data.sort_order
         )
         if data.slug is not None:
-            cat.slug = data.slug
-            db.flush()
+            from api.programming.scheduling.models import ProgrammingNode
+            node = db.query(ProgrammingNode).filter(ProgrammingNode.id == cat.id).first()
+            if node:
+                node.slug = data.slug
+                db.flush()
+                cat.slug = data.slug
         db.commit()
-        db.refresh(cat)
         return cat
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -99,19 +105,30 @@ def create_category(data: CategoryCreate, db: Session = Depends(get_db)):
 def update_category(category_id: int, data: CategoryUpdate, db: Session = Depends(get_db)):
     _get_category_or_404(db, category_id)
     try:
+        from api.programming.scheduling.models import ProgrammingLink, ProgrammingNode
+        node = db.query(ProgrammingNode).filter(ProgrammingNode.id == category_id).first()
         if data.name is not None:
-            service.rename_category(db, category_id, data.name)
+            node.name = data.name
         if data.is_active is not None:
-            service.set_active(db, category_id, data.is_active)
-        from api.programming.catalog.models import Category
-        cat = db.query(Category).filter(Category.id == category_id).first()
+            node.is_active = data.is_active
         if data.slug is not None:
-            cat.slug = data.slug
+            node.slug = data.slug
         if data.sort_order is not None:
-            cat.sort_order = data.sort_order
+            lnk = db.query(ProgrammingLink).filter(
+                ProgrammingLink.child_node_id == category_id,
+                ProgrammingLink.child_type == "node",
+            ).first()
+            if lnk:
+                lnk.sort_order = data.sort_order
+        db.flush()
         db.commit()
-        db.refresh(cat)
-        return cat
+        lnk = service._incoming_link(db, category_id)
+        return service._cat_view(
+            node,
+            depth=service._get_node_depth(db, category_id),
+            sort_order=lnk.sort_order if lnk else 0,
+            parent_id=lnk.parent_node_id if lnk else None,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -129,7 +146,6 @@ def move_category(
             new_sort_order=data.new_sort_order,
         )
         db.commit()
-        db.refresh(cat)
         return cat
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -143,7 +159,6 @@ def merge_category(
     try:
         cat = service.merge_category(db, category_id, data.target_id)
         db.commit()
-        db.refresh(cat)
         return cat
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -169,13 +184,23 @@ def delete_category(
 def map_content_categories(
     content_id: int, data: ContentMapRequest, db: Session = Depends(get_db)
 ):
-    rows = service.map_content(
+    links = service.map_content(
         db, content_id, data.category_ids, primary_id=data.primary_id
     )
+    db.flush()
+    result = [
+        {
+            "id": lnk.id,
+            "content_id": lnk.child_content_id,
+            "category_id": lnk.parent_node_id,
+            "sort_order": lnk.sort_order,
+            "is_primary": (lnk.child_content_id == data.primary_id),
+            "created_at": lnk.created_at,
+        }
+        for lnk in links
+    ]
     db.commit()
-    for r in rows:
-        db.refresh(r)
-    return rows
+    return result
 
 
 @router.delete("/contents/{content_id}/categories/{category_id}", status_code=204)
@@ -192,11 +217,26 @@ def unmap_content_category(
 @router.get("/categories/{category_id}/contents", response_model=list[ContentCategoryOut])
 def get_category_contents(category_id: int, db: Session = Depends(get_db)):
     _get_category_or_404(db, category_id)
-    from api.programming.catalog.models import ContentCategory
-    rows = db.query(ContentCategory).filter(
-        ContentCategory.category_id == category_id
-    ).all()
-    return rows
+    from api.programming.scheduling.models import ChildType, ProgrammingLink
+    links = (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.parent_node_id == category_id,
+            ProgrammingLink.child_type == ChildType.content,
+        )
+        .all()
+    )
+    return [
+        {
+            "id": lnk.id,
+            "content_id": lnk.child_content_id,
+            "category_id": lnk.parent_node_id,
+            "sort_order": lnk.sort_order,
+            "is_primary": False,
+            "created_at": lnk.created_at,
+        }
+        for lnk in links
+    ]
 
 
 # ── 가격 정책 ─────────────────────────────────────────────────────────────────
@@ -387,9 +427,9 @@ def delete_set(set_id: int, db: Session = Depends(get_db)):
 
 @router.get("/sets/{set_id}/tree", response_model=list[CategoryTreeNode])
 def get_set_tree(set_id: int, db: Session = Depends(get_db)):
-    from api.programming.catalog.models import CategorySet
+    from api.programming.scheduling.models import ProgrammingNodeSet
 
-    s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
+    s = db.query(ProgrammingNodeSet).filter(ProgrammingNodeSet.id == set_id).first()
     if s is None:
         raise HTTPException(status_code=404, detail=f"set_id={set_id} not found")
     nodes = service.list_tree_by_set(db, set_id=set_id)

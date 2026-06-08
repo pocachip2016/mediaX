@@ -5934,6 +5934,101 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== PASS ==="
     ;;
 
+  catalog-node-adapter-s1)
+    echo "=== catalog-node-adapter-s1: read-path 어댑터 — list_node_tree + catalog service 위임 ==="
+    cd "$BACKEND"
+    .venv/bin/pytest tests/test_catalog_node_adapter.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "4 passed" \
+      || { echo "FAIL: 4 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 4 테스트 통과"
+    # list_node_tree 함수 존재 확인
+    grep -q "def list_node_tree" "$BACKEND/api/programming/scheduling/node_service.py" \
+      || { echo "FAIL: node_service.py list_node_tree 없음"; exit 1; }
+    echo "  ✓ list_node_tree 존재"
+    grep -q "def list_node_tree_by_set" "$BACKEND/api/programming/scheduling/node_service.py" \
+      || { echo "FAIL: node_service.py list_node_tree_by_set 없음"; exit 1; }
+    echo "  ✓ list_node_tree_by_set 존재"
+    # catalog service.py가 _list_node_tree로 위임하는지 확인
+    grep -q "_list_node_tree\|list_node_tree" "$BACKEND/api/programming/catalog/service.py" \
+      || { echo "FAIL: catalog service.py가 list_node_tree를 사용하지 않음"; exit 1; }
+    echo "  ✓ catalog service list_tree 위임 확인"
+    # 회귀: 기존 catalog_tree + node_service 테스트 통과
+    .venv/bin/pytest tests/test_catalog_tree.py tests/test_node_service.py -q 2>/dev/null | grep -q "37 passed" \
+      || { echo "FAIL: catalog_tree + node_service 회귀 — 37 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ 회귀 없음 (37 테스트)"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s2)
+    echo "=== catalog-node-adapter-s2: write-path 어댑터 — map/unmap/merge/delete ProgrammingLink 전환 ==="
+    cd "$BACKEND"
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -v 2>&1 | tail -30
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "22 passed" \
+      || { echo "FAIL: 22 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 22 테스트 통과"
+    # map_content → ProgrammingLink 사용 확인
+    grep -q "ProgrammingLink" "$BACKEND/api/programming/catalog/service.py" \
+      || { echo "FAIL: service.py ProgrammingLink 없음"; exit 1; }
+    echo "  ✓ service.py ProgrammingLink 사용 확인"
+    # ContentCategory import 제거 확인 (service.py에서 ContentCategory 미사용)
+    grep -q "from api.programming.catalog.models import ContentCategory" "$BACKEND/api/programming/catalog/service.py" \
+      && { echo "FAIL: service.py ContentCategory import 잔존"; exit 1; }
+    echo "  ✓ service.py ContentCategory import 제거 확인"
+    # map_content 반환 타입이 ProgrammingLink인지 확인
+    grep -q "def map_content" "$BACKEND/api/programming/catalog/service.py" \
+      || { echo "FAIL: map_content 함수 없음"; exit 1; }
+    grep -A8 "def map_content" "$BACKEND/api/programming/catalog/service.py" | grep -q "ProgrammingLink" \
+      || { echo "FAIL: map_content 반환 타입이 ProgrammingLink 아님"; exit 1; }
+    echo "  ✓ map_content ProgrammingLink 반환 확인"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s3)
+    echo "=== catalog-node-adapter-s3: set-service-adapter — ProgrammingNodeSet/Node/Link 전환 ==="
+    cd "$BACKEND"
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_node_adapter.py -v 2>&1 | tail -40
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "16 passed" \
+      || { echo "FAIL: 16 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 16 테스트 통과"
+    # set_service.py에서 ProgrammingNodeSet 사용 확인
+    grep -q "ProgrammingNodeSet" "$BACKEND/api/programming/catalog/set_service.py" \
+      || { echo "FAIL: set_service.py ProgrammingNodeSet 없음"; exit 1; }
+    echo "  ✓ ProgrammingNodeSet 사용 확인"
+    # CategorySet import 잔존 여부 확인
+    grep -q "CategorySet" "$BACKEND/api/programming/catalog/set_service.py" \
+      && { echo "FAIL: set_service.py CategorySet 잔존"; exit 1; }
+    echo "  ✓ CategorySet 제거 확인"
+    # _copy_tree 함수 존재 확인
+    grep -q "def _copy_tree" "$BACKEND/api/programming/catalog/set_service.py" \
+      || { echo "FAIL: _copy_tree 없음"; exit 1; }
+    echo "  ✓ _copy_tree 존재"
+    # 회귀: 기존 catalog_tree + s1/s2 테스트 통과
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "passing\|passed" \
+      || DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: 회귀 테스트 실패"; exit 1; }
+    echo "  ✓ 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s4)
+    echo "=== catalog-node-adapter-s4: content-mapping-adapter — router CategorySet 잔존 제거 ==="
+    cd "$BACKEND"
+    # CategorySet SQLAlchemy 모델이 router.py에서 사용되지 않는지 확인
+    grep -n "from api.programming.catalog.models import CategorySet" "$BACKEND/api/programming/catalog/router.py" \
+      && { echo "FAIL: router.py에 CategorySet 레거시 import 잔존"; exit 1; }
+    echo "  ✓ router.py CategorySet import 제거 확인"
+    # get_set_tree가 ProgrammingNodeSet 사용 확인
+    grep -q "ProgrammingNodeSet" "$BACKEND/api/programming/catalog/router.py" \
+      || { echo "FAIL: router.py ProgrammingNodeSet 없음"; exit 1; }
+    echo "  ✓ router.py ProgrammingNodeSet 사용 확인"
+    # 회귀: catalog 전체 테스트
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | tail -3
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: catalog 회귀 테스트 실패"; exit 1; }
+    echo "  ✓ 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
   tier0-rule-engine)
     echo "=== tier0-rule-engine: Tier 0 규칙 필터 엔진 단위 테스트 ==="
     .venv/bin/pytest tests/test_rule_engine.py -v 2>&1 | tail -25

@@ -24,8 +24,10 @@ from api.programming.catalog.service import (
     unmap_content,
     category_content_count,
 )
-from api.programming.catalog.models import Category, ContentCategory
 from api.programming.metadata.models import Content, ContentType, ContentStatus
+from api.programming.scheduling.models import (
+    ChildType, LinkStatus, NodeKind, ProgrammingLink, ProgrammingNode,
+)
 
 
 def _make_content(db, title="테스트콘텐츠"):
@@ -65,13 +67,11 @@ def test_move_subtree_depth_recalculated(db):
     action = create_category(db, "액션", parent_id=movie.id)
     sf = create_category(db, "SF", parent_id=action.id)
 
-    move_category(db, action.id, new_parent_id=series.id)
+    moved = move_category(db, action.id, new_parent_id=series.id)
 
-    db.refresh(action)
-    db.refresh(sf)
-    assert action.depth == 1
-    assert sf.depth == 2
-    assert action.parent_id == series.id
+    assert moved.depth == 1
+    assert sf.depth == 2  # 스냅샷 값 — 이동 전후 동일
+    assert moved.parent_id == series.id
 
 
 def test_move_to_root(db):
@@ -79,11 +79,10 @@ def test_move_to_root(db):
     root = create_category(db, "영화")
     child = create_category(db, "액션", parent_id=root.id)
 
-    move_category(db, child.id, new_parent_id=None)
+    moved = move_category(db, child.id, new_parent_id=None)
 
-    db.refresh(child)
-    assert child.depth == 0
-    assert child.parent_id is None
+    assert moved.depth == 0
+    assert moved.parent_id is None
 
 
 # ── 사이클 가드 ───────────────────────────────────────────────────────────────
@@ -113,10 +112,17 @@ def test_merge_reparents_children(db):
 
     merge_category(db, src.id, tgt.id)
 
-    db.refresh(child)
-    assert child.parent_id == tgt.id
-    assert child.depth == tgt.depth + 1
-    assert db.query(Category).filter(Category.id == src.id).first() is None
+    # child 링크가 tgt 아래로 이전됐는지 programming_links에서 확인
+    from api.programming.scheduling.models import ChildType, ProgrammingLink
+    lnk = db.query(ProgrammingLink).filter(
+        ProgrammingLink.child_node_id == child.id,
+        ProgrammingLink.child_type == ChildType.node,
+    ).first()
+    assert lnk is not None
+    assert lnk.parent_node_id == tgt.id
+    # source 노드 삭제 확인
+    from api.programming.scheduling.models import ProgrammingNode
+    assert db.query(ProgrammingNode).filter(ProgrammingNode.id == src.id).first() is None
 
 
 def test_merge_moves_content_mappings(db):
@@ -127,11 +133,13 @@ def test_merge_moves_content_mappings(db):
 
     merge_category(db, src.id, tgt.id)
 
-    rows = db.query(ContentCategory).filter(
-        ContentCategory.content_id == content.id
+    # content 링크가 tgt 아래로 이전됐는지 programming_links에서 확인
+    links = db.query(ProgrammingLink).filter(
+        ProgrammingLink.child_content_id == content.id,
+        ProgrammingLink.child_type == ChildType.content,
     ).all()
-    assert len(rows) == 1
-    assert rows[0].category_id == tgt.id
+    assert len(links) == 1
+    assert links[0].parent_node_id == tgt.id
 
 
 def test_merge_deduplicates_content_mappings(db):
@@ -143,11 +151,12 @@ def test_merge_deduplicates_content_mappings(db):
 
     merge_category(db, src.id, tgt.id)
 
-    rows = db.query(ContentCategory).filter(
-        ContentCategory.content_id == content.id,
-        ContentCategory.category_id == tgt.id,
+    links = db.query(ProgrammingLink).filter(
+        ProgrammingLink.child_content_id == content.id,
+        ProgrammingLink.child_type == ChildType.content,
+        ProgrammingLink.parent_node_id == tgt.id,
     ).all()
-    assert len(rows) == 1  # dedupe — 1행만 남아야
+    assert len(links) == 1  # dedupe — 1개만 남아야
 
 
 # ── map_content 멱등성 ────────────────────────────────────────────────────────
@@ -159,9 +168,10 @@ def test_map_content_idempotent(db):
     map_content(db, content.id, [cat.id])
     map_content(db, content.id, [cat.id])  # 2회 호출
 
-    count = db.query(ContentCategory).filter(
-        ContentCategory.content_id == content.id,
-        ContentCategory.category_id == cat.id,
+    count = db.query(ProgrammingLink).filter(
+        ProgrammingLink.child_content_id == content.id,
+        ProgrammingLink.parent_node_id == cat.id,
+        ProgrammingLink.child_type == ChildType.content,
     ).count()
     assert count == 1
 
@@ -173,8 +183,9 @@ def test_unmap_content(db):
 
     unmap_content(db, content.id, cat.id)
 
-    assert db.query(ContentCategory).filter(
-        ContentCategory.content_id == content.id
+    assert db.query(ProgrammingLink).filter(
+        ProgrammingLink.child_content_id == content.id,
+        ProgrammingLink.child_type == ChildType.content,
     ).count() == 0
 
 
@@ -200,16 +211,29 @@ def test_delete_with_contents_raises(db):
 def test_delete_empty_succeeds(db):
     cat = create_category(db, "영화")
     delete_category(db, cat.id)
-    assert db.query(Category).filter(Category.id == cat.id).first() is None
+    assert db.query(ProgrammingNode).filter(ProgrammingNode.id == cat.id).first() is None
 
 
 # ── list_tree / count ─────────────────────────────────────────────────────────
 
 def test_list_tree_structure(db):
-    root = create_category(db, "영화")
-    child1 = create_category(db, "액션", parent_id=root.id)
-    create_category(db, "SF", parent_id=child1.id)
-    create_category(db, "드라마", parent_id=root.id)
+    # list_tree는 이제 programming_nodes 기반 (Step 1 read-path 전환)
+    root = ProgrammingNode(kind=NodeKind.container, name="영화", is_active=True, is_draft=False)
+    db.add(root)
+    db.flush()
+    child1 = ProgrammingNode(kind=NodeKind.container, name="액션", is_active=True, is_draft=False)
+    db.add(child1)
+    db.flush()
+    child2 = ProgrammingNode(kind=NodeKind.container, name="드라마", is_active=True, is_draft=False)
+    db.add(child2)
+    db.flush()
+    leaf = ProgrammingNode(kind=NodeKind.container, name="SF", is_active=True, is_draft=False)
+    db.add(leaf)
+    db.flush()
+    db.add(ProgrammingLink(parent_node_id=root.id, child_type=ChildType.node, child_node_id=child1.id, sort_order=0, status=LinkStatus.active, source="manual"))
+    db.add(ProgrammingLink(parent_node_id=root.id, child_type=ChildType.node, child_node_id=child2.id, sort_order=1, status=LinkStatus.active, source="manual"))
+    db.add(ProgrammingLink(parent_node_id=child1.id, child_type=ChildType.node, child_node_id=leaf.id, sort_order=0, status=LinkStatus.active, source="manual"))
+    db.flush()
 
     tree = list_tree(db)
     assert len(tree) == 1

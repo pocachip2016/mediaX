@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .models import (
+    ChildType,
     LinkStatus,
     NodeKind,
     ProgrammingLink,
@@ -262,3 +263,137 @@ def _apply_rank(db: Session, rank_source: str | None, limit: int | None) -> list
     if limit:
         q = q.limit(limit)
     return [row[0] for row in q.all()]
+
+
+# ── catalog 어댑터: CategoryTreeNode 형태 트리 직렬화 ─────────────────────────
+
+
+def _build_node_tree_from_nodes(
+    db: Session,
+    node_map: dict[int, "ProgrammingNode"],
+    root_id: int | None = None,
+    include_counts: bool = False,
+) -> list[dict]:
+    """node_map 내 container 노드들을 DAG 링크 기반으로 CategoryTreeNode 형태로 직렬화."""
+    if not node_map:
+        return []
+
+    node_ids = set(node_map.keys())
+
+    all_node_links = (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.child_type == ChildType.node,
+            ProgrammingLink.status != LinkStatus.rejected,
+            ProgrammingLink.child_node_id.in_(node_ids),
+            ProgrammingLink.parent_node_id.in_(node_ids),
+        )
+        .order_by(ProgrammingLink.sort_order, ProgrammingLink.id)
+        .all()
+    )
+
+    # parent_id → child links
+    children_map: dict[int, list["ProgrammingLink"]] = {}
+    child_node_ids: set[int] = set()
+    parent_of: dict[int, int] = {}
+    sort_of: dict[int, int] = {}
+    for lnk in all_node_links:
+        if lnk.child_node_id is None:
+            continue
+        children_map.setdefault(lnk.parent_node_id, []).append(lnk)
+        child_node_ids.add(lnk.child_node_id)
+        parent_of[lnk.child_node_id] = lnk.parent_node_id
+        sort_of[lnk.child_node_id] = lnk.sort_order
+
+    def _content_count(node_id: int) -> int:
+        return (
+            db.query(func.count(ProgrammingLink.id))
+            .filter(
+                ProgrammingLink.parent_node_id == node_id,
+                ProgrammingLink.child_type == ChildType.content,
+                ProgrammingLink.status == LinkStatus.active,
+            )
+            .scalar()
+            or 0
+        )
+
+    def _to_dict(node: "ProgrammingNode", depth: int, parent_id: int | None) -> dict:
+        d: dict = {
+            "id": node.id,
+            "name": node.name,
+            "slug": node.slug,
+            "depth": depth,
+            "sort_order": sort_of.get(node.id, node.id),
+            "is_active": node.is_active,
+            "parent_id": parent_id,
+            "children": [],
+        }
+        if include_counts:
+            d["content_count"] = _content_count(node.id)
+        return d
+
+    def _build(node_id: int, depth: int) -> list[dict]:
+        result = []
+        for lnk in children_map.get(node_id, []):
+            child = node_map.get(lnk.child_node_id)
+            if child is None:
+                continue
+            d = _to_dict(child, depth, node_id)
+            d["children"] = _build(child.id, depth + 1)
+            result.append(d)
+        return result
+
+    if root_id is not None:
+        root_node = node_map.get(root_id)
+        if root_node is None:
+            return []
+        d = _to_dict(root_node, 0, parent_of.get(root_id))
+        d["children"] = _build(root_node.id, 1)
+        return [d]
+
+    root_nodes = sorted(
+        (n for nid, n in node_map.items() if nid not in child_node_ids),
+        key=lambda n: sort_of.get(n.id, n.id),
+    )
+    result = []
+    for rn in root_nodes:
+        d = _to_dict(rn, 0, None)
+        d["children"] = _build(rn.id, 1)
+        result.append(d)
+    return result
+
+
+def list_node_tree(
+    db: Session,
+    root_id: int | None = None,
+    include_counts: bool = False,
+) -> list[dict]:
+    """set_id=None인 container 노드를 DAG 링크 기반 중첩 트리로 반환.
+
+    반환 형태: CategoryTreeNode 스키마와 동일
+    (id, name, slug, depth, sort_order, is_active, parent_id, children, [content_count])
+    """
+    nodes = (
+        db.query(ProgrammingNode)
+        .filter(
+            ProgrammingNode.kind == NodeKind.container,
+            ProgrammingNode.set_id.is_(None),
+        )
+        .all()
+    )
+    node_map = {n.id: n for n in nodes}
+    return _build_node_tree_from_nodes(db, node_map, root_id=root_id, include_counts=include_counts)
+
+
+def list_node_tree_by_set(db: Session, set_id: int) -> list[dict]:
+    """특정 NodeSet 소속 container 노드를 DAG 링크 기반 중첩 트리로 반환."""
+    nodes = (
+        db.query(ProgrammingNode)
+        .filter(
+            ProgrammingNode.kind == NodeKind.container,
+            ProgrammingNode.set_id == set_id,
+        )
+        .all()
+    )
+    node_map = {n.id: n for n in nodes}
+    return _build_node_tree_from_nodes(db, node_map)

@@ -1,38 +1,145 @@
 from collections import deque
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from api.programming.catalog.models import Category, ContentCategory
+from api.programming.scheduling.models import (
+    ChildType,
+    LinkSource,
+    LinkStatus,
+    NodeKind,
+    ProgrammingLink,
+    ProgrammingNode,
+)
+from api.programming.scheduling.node_service import (
+    list_node_tree as _list_node_tree,
+    list_node_tree_by_set as _list_node_tree_by_set,
+)
+
+
+# ── 내부 헬퍼 ─────────────────────────────────────────────────────────────────
+
+def _cat_view(
+    node: ProgrammingNode,
+    *,
+    depth: int,
+    sort_order: int,
+    parent_id: int | None,
+) -> SimpleNamespace:
+    """ProgrammingNode + 파생 필드를 CategoryOut 형태로 래핑."""
+    return SimpleNamespace(
+        id=node.id,
+        name=node.name,
+        slug=node.slug,
+        depth=depth,
+        sort_order=sort_order,
+        is_active=node.is_active,
+        parent_id=parent_id,
+        created_at=node.created_at,
+        updated_at=node.updated_at,
+    )
+
+
+def _get_node_depth(db: Session, node_id: int) -> int:
+    """링크 체인을 역방향으로 올라가며 depth 계산."""
+    depth = 0
+    current = node_id
+    while True:
+        link = (
+            db.query(ProgrammingLink)
+            .filter(
+                ProgrammingLink.child_node_id == current,
+                ProgrammingLink.child_type == ChildType.node,
+            )
+            .first()
+        )
+        if link is None:
+            break
+        depth += 1
+        current = link.parent_node_id
+    return depth
 
 
 def _max_sibling_sort(db: Session, parent_id: int | None) -> int:
-    result = db.query(func.max(Category.sort_order)).filter(
-        Category.parent_id == parent_id
-    ).scalar()
+    """부모 노드 아래 node-type 링크의 최대 sort_order + 1."""
+    if parent_id is None:
+        return 0
+    result = (
+        db.query(func.max(ProgrammingLink.sort_order))
+        .filter(
+            ProgrammingLink.parent_node_id == parent_id,
+            ProgrammingLink.child_type == ChildType.node,
+        )
+        .scalar()
+    )
     return (result or 0) + 1
 
+
+def _get_node_or_raise(db: Session, node_id: int) -> ProgrammingNode:
+    node = (
+        db.query(ProgrammingNode)
+        .filter(
+            ProgrammingNode.id == node_id,
+            ProgrammingNode.kind == NodeKind.container,
+        )
+        .first()
+    )
+    if node is None:
+        raise ValueError(f"category_id={node_id} not found")
+    return node
+
+
+def _incoming_link(db: Session, node_id: int) -> ProgrammingLink | None:
+    return (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.child_node_id == node_id,
+            ProgrammingLink.child_type == ChildType.node,
+        )
+        .first()
+    )
+
+
+# ── 카테고리 CRUD ──────────────────────────────────────────────────────────────
 
 def create_category(
     db: Session,
     name: str,
     parent_id: int | None = None,
     sort_order: int | None = None,
-) -> Category:
-    depth = 0
+) -> SimpleNamespace:
     if parent_id is not None:
-        parent = db.query(Category).filter(Category.id == parent_id).first()
-        if parent is None:
-            raise ValueError(f"parent_id={parent_id} not found")
-        depth = parent.depth + 1
+        _get_node_or_raise(db, parent_id)
 
-    if sort_order is None:
-        sort_order = _max_sibling_sort(db, parent_id)
-
-    cat = Category(name=name, parent_id=parent_id, depth=depth, sort_order=sort_order)
-    db.add(cat)
+    node = ProgrammingNode(
+        kind=NodeKind.container,
+        name=name,
+        is_active=True,
+        is_draft=False,
+    )
+    db.add(node)
     db.flush()
-    return cat
+
+    if parent_id is not None:
+        if sort_order is None:
+            sort_order = _max_sibling_sort(db, parent_id)
+        link = ProgrammingLink(
+            parent_node_id=parent_id,
+            child_type=ChildType.node,
+            child_node_id=node.id,
+            sort_order=sort_order,
+            status=LinkStatus.active,
+            source=LinkSource.manual,
+        )
+        db.add(link)
+        db.flush()
+        depth = _get_node_depth(db, node.id)
+    else:
+        sort_order = sort_order or 0
+        depth = 0
+
+    return _cat_view(node, depth=depth, sort_order=sort_order, parent_id=parent_id)
 
 
 def _find_conflicts(
@@ -41,23 +148,43 @@ def _find_conflicts(
     parent_id: int | None,
     path_prefix: list[str],
 ) -> list[str]:
-    """입력 트리를 DFS하며 기존 DB에 동일 (parent_id, name) 경로가 있는 노드의
-    전체 경로를 수집. 신규 노드의 자손은 전부 신규이므로 탐색하지 않는다."""
+    """입력 트리를 DFS하며 동일 (parent, name) 경로 충돌을 수집."""
     conflicts: list[str] = []
     for item in nodes:
         name = (item.get("name") or "").strip()
         if not name:
             continue
         path = path_prefix + [name]
-        existing = (
-            db.query(Category)
-            .filter(
-                Category.parent_id == parent_id,
-                Category.name == name,
-                Category.set_id.is_(None),
+        if parent_id is not None:
+            existing = (
+                db.query(ProgrammingNode)
+                .join(
+                    ProgrammingLink,
+                    (ProgrammingLink.child_node_id == ProgrammingNode.id)
+                    & (ProgrammingLink.parent_node_id == parent_id)
+                    & (ProgrammingLink.child_type == ChildType.node),
+                )
+                .filter(
+                    ProgrammingNode.name == name,
+                    ProgrammingNode.set_id.is_(None),
+                )
+                .first()
             )
-            .first()
-        )
+        else:
+            child_ids_q = db.query(ProgrammingLink.child_node_id).filter(
+                ProgrammingLink.child_type == ChildType.node,
+                ProgrammingLink.child_node_id.isnot(None),
+            )
+            existing = (
+                db.query(ProgrammingNode)
+                .filter(
+                    ProgrammingNode.name == name,
+                    ProgrammingNode.kind == NodeKind.container,
+                    ProgrammingNode.set_id.is_(None),
+                    ~ProgrammingNode.id.in_(child_ids_q),
+                )
+                .first()
+            )
         if existing is not None:
             conflicts.append("/".join(path))
             conflicts.extend(
@@ -72,19 +199,15 @@ def bulk_create_categories(
     parent_id: int | None = None,
     dup_policy: str = "merge",
 ) -> tuple[int, int, int]:
-    """정규화된 nested 구조를 DFS로 생성. dup_policy로 동일 (parent_id, name) 충돌 처리.
+    """정규화된 nested 구조를 DFS로 생성. dup_policy로 동일 (parent, name) 충돌 처리.
 
     - merge: 기존 노드 유지, children 탐색은 기존 노드 밑에서 계속 (skip 카운트)
     - overwrite: 기존 노드 유지하되 입력에 children이 있으면 기존 직속 자식
       서브트리를 cascade 삭제 후 입력 구조로 재생성 (overwritten 카운트)
     - reject: 충돌이 하나라도 있으면 ValueError (아무것도 생성 안 함)
-
-    nodes: [{"name": str, "children": [...]}, ...]
-    반환: (created, skipped, overwritten)
     """
     if parent_id is not None:
-        if db.query(Category).filter(Category.id == parent_id).first() is None:
-            raise ValueError(f"parent_id={parent_id} not found")
+        _get_node_or_raise(db, parent_id)
 
     if dup_policy == "reject":
         conflicts = _find_conflicts(db, nodes, parent_id, [])
@@ -95,84 +218,117 @@ def bulk_create_categories(
     skipped = 0
     overwritten = 0
 
+    def _find_existing(name: str, pid: int | None) -> ProgrammingNode | None:
+        if pid is not None:
+            return (
+                db.query(ProgrammingNode)
+                .join(
+                    ProgrammingLink,
+                    (ProgrammingLink.child_node_id == ProgrammingNode.id)
+                    & (ProgrammingLink.parent_node_id == pid)
+                    & (ProgrammingLink.child_type == ChildType.node),
+                )
+                .filter(ProgrammingNode.name == name, ProgrammingNode.set_id.is_(None))
+                .first()
+            )
+        child_ids_q = db.query(ProgrammingLink.child_node_id).filter(
+            ProgrammingLink.child_type == ChildType.node,
+            ProgrammingLink.child_node_id.isnot(None),
+        )
+        return (
+            db.query(ProgrammingNode)
+            .filter(
+                ProgrammingNode.name == name,
+                ProgrammingNode.kind == NodeKind.container,
+                ProgrammingNode.set_id.is_(None),
+                ~ProgrammingNode.id.in_(child_ids_q),
+            )
+            .first()
+        )
+
     def _walk(items: list[dict], pid: int | None) -> None:
         nonlocal created, skipped, overwritten
         for item in items:
             name = (item.get("name") or "").strip()
             if not name:
                 continue
-            existing = (
-                db.query(Category)
-                .filter(
-                    Category.parent_id == pid,
-                    Category.name == name,
-                    Category.set_id.is_(None),
-                )
-                .first()
-            )
+            existing = _find_existing(name, pid)
             children = item.get("children") or []
             if existing is not None:
-                node = existing
+                node_id = existing.id
                 if dup_policy == "overwrite" and children:
                     old_children = (
-                        db.query(Category).filter(Category.parent_id == existing.id).all()
+                        db.query(ProgrammingLink)
+                        .filter(
+                            ProgrammingLink.parent_node_id == existing.id,
+                            ProgrammingLink.child_type == ChildType.node,
+                        )
+                        .all()
                     )
-                    for ch in old_children:
-                        delete_category(db, ch.id, cascade=True)
+                    for lnk in old_children:
+                        if lnk.child_node_id:
+                            delete_category(db, lnk.child_node_id, cascade=True)
                     overwritten += 1
                 else:
                     skipped += 1
             else:
-                node = create_category(db, name=name, parent_id=pid)
+                view = create_category(db, name=name, parent_id=pid)
+                node_id = view.id
                 created += 1
             if children:
-                _walk(children, node.id)
+                _walk(children, node_id)
 
     _walk(nodes, parent_id)
     db.flush()
     return created, skipped, overwritten
 
 
-def rename_category(db: Session, category_id: int, name: str) -> Category:
-    cat = db.query(Category).filter(Category.id == category_id).first()
-    if cat is None:
-        raise ValueError(f"category_id={category_id} not found")
-    cat.name = name
+def rename_category(db: Session, category_id: int, name: str) -> SimpleNamespace:
+    node = _get_node_or_raise(db, category_id)
+    node.name = name
     db.flush()
-    return cat
+    lnk = _incoming_link(db, category_id)
+    return _cat_view(
+        node,
+        depth=_get_node_depth(db, category_id),
+        sort_order=lnk.sort_order if lnk else 0,
+        parent_id=lnk.parent_node_id if lnk else None,
+    )
 
 
-def set_active(db: Session, category_id: int, is_active: bool) -> Category:
-    cat = db.query(Category).filter(Category.id == category_id).first()
-    if cat is None:
-        raise ValueError(f"category_id={category_id} not found")
-    cat.is_active = is_active
+def set_active(db: Session, category_id: int, is_active: bool) -> SimpleNamespace:
+    node = _get_node_or_raise(db, category_id)
+    node.is_active = is_active
     db.flush()
-    return cat
+    lnk = _incoming_link(db, category_id)
+    return _cat_view(
+        node,
+        depth=_get_node_depth(db, category_id),
+        sort_order=lnk.sort_order if lnk else 0,
+        parent_id=lnk.parent_node_id if lnk else None,
+    )
 
 
-def get_subtree_ids(db: Session, category_id: int) -> set[int]:
-    """BFS로 category_id를 포함한 모든 자손 id 반환."""
+def get_subtree_ids(db: Session, node_id: int) -> set[int]:
+    """BFS로 node_id를 포함한 모든 자손 id 반환 (programming_links 기반)."""
     visited: set[int] = set()
-    queue = deque([category_id])
+    queue = deque([node_id])
     while queue:
         current = queue.popleft()
         if current in visited:
             continue
         visited.add(current)
-        children = db.query(Category.id).filter(Category.parent_id == current).all()
+        children = (
+            db.query(ProgrammingLink.child_node_id)
+            .filter(
+                ProgrammingLink.parent_node_id == current,
+                ProgrammingLink.child_type == ChildType.node,
+                ProgrammingLink.child_node_id.isnot(None),
+            )
+            .all()
+        )
         queue.extend(c[0] for c in children)
     return visited
-
-
-def _recalculate_depth(db: Session, category_id: int, new_depth: int) -> None:
-    """category_id 노드와 모든 자손의 depth를 BFS로 재계산."""
-    queue = deque([(category_id, new_depth)])
-    while queue:
-        cid, depth = queue.popleft()
-        db.query(Category).filter(Category.id == cid).update({"depth": depth})
-        children = db.query(Category.id).filter(Category.parent_id == cid).all()
-        queue.extend((c[0], depth + 1) for c in children)
 
 
 def move_category(
@@ -180,227 +336,235 @@ def move_category(
     category_id: int,
     new_parent_id: int | None,
     new_sort_order: int | None = None,
-) -> Category:
-    cat = db.query(Category).filter(Category.id == category_id).first()
-    if cat is None:
-        raise ValueError(f"category_id={category_id} not found")
+) -> SimpleNamespace:
+    node = _get_node_or_raise(db, category_id)
 
-    # 사이클 가드: new_parent_id가 자기 자신 또는 자손이면 거부
     if new_parent_id is not None:
         subtree = get_subtree_ids(db, category_id)
         if new_parent_id in subtree:
             raise ValueError(
                 f"move_category: new_parent_id={new_parent_id} is self or descendant of {category_id}"
             )
+        _get_node_or_raise(db, new_parent_id)
 
+    # 기존 incoming link 제거
+    old_link = _incoming_link(db, category_id)
+    if old_link is not None:
+        db.delete(old_link)
+        db.flush()
+
+    sort_order = new_sort_order
     if new_parent_id is not None:
-        parent = db.query(Category).filter(Category.id == new_parent_id).first()
-        if parent is None:
-            raise ValueError(f"new_parent_id={new_parent_id} not found")
-        new_depth = parent.depth + 1
+        if sort_order is None:
+            sort_order = _max_sibling_sort(db, new_parent_id)
+        link = ProgrammingLink(
+            parent_node_id=new_parent_id,
+            child_type=ChildType.node,
+            child_node_id=category_id,
+            sort_order=sort_order,
+            status=LinkStatus.active,
+            source=LinkSource.manual,
+        )
+        db.add(link)
+        db.flush()
     else:
-        new_depth = 0
+        sort_order = sort_order or 0
 
-    cat.parent_id = new_parent_id
-    if new_sort_order is None:
-        new_sort_order = _max_sibling_sort(db, new_parent_id)
-    cat.sort_order = new_sort_order
-    db.flush()
-
-    _recalculate_depth(db, category_id, new_depth)
-    db.flush()
-    db.refresh(cat)
-    return cat
+    db.refresh(node)
+    return _cat_view(
+        node,
+        depth=_get_node_depth(db, category_id),
+        sort_order=sort_order,
+        parent_id=new_parent_id,
+    )
 
 
-def merge_category(db: Session, source_id: int, target_id: int) -> Category:
-    """source의 자식을 target으로 reparent, content_categories를 dedupe 이전, source 삭제."""
-    source = db.query(Category).filter(Category.id == source_id).first()
-    target = db.query(Category).filter(Category.id == target_id).first()
-    if source is None:
-        raise ValueError(f"source_id={source_id} not found")
-    if target is None:
-        raise ValueError(f"target_id={target_id} not found")
+def merge_category(db: Session, source_id: int, target_id: int) -> SimpleNamespace:
+    """source의 자식 노드와 content 링크를 target으로 이전 후 source 삭제."""
+    source = _get_node_or_raise(db, source_id)
+    target = _get_node_or_raise(db, target_id)
     if source_id == target_id:
         raise ValueError("source_id and target_id must differ")
 
-    # 자식 reparent
-    children = db.query(Category).filter(Category.parent_id == source_id).all()
-    for child in children:
-        child.parent_id = target_id
-        child.depth = target.depth + 1
-        _recalculate_depth(db, child.id, target.depth + 1)
+    target_depth = _get_node_depth(db, target_id)
+
+    # 자식 node-link를 source→target으로 교체
+    child_links = (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.parent_node_id == source_id,
+            ProgrammingLink.child_type == ChildType.node,
+        )
+        .all()
+    )
+    for lnk in child_links:
+        lnk.parent_node_id = target_id
     db.flush()
 
-    # content_categories dedupe 이전
-    source_mappings = db.query(ContentCategory).filter(
-        ContentCategory.category_id == source_id
-    ).all()
-    existing_target = {
-        row.content_id
-        for row in db.query(ContentCategory).filter(
-            ContentCategory.category_id == target_id
-        ).all()
+    # content-link dedupe 이전 (programming_links)
+    existing_target_contents = {
+        row.child_content_id
+        for row in db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.parent_node_id == target_id,
+            ProgrammingLink.child_type == ChildType.content,
+        )
+        .all()
     }
-    for mapping in source_mappings:
-        if mapping.content_id not in existing_target:
-            mapping.category_id = target_id
+    content_links = (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.parent_node_id == source_id,
+            ProgrammingLink.child_type == ChildType.content,
+        )
+        .all()
+    )
+    for lnk in content_links:
+        if lnk.child_content_id not in existing_target_contents:
+            lnk.parent_node_id = target_id
         else:
-            db.delete(mapping)
+            db.delete(lnk)
     db.flush()
 
+    # source incoming link 삭제 후 source 노드 삭제
+    src_link = _incoming_link(db, source_id)
+    if src_link is not None:
+        db.delete(src_link)
+        db.flush()
     db.delete(source)
     db.flush()
+
     db.refresh(target)
-    return target
+    tgt_link = _incoming_link(db, target_id)
+    return _cat_view(
+        target,
+        depth=target_depth,
+        sort_order=tgt_link.sort_order if tgt_link else 0,
+        parent_id=tgt_link.parent_node_id if tgt_link else None,
+    )
 
 
 def delete_category(db: Session, category_id: int, cascade: bool = False) -> None:
-    cat = db.query(Category).filter(Category.id == category_id).first()
-    if cat is None:
-        raise ValueError(f"category_id={category_id} not found")
+    node = _get_node_or_raise(db, category_id)
 
     if not cascade:
-        child_count = db.query(Category).filter(Category.parent_id == category_id).count()
-        content_count = db.query(ContentCategory).filter(
-            ContentCategory.category_id == category_id
-        ).count()
+        child_count = (
+            db.query(ProgrammingLink)
+            .filter(
+                ProgrammingLink.parent_node_id == category_id,
+                ProgrammingLink.child_type == ChildType.node,
+            )
+            .count()
+        )
+        content_count = (
+            db.query(ProgrammingLink)
+            .filter(
+                ProgrammingLink.parent_node_id == category_id,
+                ProgrammingLink.child_type == ChildType.content,
+            )
+            .count()
+        )
         if child_count > 0 or content_count > 0:
             raise ValueError(
                 f"category_id={category_id} has children or contents — use cascade=True"
             )
+        db.delete(node)
+        db.flush()
+    else:
+        # BFS로 자손 모두 삭제 (DB CASCADE가 링크 정리)
+        all_ids = get_subtree_ids(db, category_id)
+        for nid in all_ids:
+            n = db.query(ProgrammingNode).filter(ProgrammingNode.id == nid).first()
+            if n is not None:
+                db.delete(n)
+        db.flush()
 
-    db.delete(cat)
-    db.flush()
 
+# ── 트리 조회 (Step 1에서 전환 완료) ──────────────────────────────────────────
 
 def list_tree(
     db: Session,
     root_id: int | None = None,
     include_counts: bool = False,
 ) -> list[dict]:
-    """중첩 트리 반환. root_id=None이면 최상위(parent_id=None) 노드들부터."""
-    def _to_dict(cat: Category) -> dict:
-        d: dict = {
-            "id": cat.id,
-            "name": cat.name,
-            "slug": cat.slug,
-            "depth": cat.depth,
-            "sort_order": cat.sort_order,
-            "is_active": cat.is_active,
-            "parent_id": cat.parent_id,
-            "children": [],
-        }
-        if include_counts:
-            d["content_count"] = category_content_count(db, cat.id, recursive=False)
-        return d
-
-    def _build(parent_id: int | None) -> list[dict]:
-        nodes = (
-            db.query(Category)
-            .filter(Category.parent_id == parent_id, Category.set_id.is_(None))
-            .order_by(Category.sort_order)
-            .all()
-        )
-        result = []
-        for node in nodes:
-            d = _to_dict(node)
-            d["children"] = _build(node.id)
-            result.append(d)
-        return result
-
-    if root_id is not None:
-        root_cat = db.query(Category).filter(
-            Category.id == root_id, Category.set_id.is_(None)
-        ).first()
-        if root_cat is None:
-            return []
-        d = _to_dict(root_cat)
-        d["children"] = _build(root_cat.id)
-        return [d]
-    return _build(None)
+    """중첩 트리 반환 — programming_nodes(kind=container) 기반. API 계약 유지."""
+    return _list_node_tree(db, root_id=root_id, include_counts=include_counts)
 
 
 def list_tree_by_set(db: Session, set_id: int) -> list[dict]:
-    """특정 세트 소속 카테고리를 중첩 트리로 반환."""
-    id_map: dict[int, dict] = {}
-    all_cats = (
-        db.query(Category)
-        .filter(Category.set_id == set_id)
-        .order_by(Category.sort_order)
-        .all()
-    )
-    for cat in all_cats:
-        id_map[cat.id] = {
-            "id": cat.id,
-            "name": cat.name,
-            "slug": cat.slug,
-            "depth": cat.depth,
-            "sort_order": cat.sort_order,
-            "is_active": cat.is_active,
-            "parent_id": cat.parent_id,
-            "children": [],
-        }
-    roots = []
-    for node in id_map.values():
-        pid = node["parent_id"]
-        if pid is None or pid not in id_map:
-            roots.append(node)
-        else:
-            id_map[pid]["children"].append(node)
-    return roots
+    """특정 NodeSet 소속 카테고리를 중첩 트리로 반환 — programming_nodes 기반."""
+    return _list_node_tree_by_set(db, set_id=set_id)
 
+
+# ── 콘텐츠 매핑 (programming_links child_type=content 기반) ───────────────────
 
 def map_content(
     db: Session,
     content_id: int,
     category_ids: list[int],
     primary_id: int | None = None,
-) -> list[ContentCategory]:
-    """콘텐츠↔카테고리 매핑 (멱등). 이미 있는 (content_id, category_id) 쌍은 skip."""
-    existing = {
-        row.category_id
-        for row in db.query(ContentCategory).filter(
-            ContentCategory.content_id == content_id
-        ).all()
-    }
+) -> list[ProgrammingLink]:
+    """콘텐츠↔카테고리 매핑 (멱등). programming_links(child_type=content) 사용."""
     result = []
     for cat_id in category_ids:
-        if cat_id in existing:
-            row = db.query(ContentCategory).filter(
-                ContentCategory.content_id == content_id,
-                ContentCategory.category_id == cat_id,
-            ).first()
-        else:
-            row = ContentCategory(
-                content_id=content_id,
-                category_id=cat_id,
-                is_primary=(cat_id == primary_id),
+        existing = (
+            db.query(ProgrammingLink)
+            .filter(
+                ProgrammingLink.parent_node_id == cat_id,
+                ProgrammingLink.child_type == ChildType.content,
+                ProgrammingLink.child_content_id == content_id,
             )
-            db.add(row)
-        result.append(row)
-    db.flush()
+            .first()
+        )
+        if existing is None:
+            lnk = ProgrammingLink(
+                parent_node_id=cat_id,
+                child_type=ChildType.content,
+                child_content_id=content_id,
+                sort_order=0,
+                status=LinkStatus.active,
+                source=LinkSource.manual,
+            )
+            db.add(lnk)
+            db.flush()
+            result.append(lnk)
+        else:
+            result.append(existing)
     return result
 
 
 def unmap_content(db: Session, content_id: int, category_id: int) -> None:
-    row = db.query(ContentCategory).filter(
-        ContentCategory.content_id == content_id,
-        ContentCategory.category_id == category_id,
-    ).first()
-    if row is None:
+    lnk = (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.parent_node_id == category_id,
+            ProgrammingLink.child_type == ChildType.content,
+            ProgrammingLink.child_content_id == content_id,
+        )
+        .first()
+    )
+    if lnk is None:
         raise ValueError(f"mapping content_id={content_id} category_id={category_id} not found")
-    db.delete(row)
+    db.delete(lnk)
     db.flush()
 
 
 def category_content_count(db: Session, category_id: int, recursive: bool = False) -> int:
     if not recursive:
-        return db.query(ContentCategory).filter(
-            ContentCategory.category_id == category_id
-        ).count()
-
+        return (
+            db.query(ProgrammingLink)
+            .filter(
+                ProgrammingLink.parent_node_id == category_id,
+                ProgrammingLink.child_type == ChildType.content,
+            )
+            .count()
+        )
     ids = get_subtree_ids(db, category_id)
-    return db.query(ContentCategory).filter(
-        ContentCategory.category_id.in_(ids)
-    ).count()
+    return (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.parent_node_id.in_(ids),
+            ProgrammingLink.child_type == ChildType.content,
+        )
+        .count()
+    )
