@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] **dev-programming-link** — Phase 3.2(tier1-intent-llm)부터 계속. plan: `plans/dev-programming-link/`
+- [ ] **dev-programming-link** — Phase 3.3(match_service — Python cosine + facet-overlap)부터 계속. plan: `plans/dev-programming-link/`
 
 ## Next (이번 마일스톤)
 - [ ] 1.3 큐레이션 모듈 설계 확정
@@ -14,6 +14,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-programming-link Phase 3.0~3.2** — CUP 모델(0042) + bge-m3 임베딩 + facet 통제어휘 + ingest Beat + Tier1 intent(qwen2.5:3b) (2026-06-08)
 - [x] **dev-programming-link Phase 2.2~3.1** — link-service + scheduling router(15 ep) + Tier0 rule engine + 72 테스트 (2026-06-08)
 - [x] **dev-programming-link Phase 1~2.1** — scheduling 모델(0041) + 데이터 이관(187노드/170링크) + node_service(사이클 가드/멤버 산출) + 19 테스트 (2026-06-08)
 - [x] **docs(scheduling)** — ADR-011 편성 통합 모델(ProgrammingNode+Link DAG) 설계 + plan 스캐폴드 17스텝 (2026-06-08)

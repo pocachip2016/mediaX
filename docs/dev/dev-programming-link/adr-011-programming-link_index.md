@@ -36,6 +36,7 @@
 - [02. 마이그레이션 전략 (통합 이관 + 레거시 제거)](adr-011-02-migration.md)
 - [03. AI 자동 LINK (Tier 0~6 추천 파이프라인)](adr-011-03-ai-autolink.md)
 - [04. 편성 운영 GUI (3컬럼 보드 + 캘린더 + 그래프)](adr-011-04-gui.md)
+- [05. 콘텐츠 의미 프로파일 (ingest-time CUP — Tier 1·2 근거 precompute)](adr-011-05-content-profile.md)
 
 ## 3. 결과 / 영향
 

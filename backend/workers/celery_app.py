@@ -17,6 +17,7 @@ celery_app = Celery(
         "workers.websearch_tasks",         # Phase D WebSearch SEED 발굴
         "workers.tasks.distribution",      # OTT popularity sync (Watcha/Netflix/Wave/Tving)
         "workers.tasks.pipeline_auto",     # ADR-010 파이프라인 AUTO 워커
+        "workers.tasks.semantic_profile",  # ADR-011-05 ingest-time CUP
     ],
 )
 
@@ -53,6 +54,10 @@ celery_app.conf.update(
         "retry-failed-enrichments": {
             "task": "workers.tasks.metadata.retry_failed_enrichments",
             "schedule": 21600,  # 6시간
+        },
+        "build-semantic-profiles": {
+            "task": "workers.tasks.semantic_profile.build_semantic_profiles",
+            "schedule": crontab(hour=3, minute=20),  # 매일 03:20 KST (off-peak)
         },
         "tmdb-daily-changes": {
             "task": "workers.tasks.tmdb_cache.daily_changes",

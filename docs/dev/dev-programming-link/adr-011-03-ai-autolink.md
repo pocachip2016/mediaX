@@ -39,9 +39,10 @@
 실패 시 Tier 0 규칙 입력 폼으로 폴백.
 
 ### Tier 2 — 임베딩 매칭
-- 콘텐츠 벡터: `synopsis + genres + tags` 임베딩 → ES kNN 인덱스(증분 갱신).
+- 콘텐츠 벡터·facet은 **ingest-time에 precompute** → [05. 콘텐츠 의미 프로파일(CUP)](adr-011-05-content-profile.md). read-time엔 매칭만.
 - 노드 theme 벡터: `theme_features + headline_copy` 임베딩.
-- 자동 LINK 후보 = 노드 벡터의 kNN 상위 + cosine 점수 → `confidence`.
+- 자동 LINK 후보 = 노드 벡터 ↔ CUP `embed_synopsis` cosine + facet overlap 가중합 → `confidence`.
+- **POC**: Tier0로 후보 축소 후 Python cosine(ES kNN은 scale-phase 연기). 상세 05 참조.
 
 ## 추천 결과 저장 / 검수
 
