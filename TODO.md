@@ -5,7 +5,6 @@
 
 ## Now (진행 중, 1~3개)
 - [ ] **dev-programming-link** — Phase 3.2b(facet-intensity) 완료. 3.2c(node-embed-theme) → 3.3(match_service) 순서. plan: `plans/dev-programming-link/`
-- [ ] **catalog-node-adapter** — 카테고리 내부를 ProgrammingNode/Link DAG으로 전환 (Step 5 남음). plan: `plans/catalog-node-adapter/`
 
 ## Next (이번 마일스톤)
 - [ ] 1.3 큐레이션 모듈 설계 확정
@@ -15,7 +14,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
-- [x] **feat(catalog-node-adapter Steps 1-4)** — ProgrammingNode/Link DAG 전환(read/write/set/router) + 16테스트 + verify s1~s4 통과 (2026-06-08)
+- [x] **feat(catalog-node-adapter)** — ProgrammingNode/Link DAG 완전 마이그레이션 — Steps 1-5 완료. alembic 0044 legacy drop + models 정리 + 16테스트 + verify s1~s5 모두 통과 (2026-06-08)
 - [x] **feat(catalog-restore+facet-intensity)** — catalog workspace 6컴포넌트 복원 + SingleContentForm/BulkUploadForm 공유화 + facet intensity axis(9 tests) + viewport-height fix + category-node-adapter 계획 수립 (2026-06-08)
 - [x] **dev-programming-link Phase 3.0~3.2** — CUP 모델(0042) + bge-m3 임베딩 + facet 통제어휘 + ingest Beat + Tier1 intent(qwen2.5:3b) (2026-06-08)
 - [x] **dev-programming-link Phase 2.2~3.1** — link-service + scheduling router(15 ep) + Tier0 rule engine + 72 테스트 (2026-06-08)

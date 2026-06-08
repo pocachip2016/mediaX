@@ -35,8 +35,9 @@
     {
       "id": "5",
       "name": "legacy-drop",
-      "summary": "categories/content_categories/category_sets 테이블+코드 제거",
-      "status": "pending"
+      "summary": "alembic 0044 마이그레이션(content_categories/categories/category_sets DROP) + catalog/models CategorySet/Category/ContentCategory 제거 + verify s5 통과",
+      "status": "completed",
+      "completed_at": "2026-06-08T14:19:44+09:00"
     }
   ]
 }

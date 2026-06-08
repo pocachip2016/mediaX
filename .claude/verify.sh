@@ -6029,6 +6029,38 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== PASS ==="
     ;;
 
+  catalog-node-adapter-s5)
+    echo "=== catalog-node-adapter-s5: legacy-drop — categories/content_categories/category_sets 제거 ==="
+    cd "$BACKEND"
+    # models.py에서 레거시 클래스 제거 확인
+    grep -q "class CategorySet" "$BACKEND/api/programming/catalog/models.py" \
+      && { echo "FAIL: models.py에 CategorySet 잔존"; exit 1; }
+    echo "  ✓ CategorySet 제거 확인"
+    grep -q "class Category\b" "$BACKEND/api/programming/catalog/models.py" \
+      && { echo "FAIL: models.py에 Category 잔존"; exit 1; }
+    echo "  ✓ Category 제거 확인"
+    grep -q "class ContentCategory" "$BACKEND/api/programming/catalog/models.py" \
+      && { echo "FAIL: models.py에 ContentCategory 잔존"; exit 1; }
+    echo "  ✓ ContentCategory 제거 확인"
+    # 마이그레이션 파일 존재 확인
+    test -f "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044 마이그레이션 없음"; exit 1; }
+    echo "  ✓ 0044 마이그레이션 존재"
+    grep -q "drop_table.*content_categories\|drop_table.*\"content_categories\"" "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044에 content_categories DROP 없음"; exit 1; }
+    grep -q "drop_table.*\"categories\"\|drop_table.*categories" "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044에 categories DROP 없음"; exit 1; }
+    grep -q "drop_table.*category_sets" "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044에 category_sets DROP 없음"; exit 1; }
+    echo "  ✓ 0044 DROP 3테이블 확인"
+    # 회귀: 기존 테스트 전체 통과
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | tail -3
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: catalog 회귀 테스트 실패"; exit 1; }
+    echo "  ✓ 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
   tier0-rule-engine)
     echo "=== tier0-rule-engine: Tier 0 규칙 필터 엔진 단위 테스트 ==="
     .venv/bin/pytest tests/test_rule_engine.py -v 2>&1 | tail -25
