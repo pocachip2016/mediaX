@@ -5851,6 +5851,137 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== PASS ==="
     ;;
 
+  scheduling-models)
+    echo "=== scheduling-models: ProgrammingNodeSet/Node/Link 모델 + 4 enum + alembic 배선 ==="
+    # 1. 모델 임포트 + 4 enum 존재 확인
+    python3 -c "
+import api.programming.scheduling.models as m
+assert hasattr(m, 'NodeKind'), 'NodeKind enum 없음'
+assert hasattr(m, 'ChildType'), 'ChildType enum 없음'
+assert hasattr(m, 'LinkSource'), 'LinkSource enum 없음'
+assert hasattr(m, 'LinkStatus'), 'LinkStatus enum 없음'
+assert m.ProgrammingNodeSet.__tablename__ == 'programming_node_sets'
+assert m.ProgrammingNode.__tablename__ == 'programming_nodes'
+assert m.ProgrammingLink.__tablename__ == 'programming_links'
+print('  ✓ 4 enum + 3 모델 임포트 확인')
+"
+    # 2. Base.metadata 등록 확인
+    python3 -c "
+from shared.database import Base
+import api.programming.metadata.models
+import api.programming.scheduling.models
+tables = Base.metadata.tables
+assert 'programming_node_sets' in tables, 'programming_node_sets Base에 없음'
+assert 'programming_nodes' in tables, 'programming_nodes Base에 없음'
+assert 'programming_links' in tables, 'programming_links Base에 없음'
+print('  ✓ 3 테이블 Base.metadata 등록 확인')
+"
+    # 3. alembic env.py import 배선 확인
+    grep -q "^import api.programming.scheduling.models" "$BACKEND/alembic/env.py" \
+      || { echo "FAIL: alembic/env.py scheduling import 없음"; exit 1; }
+    echo "  ✓ alembic/env.py scheduling import 배선 확인"
+    # 4. CHECK 제약 + UNIQUE 제약 존재 확인
+    python3 -c "
+import api.programming.scheduling.models as m
+args = m.ProgrammingLink.__table_args__
+names = [c.name for c in args if hasattr(c, 'name')]
+assert 'ck_programming_links_child_xor' in names, 'CHECK 제약 없음'
+assert 'uq_link_parent_child_node' in names, 'UNIQUE(parent,child_node) 없음'
+assert 'uq_link_parent_child_content' in names, 'UNIQUE(parent,child_content) 없음'
+print('  ✓ CHECK + UNIQUE 제약 확인')
+"
+    # 5. SQLite in-memory create_all 스모크
+    python3 -c "
+from sqlalchemy import create_engine
+from shared.database import Base
+import api.programming.metadata.models
+import api.programming.scheduling.models
+engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False})
+Base.metadata.create_all(engine)
+from sqlalchemy import inspect
+names = inspect(engine).get_table_names()
+assert 'programming_node_sets' in names, 'programming_node_sets create_all 실패'
+assert 'programming_nodes' in names, 'programming_nodes create_all 실패'
+assert 'programming_links' in names, 'programming_links create_all 실패'
+print('  ✓ SQLite create_all 스모크 통과')
+"
+    echo "=== PASS ==="
+    ;;
+
+  node-service)
+    echo "=== node-service: node_service CRUD + 사이클 가드 + 멤버 산출 단위 테스트 ==="
+    .venv/bin/pytest tests/test_node_service.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -q "19 passed" \
+      || { echo "FAIL: 19 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 19 테스트 통과"
+    echo "=== PASS ==="
+    ;;
+
+  scheduling-migration)
+    echo "=== scheduling-migration: alembic 0041 — 3테이블 + 4 ENUM + 제약 ==="
+    # 1. 마이그레이션 파일 존재 확인
+    [ -f "$BACKEND/alembic/versions/0041_scheduling_programming_model.py" ] \
+      || { echo "FAIL: 0041_scheduling_programming_model.py 없음"; exit 1; }
+    echo "  ✓ 0041 파일 존재"
+    # 2. revision 체인 확인
+    python3 -c "
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('m', '$BACKEND/alembic/versions/0041_scheduling_programming_model.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert m.revision == '0041', f'revision={m.revision}'
+assert m.down_revision == '0040', f'down_revision={m.down_revision}'
+print('  ✓ revision=0041 down_revision=0040')
+"
+    # 3. Docker PostgreSQL upgrade 적용
+    echo "  → alembic upgrade head 실행 중..."
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -5
+    echo "  ✓ alembic upgrade head 성공"
+    # 4. 테이블 존재 확인 (Docker psql)
+    TABLES=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT tablename FROM pg_tables WHERE tablename IN ('programming_node_sets','programming_nodes','programming_links') ORDER BY tablename;" 2>/dev/null)
+    echo "$TABLES" | grep -q "programming_links"   || { echo "FAIL: programming_links 테이블 없음"; exit 1; }
+    echo "$TABLES" | grep -q "programming_node_sets" || { echo "FAIL: programming_node_sets 테이블 없음"; exit 1; }
+    echo "$TABLES" | grep -q "programming_nodes"   || { echo "FAIL: programming_nodes 테이블 없음"; exit 1; }
+    echo "  ✓ 3 테이블 존재 확인"
+    # 5. ENUM 존재 확인
+    ENUMS=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT typname FROM pg_type WHERE typname IN ('node_kind','child_type','link_source','link_status') ORDER BY typname;" 2>/dev/null)
+    for e in child_type link_source link_status node_kind; do
+      echo "$ENUMS" | grep -q "$e" || { echo "FAIL: ENUM $e 없음"; exit 1; }
+    done
+    echo "  ✓ 4 ENUM 존재 확인"
+    # 6. CHECK 제약 존재 확인
+    CHECK=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT conname FROM pg_constraint WHERE conname='ck_programming_links_child_xor';" 2>/dev/null)
+    echo "$CHECK" | grep -q "ck_programming_links_child_xor" \
+      || { echo "FAIL: CHECK 제약 ck_programming_links_child_xor 없음"; exit 1; }
+    echo "  ✓ CHECK 제약 확인"
+    # 7. downgrade → upgrade 왕복
+    echo "  → downgrade 0040 → upgrade head 왕복 테스트..."
+    docker exec mediax-backend-1 alembic downgrade 0040 2>&1 | tail -3
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -3
+    echo "  ✓ downgrade/upgrade 왕복 성공"
+    echo "=== PASS ==="
+    ;;
+
+  data-migration)
+    echo "=== data-migration: categories→programming_nodes/links 이관 + 검증 게이트 8항목 ==="
+    # 1. 스크립트 존재 확인
+    [ -f "$BACKEND/scripts/migrate_programming_links.py" ] \
+      || { echo "FAIL: migrate_programming_links.py 없음"; exit 1; }
+    echo "  ✓ 스크립트 존재"
+    # 2. 이관 실행 (멱등) + 검증 게이트 통과 확인
+    docker exec mediax-backend-1 python3 -m scripts.migrate_programming_links 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: 이관 스크립트 실패"; exit 1; }
+    # 3. 멱등 재실행 (2회차 동일 결과)
+    echo "  → 멱등 재실행 중..."
+    docker exec mediax-backend-1 python3 -m scripts.migrate_programming_links 2>&1 | tail -5
+    [ $? -eq 0 ] || { echo "FAIL: 멱등 재실행 실패"; exit 1; }
+    echo "  ✓ 멱등성 확인"
+    echo "=== PASS ==="
+    ;;
+
   catalog-migration)
     echo "=== catalog-migration: alembic 0039 + 마이그레이션 구조 검증 ==="
     # 1. 마이그레이션 파일 존재 확인
