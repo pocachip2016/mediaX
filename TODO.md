@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] **dev-programming-link** — 편성 통합 모델(ProgrammingNode+Link DAG) + AI 자동링크(Tier0+1+2) + 기존 catalog/큐레이션 전환. ADR-011 작성 완료, Phase 1(모델/마이그레이션)부터 착수 예정. plan: `plans/dev-programming-link/`
+- [ ] **dev-programming-link** — Phase 3.2(tier1-intent-llm)부터 계속. plan: `plans/dev-programming-link/`
 
 ## Next (이번 마일스톤)
 - [ ] 1.3 큐레이션 모듈 설계 확정
@@ -14,6 +14,8 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-programming-link Phase 2.2~3.1** — link-service + scheduling router(15 ep) + Tier0 rule engine + 72 테스트 (2026-06-08)
+- [x] **dev-programming-link Phase 1~2.1** — scheduling 모델(0041) + 데이터 이관(187노드/170링크) + node_service(사이클 가드/멤버 산출) + 19 테스트 (2026-06-08)
 - [x] **docs(scheduling)** — ADR-011 편성 통합 모델(ProgrammingNode+Link DAG) 설계 + plan 스캐폴드 17스텝 (2026-06-08)
 - [x] **refactor(single-content-form-shared)** — SingleContentForm 공유화 + pipeline S1 건별 리치 폼 + 사이드바 3단 트리 + 메뉴 정비 (2026-06-07)
 - [x] **feat(catalog-merge-preview)** — 세트 병합 시 신규/중복 카운트 표시 (preview_load_set + GET /sets/{id}/load-preview + SetListPanel 배지) (2026-06-07)

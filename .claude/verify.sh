@@ -5918,6 +5918,48 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== PASS ==="
     ;;
 
+  tier0-rule-engine)
+    echo "=== tier0-rule-engine: Tier 0 규칙 필터 엔진 단위 테스트 ==="
+    .venv/bin/pytest tests/test_rule_engine.py -v 2>&1 | tail -25
+    .venv/bin/pytest tests/test_rule_engine.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_rule_engine.py -q 2>/dev/null | grep -q "19 passed" \
+      || { echo "FAIL: 19 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 19 테스트 통과"
+    # 회귀 확인 — node_service.NodeMember.reason 필드 추가 후 기존 테스트 무손상
+    .venv/bin/pytest tests/test_node_service.py tests/test_link_service.py -q 2>/dev/null | grep -q "51 passed" \
+      || { echo "FAIL: node+link_service 회귀 — 51 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ node+link_service 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  scheduling-router)
+    echo "=== scheduling-router: NodeSet/Node/Link/Backref/Tree API 테스트 ==="
+    .venv/bin/pytest tests/test_scheduling_api.py -v 2>&1 | tail -25
+    .venv/bin/pytest tests/test_scheduling_api.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_scheduling_api.py -q 2>/dev/null | grep -q "21 passed" \
+      || { echo "FAIL: 21 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 21 API 테스트 통과"
+    # 회귀 확인
+    .venv/bin/pytest tests/test_node_service.py tests/test_link_service.py -q 2>/dev/null | grep -q "51 passed" \
+      || { echo "FAIL: node_service+link_service 회귀 — 51 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ 서비스 레이어 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  link-service)
+    echo "=== link-service: link_service CRUD + 사이클 가드 + backref + window 검증 단위 테스트 ==="
+    .venv/bin/pytest tests/test_link_service.py -v 2>&1 | tail -20
+    .venv/bin/pytest tests/test_link_service.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_link_service.py -q 2>/dev/null | grep -q "32 passed" \
+      || { echo "FAIL: 32 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 32 테스트 통과"
+    # node_service 회귀 확인
+    .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -q "19 passed" \
+      || { echo "FAIL: node_service 회귀 — 19 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ node_service 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
   scheduling-migration)
     echo "=== scheduling-migration: alembic 0041 — 3테이블 + 4 ENUM + 제약 ==="
     # 1. 마이그레이션 파일 존재 확인

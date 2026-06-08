@@ -174,6 +174,7 @@ class NodeMember:
     sort_order: int
     is_pinned: bool
     source: str
+    reason: str | None = None
 
 
 def compute_members(db: Session, node: ProgrammingNode) -> list[NodeMember]:
@@ -211,16 +212,19 @@ def compute_members(db: Session, node: ProgrammingNode) -> list[NodeMember]:
                 source=lnk.source.value if hasattr(lnk.source, "value") else str(lnk.source),
             )
 
-    # 2. rule 산출 (kind=rule → rule_query 기반, 현재는 stub — Tier 0 엔진은 step 3.1)
+    # 2. rule 산출 (kind=rule → Tier 0 rule_query 기반)
     if node.kind == NodeKind.rule and node.rule_query:
-        rule_ids = _apply_rule_query(db, node.rule_query)
-        for i, cid in enumerate(rule_ids):
+        rule_results = _apply_rule_query(db, node.rule_query)
+        for i, result in enumerate(rule_results):
+            cid = result if isinstance(result, int) else result.content_id
+            reason = None if isinstance(result, int) else result.reason
             if cid not in members:
                 members[cid] = NodeMember(
                     content_id=cid,
                     sort_order=i,
                     is_pinned=False,
                     source="rule",
+                    reason=reason,
                 )
 
     # 3. rank 산출 (kind=rank → sort by popularity/recency, limit N)
@@ -241,9 +245,10 @@ def compute_members(db: Session, node: ProgrammingNode) -> list[NodeMember]:
     )
 
 
-def _apply_rule_query(db: Session, rule_query: dict) -> list[int]:
-    """Tier 0 규칙 필터 stub — step 3.1에서 구현. 현재 빈 리스트 반환."""
-    return []
+def _apply_rule_query(db: Session, rule_query: dict):
+    """Tier 0 규칙 필터 — rule_engine.apply_rule_query 위임."""
+    from .rule_engine import apply_rule_query
+    return apply_rule_query(db, rule_query)
 
 
 def _apply_rank(db: Session, rank_source: str | None, limit: int | None) -> list[int]:
