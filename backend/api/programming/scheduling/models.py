@@ -65,6 +65,8 @@ class ProgrammingNode(Base):
     window_end = Column(Date, nullable=True)
     is_active = Column(Boolean, nullable=False, server_default="true")
     is_draft = Column(Boolean, nullable=False, server_default="false")
+    # bge-m3 1024-dim 벡터 캐시 (theme_features + headline_copy 임베딩, ingest/edit-time precompute)
+    embed_theme = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

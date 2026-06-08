@@ -5918,6 +5918,67 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== PASS ==="
     ;;
 
+  tier2-semantic-match)
+    echo "=== tier2-semantic-match: match_service — cosine + facet overlap 가중합 ==="
+    cd "$BACKEND"
+    # 1. 단위 테스트 (13개)
+    .venv/bin/pytest tests/test_match_service.py -v 2>&1 | tail -20
+    .venv/bin/pytest tests/test_match_service.py -q 2>/dev/null | grep -q "13 passed" \
+      || { echo "FAIL: 13 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 13 테스트 통과"
+    # 2. 심볼 import 확인
+    python3 -c "
+from api.programming.scheduling.match_service import match_node_to_contents, cosine_similarity, MatchResult
+print('  ✓ match_service 심볼 import 확인')
+"
+    # 3. Tier0 후보축소(apply_rule_query) 재사용 확인
+    grep -q "apply_rule_query" "$BACKEND/api/programming/scheduling/match_service.py" \
+      || { echo "FAIL: match_service.py가 apply_rule_query를 사용하지 않음 (Tier0 후보축소 누락)"; exit 1; }
+    echo "  ✓ apply_rule_query Tier0 후보축소 확인"
+    echo "=== PASS ==="
+    ;;
+
+  node-embed-theme)
+    echo "=== node-embed-theme: ProgrammingNode.embed_theme 컬럼 + 0045 migration + node_theme_service ==="
+    cd "$BACKEND"
+    # 1. 단위 테스트 (10개)
+    .venv/bin/pytest tests/test_node_theme_service.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_node_theme_service.py -q 2>/dev/null | grep -q "10 passed" \
+      || { echo "FAIL: 10 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 10 테스트 통과"
+    # 2. embed_theme 컬럼 확인
+    python3 -c "
+import api.programming.scheduling.models as m
+assert 'embed_theme' in m.ProgrammingNode.__table__.columns, 'embed_theme 컬럼 없음'
+print('  ✓ ProgrammingNode.embed_theme 컬럼 확인')
+"
+    # 3. node_theme_service 심볼 확인
+    python3 -c "
+from api.programming.scheduling.node_theme_service import build_node_theme_embedding, compose_theme_text
+print('  ✓ node_theme_service 심볼 import 확인')
+"
+    # 4. alembic 0045 revision 체인 확인
+    [ -f "$BACKEND/alembic/versions/0045_node_embed_theme.py" ] \
+      || { echo "FAIL: 0045_node_embed_theme.py 없음"; exit 1; }
+    python3 -c "
+import importlib.util
+spec = importlib.util.spec_from_file_location('m', '$BACKEND/alembic/versions/0045_node_embed_theme.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert m.revision == '0045', f'revision={m.revision}'
+assert m.down_revision == '0044', f'down_revision={m.down_revision}'
+print('  ✓ revision=0045 down_revision=0044')
+"
+    # 5. Docker PostgreSQL 마이그레이션 + 컬럼 존재 확인
+    echo "  → alembic upgrade head 실행 중..."
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -5
+    COL=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT column_name FROM information_schema.columns WHERE table_name='programming_nodes' AND column_name='embed_theme';" 2>/dev/null)
+    [ "$COL" = "embed_theme" ] \
+      || { echo "FAIL: programming_nodes.embed_theme 컬럼 없음 (migration 미적용?)"; exit 1; }
+    echo "  ✓ programming_nodes.embed_theme 컬럼 DB 확인"
+    echo "=== PASS ==="
+    ;;
+
   facet-intensity)
     echo "=== facet-intensity: VOCAB intensity 축 추가 + validate/overlap 단위 테스트 ==="
     cd "$BACKEND"
