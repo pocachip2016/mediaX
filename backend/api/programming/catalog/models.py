@@ -24,11 +24,23 @@ class PurchaseType(str, enum.Enum):
     est_season = "est_season"
 
 
+class CategorySet(Base):
+    """저장된 카테고리 세트(트리 묶음). set_id IS NULL = 작업 디렉토리(draft)."""
+    __tablename__ = "category_sets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class Category(Base):
     __tablename__ = "categories"
 
     id = Column(Integer, primary_key=True, index=True)
     parent_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=True)
+    set_id = Column(Integer, ForeignKey("category_sets.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(100), nullable=False)
     slug = Column(String(120), nullable=True)
     depth = Column(Integer, default=0, nullable=False)
@@ -40,6 +52,7 @@ class Category(Base):
     __table_args__ = (
         Index("ix_categories_parent_id", "parent_id"),
         Index("ix_categories_parent_sort", "parent_id", "sort_order"),
+        Index("ix_categories_set_id", "set_id"),
     )
 
 

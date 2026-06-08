@@ -5918,6 +5918,22 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== PASS ==="
     ;;
 
+  facet-intensity)
+    echo "=== facet-intensity: VOCAB intensity 축 추가 + validate/overlap 단위 테스트 ==="
+    cd "$BACKEND"
+    .venv/bin/pytest tests/test_facets.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_facets.py -q 2>/dev/null | grep -q "9 passed" \
+      || { echo "FAIL: 9 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 9 테스트 통과"
+    # VOCAB에 intensity 키 존재 확인
+    python3 -c "from api.programming.scheduling.facets import VOCAB; assert 'intensity' in VOCAB, 'VOCAB intensity 없음'; print('  ✓ VOCAB[intensity] =', VOCAB['intensity'])"
+    # profile_service 프롬프트에 intensity 포함 확인
+    grep -q 'intensity' "$BACKEND/api/programming/scheduling/profile_service.py" \
+      || { echo "FAIL: profile_service.py intensity 없음"; exit 1; }
+    echo "  ✓ profile_service intensity 프롬프트 반영"
+    echo "=== PASS ==="
+    ;;
+
   tier0-rule-engine)
     echo "=== tier0-rule-engine: Tier 0 규칙 필터 엔진 단위 테스트 ==="
     .venv/bin/pytest tests/test_rule_engine.py -v 2>&1 | tail -25

@@ -1,204 +1,15 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { ChevronRight, ChevronDown, Plus, Trash2, FolderOpen, Folder } from "lucide-react"
+import { RefreshCw, Save, Trash2 } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
-import { catalogApi, type CategoryNode, type CategoryCreateRequest } from "@/lib/api"
-
-// ── 인라인 추가 폼 ────────────────────────────────────────────────────────────
-
-function AddCategoryInline({
-  parentId,
-  depth,
-  onAdd,
-  onCancel,
-}: {
-  parentId: number | null
-  depth: number
-  onAdd: (name: string, parentId: number | null) => Promise<void>
-  onCancel: () => void
-}) {
-  const [name, setName] = useState("")
-  const [loading, setLoading] = useState(false)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim()) return
-    setLoading(true)
-    try {
-      await onAdd(name.trim(), parentId)
-      setName("")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex items-center gap-2 py-1"
-      style={{ paddingLeft: `${(depth + 1) * 20 + 8}px` }}
-    >
-      <input
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="카테고리 이름"
-        disabled={loading}
-        className="h-7 rounded border border-border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-      />
-      <button
-        type="submit"
-        disabled={loading || !name.trim()}
-        className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground disabled:opacity-50"
-      >
-        {loading ? "추가중…" : "추가"}
-      </button>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="text-xs text-muted-foreground hover:text-foreground"
-      >
-        취소
-      </button>
-    </form>
-  )
-}
-
-// ── 노드 ─────────────────────────────────────────────────────────────────────
-
-function CategoryNodeItem({
-  node,
-  onAdd,
-  onDelete,
-}: {
-  node: CategoryNode
-  onAdd: (name: string, parentId: number | null) => Promise<void>
-  onDelete: (id: number) => Promise<void>
-}) {
-  const [expanded, setExpanded] = useState(true)
-  const [addingChild, setAddingChild] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-
-  const hasChildren = node.children.length > 0
-
-  const handleDelete = async () => {
-    if (!confirm(`"${node.name}" 카테고리를 삭제할까요?`)) return
-    setDeleting(true)
-    try {
-      await onDelete(node.id)
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  return (
-    <div>
-      <div
-        className={cn(
-          "group flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted/50",
-          !node.is_active && "opacity-50"
-        )}
-        style={{ paddingLeft: `${node.depth * 20 + 8}px` }}
-      >
-        {/* 펼치기/접기 */}
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="flex h-4 w-4 items-center justify-center text-muted-foreground"
-          disabled={!hasChildren}
-        >
-          {hasChildren ? (
-            expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />
-          ) : (
-            <span className="h-3 w-3" />
-          )}
-        </button>
-
-        {/* 폴더 아이콘 */}
-        {hasChildren && expanded ? (
-          <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
-        ) : (
-          <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-
-        {/* 이름 */}
-        <span className="flex-1 truncate">{node.name}</span>
-
-        {/* 콘텐츠 수 */}
-        {node.content_count != null && (
-          <span className="text-xs text-muted-foreground">({node.content_count})</span>
-        )}
-
-        {/* 액션 버튼 (hover 시 노출) */}
-        <div className="ml-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            onClick={() => setAddingChild(true)}
-            title="하위 카테고리 추가"
-            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <Plus className="h-3 w-3" />
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            title="삭제"
-            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </div>
-      </div>
-
-      {/* 하위 추가 폼 */}
-      {addingChild && (
-        <AddCategoryInline
-          parentId={node.id}
-          depth={node.depth}
-          onAdd={async (name, pid) => {
-            await onAdd(name, pid)
-            setAddingChild(false)
-          }}
-          onCancel={() => setAddingChild(false)}
-        />
-      )}
-
-      {/* 자식 노드 */}
-      {expanded &&
-        node.children.map((child) => (
-          <CategoryNodeItem key={child.id} node={child} onAdd={onAdd} onDelete={onDelete} />
-        ))}
-    </div>
-  )
-}
-
-// ── 트리 ─────────────────────────────────────────────────────────────────────
-
-function CategoryTree({
-  nodes,
-  onAdd,
-  onDelete,
-}: {
-  nodes: CategoryNode[]
-  onAdd: (name: string, parentId: number | null) => Promise<void>
-  onDelete: (id: number) => Promise<void>
-}) {
-  if (nodes.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-        <Folder className="mb-3 h-10 w-10 opacity-30" />
-        <p className="text-sm">카테고리 없음 — 루트 카테고리를 추가해주세요.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-0.5">
-      {nodes.map((node) => (
-        <CategoryNodeItem key={node.id} node={node} onAdd={onAdd} onDelete={onDelete} />
-      ))}
-    </div>
-  )
-}
+import { catalogApi, type CategoryNode, type CategorySet, type CategoryCreateRequest, type CategoryUpdateRequest, type DupPolicy } from "@/lib/api"
+import { CategoryTreeDnd } from "@/components/catalog/CategoryTreeDnd"
+import { CategoryDetailPanel } from "@/components/catalog/CategoryDetailPanel"
+import { InputPanel } from "@/components/catalog/InputPanel"
+import { SetListPanel } from "@/components/catalog/SetListPanel"
+import { SaveSetDialog, ConfirmDialog } from "@/components/catalog/SetDialogs"
+import { addCustomTemplate, upsertCustomTemplate, findTemplateByLabel, serializeTree } from "@/lib/customTemplates"
 
 // ── 페이지 ────────────────────────────────────────────────────────────────────
 
@@ -206,23 +17,46 @@ export default function CatalogCategoryPage() {
   const [tree, setTree] = useState<CategoryNode[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [addingRoot, setAddingRoot] = useState(false)
+  const [selectedNode, setSelectedNode] = useState<CategoryNode | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [sets, setSets] = useState<CategorySet[]>([])
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [templateSaveOpen, setTemplateSaveOpen] = useState(false)
+  const [templateSaveInitialName, setTemplateInitialName] = useState("")
+  const [templateSaveText, setTemplateSaveText] = useState("")
+  const [templateOverwrite, setTemplateOverwrite] = useState<{ label: string; description: string; text: string } | null>(null)
 
   const fetchTree = useCallback(async () => {
     try {
       setError(null)
       const data = await catalogApi.getTree({ counts: true })
       setTree(data)
+      setSelectedNode((prev) => {
+        if (!prev) return null
+        return findNodeById(data, prev.id) ?? null
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : "로드 실패")
     } finally {
       setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  const fetchSets = useCallback(async () => {
+    try {
+      const data = await catalogApi.listSets()
+      setSets(data)
+    } catch {
+      // 세트 로드 실패는 트리 작업에 영향 없음
     }
   }, [])
 
   useEffect(() => {
     void fetchTree()
-  }, [fetchTree])
+    void fetchSets()
+  }, [fetchTree, fetchSets])
 
   const handleAdd = useCallback(
     async (name: string, parentId: number | null) => {
@@ -230,7 +64,7 @@ export default function CatalogCategoryPage() {
       await catalogApi.createCategory(req)
       await fetchTree()
     },
-    [fetchTree]
+    [fetchTree],
   )
 
   const handleDelete = useCallback(
@@ -238,68 +72,281 @@ export default function CatalogCategoryPage() {
       await catalogApi.deleteCategory(id)
       await fetchTree()
     },
-    [fetchTree]
+    [fetchTree],
   )
 
+  const handleUpdate = useCallback(
+    async (id: number, data: CategoryUpdateRequest) => {
+      await catalogApi.updateCategory(id, data)
+      await fetchTree()
+    },
+    [fetchTree],
+  )
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await Promise.all([fetchTree(), fetchSets()])
+  }, [fetchTree, fetchSets])
+
+  const handleSaveSet = useCallback(
+    async (name: string, description?: string, alsoTemplate?: boolean) => {
+      await catalogApi.commitSet({ name, description })
+      if (alsoTemplate) {
+        addCustomTemplate({ label: name, description: description ?? "", text: serializeTree(tree) })
+      }
+      await Promise.all([fetchTree(), fetchSets()])
+    },
+    [fetchTree, fetchSets, tree],
+  )
+
+  const handleClearDraft = useCallback(async () => {
+    await catalogApi.clearDraft()
+    await fetchTree()
+    setSelectedNode(null)
+  }, [fetchTree])
+
+  const handleLoadSet = useCallback(
+    async (id: number, opts?: { mode?: "replace" | "merge"; dup_policy?: DupPolicy }) => {
+      await catalogApi.loadSet(id, opts)
+      await Promise.all([fetchTree(), fetchSets()])
+      setSelectedNode(null)
+    },
+    [fetchTree, fetchSets],
+  )
+
+  const handleRenameSet = useCallback(
+    async (id: number, name: string) => {
+      await catalogApi.updateSet(id, { name })
+      await fetchSets()
+    },
+    [fetchSets],
+  )
+
+  const handleDeleteSet = useCallback(
+    async (id: number) => {
+      await catalogApi.deleteSet(id)
+      await fetchSets()
+    },
+    [fetchSets],
+  )
+
+  const handleSelect = useCallback((node: CategoryNode) => {
+    setSelectedNode((prev) => (prev?.id === node.id ? null : node))
+  }, [])
+
+  const handleSaveAsTemplate = useCallback(async (name: string, description?: string) => {
+    const desc = description ?? ""
+    const existing = findTemplateByLabel(name)
+    if (existing) {
+      setTemplateOverwrite({ label: name, description: desc, text: templateSaveText })
+      setTemplateSaveOpen(false)
+      return
+    }
+    addCustomTemplate({ label: name, description: desc, text: templateSaveText })
+    setTemplateSaveOpen(false)
+  }, [templateSaveText])
+
+  const handleSaveSetAsTemplate = useCallback(async (set: CategorySet) => {
+    try {
+      const nodes = await catalogApi.getSetTree(set.id)
+      const text = serializeTree(nodes)
+      setTemplateInitialName(set.name)
+      setTemplateSaveText(text)
+      setTemplateSaveOpen(true)
+    } catch (e) {
+      console.error("Failed to load set tree:", e)
+    }
+  }, [])
+
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex h-[calc(100dvh-6.5rem)] flex-col gap-3 overflow-hidden p-6">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">카테고리 트리</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            서비스 VOD 카탈로그의 N-depth 카테고리 계층을 관리합니다.
+            N-depth 계층 관리 — 드래그&amp;드롭 재구성, 일괄 입력 지원
           </p>
         </div>
         <button
-          onClick={() => setAddingRoot(true)}
-          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
         >
-          <Plus className="h-4 w-4" />
-          루트 카테고리
+          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+          새로고침
         </button>
       </div>
 
-      {/* 루트 추가 폼 */}
-      {addingRoot && (
-        <div className="rounded-lg border border-dashed p-2">
-          <AddCategoryInline
-            parentId={null}
-            depth={-1}
-            onAdd={async (name, pid) => {
-              await handleAdd(name, pid)
-              setAddingRoot(false)
-            }}
-            onCancel={() => setAddingRoot(false)}
+      {/* 3컬럼 워크스페이스 */}
+      <div className="flex flex-1 gap-3 overflow-hidden">
+        {/* 좌: 입력 패널 */}
+        <div className="w-72 min-h-0 shrink-0">
+          <InputPanel
+            existingTree={tree}
+            onCommit={fetchTree}
+            onAddRoot={(name) => handleAdd(name, null)}
           />
         </div>
+
+        {/* 중: 카테고리 목록 */}
+        <div className="w-80 min-h-0 shrink-0">
+          <SetListPanel
+            sets={sets}
+            onLoad={handleLoadSet}
+            onRename={handleRenameSet}
+            onDelete={handleDeleteSet}
+            onSaveAsTemplate={handleSaveSetAsTemplate}
+          />
+        </div>
+
+        {/* 우: Draft 작업트리 */}
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+            <div className="shrink-0 border-b px-3 py-2.5">
+              <p className="text-sm font-medium">카테고리 작업중</p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="space-y-2 p-4">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div
+                      key={i}
+                      className="h-6 animate-pulse rounded bg-muted"
+                      style={{ width: `${50 + i * 8}%` }}
+                    />
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center gap-2 py-12 text-sm text-destructive">
+                  <p>{error}</p>
+                  <button
+                    onClick={() => { setLoading(true); void fetchTree() }}
+                    className="text-muted-foreground underline hover:text-foreground"
+                  >
+                    다시 시도
+                  </button>
+                </div>
+              ) : selectedNode ? (
+                <CategoryDetailPanel
+                  node={selectedNode}
+                  allNodes={tree}
+                  onRefresh={fetchTree}
+                  onDeselect={() => setSelectedNode(null)}
+                  onAddChild={(parentId) => {
+                    handleAdd("새 카테고리", parentId).catch(() => null)
+                  }}
+                />
+              ) : (
+                <div className="p-2">
+                  <CategoryTreeDnd
+                    nodes={tree}
+                    onAdd={handleAdd}
+                    onDelete={handleDelete}
+                    onUpdate={handleUpdate}
+                    onSelect={handleSelect}
+                    selectedId={null}
+                    onRefresh={fetchTree}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Draft 하단 액션 바 */}
+          <div className="flex shrink-0 items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+            <div className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="text-xs font-medium text-primary">작업중 (draft)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {selectedNode && (
+                <button
+                  onClick={() => setSelectedNode(null)}
+                  className="rounded border px-2.5 py-1 text-xs hover:bg-muted"
+                >
+                  트리로 돌아가기
+                </button>
+              )}
+              <button
+                onClick={() => setSaveOpen(true)}
+                className="flex items-center gap-1 rounded-md border bg-card px-2.5 py-1 text-xs hover:bg-muted"
+              >
+                <Save className="h-3 w-3" />
+                카테고리저장
+              </button>
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-3 w-3" />
+                CLEAR
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 저장 모달 */}
+      {saveOpen && (
+        <SaveSetDialog
+          title="카테고리저장"
+          subtitle="현재 작업 트리를 카테고리 목록에 저장합니다. 작업 트리는 유지됩니다."
+          onSave={handleSaveSet}
+          onClose={() => setSaveOpen(false)}
+          allowTemplate
+        />
       )}
 
-      {/* 본문 */}
-      <div className="rounded-lg border bg-card p-2">
-        {loading ? (
-          <div className="space-y-2 p-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-6 animate-pulse rounded bg-muted" />
-            ))}
-          </div>
-        ) : error ? (
-          <div className="flex flex-col items-center gap-2 py-12 text-sm text-destructive">
-            <p>{error}</p>
-            <button
-              onClick={() => {
-                setLoading(true)
-                void fetchTree()
-              }}
-              className="text-muted-foreground underline hover:text-foreground"
-            >
-              다시 시도
-            </button>
-          </div>
-        ) : (
-          <CategoryTree nodes={tree} onAdd={handleAdd} onDelete={handleDelete} />
-        )}
-      </div>
+      {/* 템플릿으로 저장 모달 */}
+      {templateSaveOpen && (
+        <SaveSetDialog
+          title="템플릿으로 저장"
+          subtitle="현재 카테고리 구조를 재사용 가능한 템플릿으로 저장합니다."
+          initialName={templateSaveInitialName}
+          onSave={handleSaveAsTemplate}
+          onClose={() => setTemplateSaveOpen(false)}
+        />
+      )}
+
+      {/* 템플릿 이름 중복 덮어쓰기 확인 */}
+      {templateOverwrite && (
+        <ConfirmDialog
+          title={`이미 "${templateOverwrite.label}" 템플릿이 존재합니다`}
+          message="같은 이름의 템플릿이 이미 있습니다. 기존 템플릿을 덮어쓰시겠습니까?"
+          confirmLabel="Overwrite"
+          onConfirm={async () => {
+            upsertCustomTemplate(templateOverwrite)
+            setTemplateOverwrite(null)
+          }}
+          onClose={() => setTemplateOverwrite(null)}
+        />
+      )}
+
+      {/* CLEAR 확정 모달 */}
+      {confirmClear && (
+        <ConfirmDialog
+          title="작업 트리 비우기"
+          message="현재 draft 작업 트리를 모두 삭제합니다."
+          warning="저장된 세트는 영향받지 않습니다. 되돌릴 수 없습니다."
+          confirmLabel="비우기"
+          onConfirm={handleClearDraft}
+          onClose={() => setConfirmClear(false)}
+        />
+      )}
     </div>
   )
+}
+
+// ── 유틸 ─────────────────────────────────────────────────────────────────────
+
+function findNodeById(nodes: CategoryNode[], id: number): CategoryNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children.length) {
+      const found = findNodeById(node.children, id)
+      if (found) return found
+    }
+  }
+  return null
 }

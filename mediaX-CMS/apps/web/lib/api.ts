@@ -1796,6 +1796,15 @@ export const distributionApi = {
 
 // ── 카탈로그 카테고리 트리 (1.2.1) ───────────────────────────────────────────
 
+export interface CategorySet {
+  id: number
+  name: string
+  description: string | null
+  category_count: number
+  created_at: string | null
+  updated_at: string | null
+}
+
 export interface CategoryNode {
   id: number
   name: string
@@ -1815,6 +1824,27 @@ export interface CategoryCreateRequest {
   parent_id?: number | null
   sort_order?: number | null
   slug?: string | null
+}
+
+export interface CategoryUpdateRequest {
+  name?: string
+  slug?: string | null
+  is_active?: boolean
+  sort_order?: number
+}
+
+export interface BulkCategoryNode {
+  name: string
+  children?: BulkCategoryNode[]
+}
+
+export type DupPolicy = "merge" | "overwrite" | "reject"
+
+export interface BulkCategoryResult {
+  created: number
+  skipped: number
+  overwritten: number
+  tree: CategoryNode[]
 }
 
 export type Quality = "SD" | "HD" | "FHD" | "UHD_4K"
@@ -1890,10 +1920,66 @@ export const catalogApi = {
       body: JSON.stringify(data),
     }),
 
-  deleteCategory: (id: number) =>
-    request<void>(`/api/programming/catalog/categories/${id}`, {
-      method: "DELETE",
+  updateCategory: (id: number, data: CategoryUpdateRequest) =>
+    request<CategoryNode>(`/api/programming/catalog/categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
     }),
+
+  moveCategory: (id: number, data: { new_parent_id: number | null; new_sort_order?: number | null }) =>
+    request<CategoryNode>(`/api/programming/catalog/categories/${id}/move`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  bulkCreate: (data: { nodes: BulkCategoryNode[]; parent_id?: number | null; dup_policy?: DupPolicy }) =>
+    request<BulkCategoryResult>("/api/programming/catalog/categories/bulk", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number, cascade = false) =>
+    request<void>(
+      `/api/programming/catalog/categories/${id}${cascade ? "?cascade=true" : ""}`,
+      { method: "DELETE" }
+    ),
+
+  // ── 카테고리 세트 ────────────────────────────────────────────────────────────
+
+  listSets: () =>
+    request<CategorySet[]>("/api/programming/catalog/sets"),
+
+  commitSet: (data: { name: string; description?: string }) =>
+    request<CategorySet>("/api/programming/catalog/sets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSet: (id: number, data: { name?: string; description?: string }) =>
+    request<CategorySet>(`/api/programming/catalog/sets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSet: (id: number) =>
+    request<void>(`/api/programming/catalog/sets/${id}`, { method: "DELETE" }),
+
+  previewLoadSet: (id: number) =>
+    request<{ new_count: number; dup_count: number }>(`/api/programming/catalog/sets/${id}/load-preview`),
+
+  loadSet: (id: number, opts?: { mode?: "replace" | "merge"; dup_policy?: DupPolicy }) =>
+    request<{ cleared: number; loaded: number }>(`/api/programming/catalog/sets/${id}/load`, {
+      ...(opts ? { body: JSON.stringify(opts) } : {}),
+      method: "POST",
+    }),
+
+  clearDraft: () =>
+    request<{ cleared: number }>("/api/programming/catalog/sets/clear-draft", {
+      method: "POST",
+    }),
+
+  getSetTree: (setId: number) =>
+    request<CategoryNode[]>(`/api/programming/catalog/sets/${setId}/tree`),
 
   // ── 가격 정책 ──────────────────────────────────────────────────────────────
 

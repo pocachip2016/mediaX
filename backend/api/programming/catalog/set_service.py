@@ -1,0 +1,170 @@
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
+from api.programming.catalog import service
+from api.programming.catalog.models import Category, CategorySet
+
+
+def list_sets(db: Session) -> list[dict]:
+    sets = db.query(CategorySet).order_by(CategorySet.id).all()
+    result = []
+    for s in sets:
+        count = db.query(func.count(Category.id)).filter(
+            Category.set_id == s.id
+        ).scalar() or 0
+        result.append({
+            "id": s.id,
+            "name": s.name,
+            "description": s.description,
+            "category_count": count,
+            "created_at": s.created_at,
+            "updated_at": s.updated_at,
+        })
+    return result
+
+
+def commit_draft(db: Session, name: str, description: str | None = None) -> dict:
+    s = CategorySet(name=name, description=description)
+    db.add(s)
+    db.flush()
+    loaded = _copy_tree(db, src_set_id=None, dst_set_id=s.id)
+    db.flush()
+    count = db.query(func.count(Category.id)).filter(Category.set_id == s.id).scalar() or 0
+    return {
+        "id": s.id,
+        "name": s.name,
+        "description": s.description,
+        "category_count": count,
+        "created_at": s.created_at,
+        "updated_at": s.updated_at,
+        "_loaded": loaded,
+    }
+
+
+def preview_load_set(db: Session, set_id: int) -> dict:
+    """병합 시 신규/중복 노드 수를 미리 계산 (DB 변경 없음)."""
+    s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
+    if s is None:
+        raise ValueError(f"set_id={set_id} not found")
+
+    nodes = service.list_tree_by_set(db, set_id=set_id)
+    dup_count = 0
+
+    def _walk(items: list[dict], pid: int | None) -> None:
+        nonlocal dup_count
+        for item in items:
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            existing = (
+                db.query(Category)
+                .filter(
+                    Category.parent_id == pid,
+                    Category.name == name,
+                    Category.set_id.is_(None),
+                )
+                .first()
+            )
+            if existing is not None:
+                dup_count += 1
+                _walk(item.get("children") or [], existing.id)
+
+    _walk(nodes, None)
+    total = db.query(func.count(Category.id)).filter(Category.set_id == set_id).scalar() or 0
+    return {"new_count": total - dup_count, "dup_count": dup_count}
+
+
+def load_set(
+    db: Session,
+    set_id: int,
+    mode: str = "replace",
+    dup_policy: str = "merge",
+) -> tuple[int, int]:
+    """세트를 draft로 불러오기.
+
+    - replace: draft 전체 비우고 세트 트리 복사 (기존 동작)
+    - merge: draft 유지하고 세트 트리를 dup_policy에 따라 병합
+    반환: (cleared, loaded)  — merge 시 cleared=0
+    """
+    s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
+    if s is None:
+        raise ValueError(f"set_id={set_id} not found")
+
+    if mode == "merge":
+        nodes = service.list_tree_by_set(db, set_id=set_id)
+        created, _skipped, _overwritten = service.bulk_create_categories(
+            db, nodes, parent_id=None, dup_policy=dup_policy
+        )
+        db.flush()
+        return 0, created
+
+    cleared = clear_draft(db)
+    db.flush()
+    loaded = _copy_tree(db, src_set_id=set_id, dst_set_id=None)
+    db.flush()
+    return cleared, loaded
+
+
+def clear_draft(db: Session) -> int:
+    count = db.query(Category).filter(Category.set_id.is_(None)).delete(synchronize_session=False)
+    db.flush()
+    return count
+
+
+def update_set(
+    db: Session,
+    set_id: int,
+    name: str | None = None,
+    description: str | None = None,
+) -> dict:
+    s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
+    if s is None:
+        raise ValueError(f"set_id={set_id} not found")
+    if name is not None:
+        s.name = name
+    if description is not None:
+        s.description = description
+    db.flush()
+    count = db.query(func.count(Category.id)).filter(Category.set_id == set_id).scalar() or 0
+    return {
+        "id": s.id,
+        "name": s.name,
+        "description": s.description,
+        "category_count": count,
+        "created_at": s.created_at,
+        "updated_at": s.updated_at,
+    }
+
+
+def delete_set(db: Session, set_id: int) -> None:
+    s = db.query(CategorySet).filter(CategorySet.id == set_id).first()
+    if s is None:
+        raise ValueError(f"set_id={set_id} not found")
+    db.delete(s)
+    db.flush()
+
+
+def _copy_tree(db: Session, src_set_id: int | None, dst_set_id: int | None) -> int:
+    """src 세트의 카테고리 트리를 dst 세트로 복사. depth 오름차순 처리로 부모 보장."""
+    nodes = (
+        db.query(Category)
+        .filter(Category.set_id.is_(src_set_id) if src_set_id is None else Category.set_id == src_set_id)
+        .order_by(Category.depth, Category.sort_order)
+        .all()
+    )
+    old_to_new: dict[int, int] = {}
+    for node in nodes:
+        new_parent_id = old_to_new.get(node.parent_id) if node.parent_id is not None else None
+        new_node = Category(
+            name=node.name,
+            slug=node.slug,
+            depth=node.depth,
+            sort_order=node.sort_order,
+            is_active=node.is_active,
+            parent_id=new_parent_id,
+            set_id=dst_set_id,
+        )
+        db.add(new_node)
+        db.flush()
+        old_to_new[node.id] = new_node.id
+    return len(nodes)

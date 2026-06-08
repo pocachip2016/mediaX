@@ -30,18 +30,24 @@ export const docsNav: NavSection[] = [
         href: "/programming/contents",
         items: [
           { title: "콘텐츠 목록", href: "/programming/contents", label: "NEW" },
-          { title: "콘텐츠 등록", href: "/programming/contents/new", label: "NEW" },
-          { title: "일괄 업로드", href: "/programming/contents/upload", label: "NEW" },
-          { title: "외부 검색", href: "/programming/contents/external", label: "NEW" },
-          { title: "처리 현황", href: "/programming/contents/pipeline", label: "NEW" },
-          { title: "AI Review Queue", href: "/programming/contents/review", label: "NEW" },
+          { title: "콘텐츠 등록", href: "/programming/contents/pipeline", label: "NEW" },
+          {
+            title: "콘텐츠 소스",
+            href: "/programming/sources",
+            items: [
+              { title: "TMDB", href: "/programming/sources/tmdb" },
+              { title: "KOBIS", href: "/programming/sources/kobis" },
+              { title: "KMDB", href: "/programming/sources/kmdb" },
+              { title: "WebSearch", href: "/programming/contents/external" },
+            ],
+          },
         ],
       },
       {
-        title: "카탈로그",
+        title: "카테고리 관리",
         href: "/programming/catalog",
         items: [
-          { title: "카테고리 트리", href: "/programming/catalog" },
+          { title: "카테고리 생성", href: "/programming/catalog" },
           { title: "가격 정책", href: "/programming/catalog/pricing", label: "NEW" },
           { title: "홀드백", href: "/programming/catalog/holdback", label: "NEW" },
         ],
@@ -58,15 +64,6 @@ export const docsNav: NavSection[] = [
         title: "편성 스케줄",
         href: "/programming/schedule",
         items: [],
-      },
-      {
-        title: "외부 소스",
-        href: "/programming/sources",
-        items: [
-          { title: "TMDB", href: "/programming/sources/tmdb" },
-          { title: "KOBIS", href: "/programming/sources/kobis" },
-          { title: "KMDB", href: "/programming/sources/kmdb" },
-        ],
       },
     ],
   },
@@ -177,6 +174,12 @@ export const docsNav: NavSection[] = [
       {
         title: "파이프라인 로그",
         href: "/monitoring/pipeline/log",
+        label: "NEW",
+        items: [],
+      },
+      {
+        title: "AI Review Queue",
+        href: "/programming/contents/review",
         label: "NEW",
         items: [],
       },

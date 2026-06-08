@@ -84,6 +84,19 @@
       "completed_at": "2026-06-08T17:42:57.793181+09:00"
     },
     {
+      "id": "3.2b",
+      "name": "facet-intensity",
+      "summary": "VOCAB intensity 축([폭력,잔인,선정,공포,복잡]) + profile_service 프롬프트 반영 + ADR-011-05 갱신 + 단위 테스트 9건 pass",
+      "status": "completed",
+      "completed_at": "2026-06-08T00:00:00+09:00"
+    },
+    {
+      "id": "3.2c",
+      "name": "node-embed-theme",
+      "summary": "ProgrammingNode.embed_theme 캐시 컬럼 + alembic 0043 + build_node_theme_embedding 헬퍼",
+      "status": "pending"
+    },
+    {
       "id": "3.3",
       "name": "tier2-semantic-match",
       "summary": "Tier2 의미매칭 — Tier0 후보축소 → 노드 theme벡터 vs CUP embed_synopsis Python cosine + facet-overlap 가중합 → confidence+reason. ES kNN은 scale-phase 연기",
