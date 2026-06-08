@@ -107,20 +107,23 @@
     {
       "id": "3.4",
       "name": "suggest-review-flow",
-      "summary": "AI 추천 저장(source=ai,status=suggested,confidence,reason) + 확정/반려 API + 신뢰도 임계 자동제외. read-time 병합 가드(suggested 제외)",
-      "status": "pending"
+      "summary": "suggest_service(suggest_links/confirm_link/reject_link) + SuggestRequest/SuggestOut 스키마 + POST /nodes/{id}/suggest · /links/{id}/confirm · /links/{id}/reject 엔드포인트 + 11 테스트 pass. threshold 미달 자동제외 + copy_override['_ai_reason'] 저장 + active/rejected 링크 불변 보장",
+      "status": "completed",
+      "completed_at": "2026-06-08T00:00:00+09:00"
     },
     {
       "id": "4.1",
       "name": "fe-api-types",
-      "summary": "lib/api.ts — ProgrammingNode/Link/Set 타입 + node/link/suggest/backref/graph 함수. typecheck",
-      "status": "pending"
+      "summary": "lib/api.ts — NodeKind/ChildType/LinkSource/LinkStatus + ProgrammingNodeSet/Node/Link/NodeTreeItem/BackrefOut/SuggestOut 타입 + schedulingApi 21함수(NodeSet/Node/Link CRUD + suggestLinks/confirmLink/rejectLink + backref) + typecheck 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "4.2",
       "name": "fe-board",
-      "summary": "편성 보드 3컬럼 — 좌 팔레트(작품/노드/계층 탭, CategoryTreeDnd 재사용), 중 LinkCanvas(혼합 자식 드래그+pin+기간), 우 노드 속성(CategoryDetailPanel 재사용)",
-      "status": "pending"
+      "summary": "편성 보드 3컬럼(팔레트/LinkCanvas/NodePropsPanel) + dnd-kit 드래그+pin+confirm/reject + AI 추천 실행 UI",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "4.3",

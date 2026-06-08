@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from shared.database import get_db
 from .models import ProgrammingLink, ProgrammingNode
-from . import node_service, link_service
+from . import node_service, link_service, suggest_service
 from .schemas import (
     BackrefOut,
     LinkBatchRequest,
@@ -18,6 +18,8 @@ from .schemas import (
     NodeSetOut,
     NodeTreeItem,
     NodeUpdate,
+    SuggestOut,
+    SuggestRequest,
 )
 
 router = APIRouter()
@@ -253,6 +255,47 @@ def delete_link(link_id: int, db: Session = Depends(get_db)):
     _link_or_404(db, link_id)
     link_service.remove_link(db, link_id)
     db.commit()
+
+
+@router.post("/links/{link_id}/confirm", response_model=LinkOut)
+def confirm_link(link_id: int, db: Session = Depends(get_db)):
+    """suggested → active."""
+    _link_or_404(db, link_id)
+    try:
+        lnk = suggest_service.confirm_link(db, link_id)
+        db.commit()
+        db.refresh(lnk)
+        return lnk
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/links/{link_id}/reject", response_model=LinkOut)
+def reject_link(link_id: int, db: Session = Depends(get_db)):
+    """suggested → rejected."""
+    _link_or_404(db, link_id)
+    try:
+        lnk = suggest_service.reject_link(db, link_id)
+        db.commit()
+        db.refresh(lnk)
+        return lnk
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Suggest ────────────────────────────────────────────────────────────────────
+
+@router.post("/nodes/{node_id}/suggest", response_model=SuggestOut, status_code=201)
+def suggest_links(node_id: int, data: SuggestRequest, db: Session = Depends(get_db)):
+    """Tier2 AI 매칭 실행 → suggested 링크 저장."""
+    node = _node_or_404(db, node_id)
+    result = suggest_service.suggest_links(
+        db, node, threshold=data.threshold, limit=data.limit
+    )
+    db.commit()
+    for lnk in result.saved:
+        db.refresh(lnk)
+    return SuggestOut(saved=result.saved, skipped_count=result.skipped_count)
 
 
 # ── Backref ────────────────────────────────────────────────────────────────────

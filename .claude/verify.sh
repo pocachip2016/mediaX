@@ -6444,6 +6444,60 @@ print('  ✓ pricing/holdback schemas import 확인')
     echo "=== PASS ==="
     ;;
 
+  fe-api-types)
+    echo "=== fe-api-types: lib/api.ts schedulingApi 타입 + 함수 ==="
+    FE_API="$SCRIPT_DIR/../mediaX-CMS/apps/web/lib/api.ts"
+    # 1. 핵심 타입 존재 확인
+    for sym in ProgrammingNodeSet ProgrammingNode ProgrammingLink NodeTreeItem BackrefOut SuggestOut NodeKind LinkSource LinkStatus; do
+      grep -q "export.*$sym" "$FE_API" \
+        || { echo "FAIL: $sym 타입 누락 (lib/api.ts)"; exit 1; }
+    done
+    echo "  ✓ 8개 타입 확인"
+    # 2. schedulingApi 함수 확인
+    for fn in listSets createSet publishSet listNodes createNode getNode updateNode deleteNode getNodeTree listLinks addLink addLinksBatch reorderLinks updateLink moveLink deleteLink suggestLinks confirmLink rejectLink getContentBackrefs getNodeBackrefs; do
+      grep -q "$fn" "$FE_API" \
+        || { echo "FAIL: schedulingApi.$fn 누락"; exit 1; }
+    done
+    echo "  ✓ 21개 API 함수 확인"
+    # 3. TypeScript typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | grep -E "^.*error TS" | head -5 && \
+    { echo "FAIL: TypeScript 타입에러 있음"; exit 1; } || true
+    echo "  ✓ TypeScript typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  suggest-review-flow)
+    echo "=== suggest-review-flow: AI 추천 저장 + 확정/반려 API ==="
+    cd "$BACKEND"
+    # 1. 단위 테스트 (11개)
+    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_suggest_service.py -v 2>&1 | tail -20
+    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_suggest_service.py -q 2>/dev/null | grep -q "11 passed" \
+      || { echo "FAIL: 11 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 11 테스트 통과"
+    # 2. suggest_service 심볼 확인
+    DATABASE_URL="sqlite:///:memory:" python3 -c "
+from api.programming.scheduling.suggest_service import suggest_links, confirm_link, reject_link, SuggestResult
+print('  ✓ suggest_service 심볼 import 확인')
+"
+    # 3. router 엔드포인트 확인
+    grep -q "nodes/{node_id}/suggest" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: POST /nodes/{node_id}/suggest 엔드포인트 누락"; exit 1; }
+    grep -q "links/{link_id}/confirm" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: POST /links/{link_id}/confirm 엔드포인트 누락"; exit 1; }
+    grep -q "links/{link_id}/reject" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: POST /links/{link_id}/reject 엔드포인트 누락"; exit 1; }
+    echo "  ✓ 3개 엔드포인트 확인"
+    # 4. threshold 자동제외 로직 확인
+    grep -q "threshold" "$BACKEND/api/programming/scheduling/suggest_service.py" \
+      || { echo "FAIL: suggest_service.py에 threshold 자동제외 로직 누락"; exit 1; }
+    echo "  ✓ threshold 자동제외 로직 확인"
+    # 5. read-time 가드(suggested 제외) 확인
+    grep -q "suggested" "$BACKEND/api/programming/scheduling/node_service.py" \
+      || { echo "FAIL: node_service.py의 compute_members에 suggested 제외 가드 없음"; exit 1; }
+    echo "  ✓ compute_members suggested 제외 가드 확인"
+    echo "=== PASS ==="
+    ;;
+
   catalog-pricing-fe|2.6)
     echo "=== catalog-pricing-fe: pricing/holdback 페이지 + api.ts + typecheck ==="
     FE_ROOT="$SCRIPT_DIR/../mediaX-CMS"
@@ -6466,6 +6520,43 @@ print('  ✓ pricing/holdback schemas import 확인')
       echo "$TS_OUT" | grep "error TS" | head -10
       exit 1
     fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  fe-board)
+    echo "=== fe-board: 편성 보드 3컬럼 컴포넌트 ==="
+    FE_SCHED="$SCRIPT_DIR/../mediaX-CMS/apps/web/components/scheduling"
+
+    # 파일 존재 확인
+    for f in SchedulingBoard.tsx PalettePanel.tsx LinkCanvas.tsx NodePropsPanel.tsx; do
+      if [ ! -f "$FE_SCHED/$f" ]; then
+        echo "FAIL: $f 파일 없음"
+        exit 1
+      fi
+      echo "  ✓ $f"
+    done
+
+    # page.tsx SchedulingBoard import 확인
+    PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/schedule/page.tsx"
+    if ! grep -q "SchedulingBoard" "$PAGE"; then
+      echo "FAIL: page.tsx에 SchedulingBoard 미마운트"
+      exit 1
+    fi
+    echo "  ✓ page.tsx SchedulingBoard 마운트"
+
+    # 핵심 기능 심볼 확인
+    for sym in "schedulingApi" "suggestLinks" "confirmLink" "rejectLink" "DndContext" "SortableContext"; do
+      if ! grep -rq "$sym" "$FE_SCHED/"; then
+        echo "FAIL: $sym 심볼 미사용"
+        exit 1
+      fi
+      echo "  ✓ $sym"
+    done
+
+    # TypeScript 타입 체크
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | grep "scheduling\|SchedulingBoard\|PalettePanel\|LinkCanvas\|NodePropsPanel" | grep "error TS" | head -5 && \
+    { echo "FAIL: TypeScript 타입에러 있음"; exit 1; } || true
     echo "  ✓ TypeScript 타입 체크 통과"
     echo "=== PASS ==="
     ;;

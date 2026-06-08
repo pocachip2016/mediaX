@@ -178,3 +178,15 @@ class NodeTreeItem(BaseModel):
 
 
 NodeTreeItem.model_rebuild()
+
+
+# ── Suggest / Review ───────────────────────────────────────────────────────────
+
+class SuggestRequest(BaseModel):
+    threshold: float = 0.3   # confidence 최솟값; 미달 후보 자동제외
+    limit: int = 50           # match_node_to_contents 상한
+
+
+class SuggestOut(BaseModel):
+    saved: list[LinkOut]
+    skipped_count: int
