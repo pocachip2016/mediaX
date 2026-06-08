@@ -185,8 +185,16 @@ NodeTreeItem.model_rebuild()
 class SuggestRequest(BaseModel):
     threshold: float = 0.3   # confidence 최솟값; 미달 후보 자동제외
     limit: int = 50           # match_node_to_contents 상한
+    intent: str | None = None  # 자연어 편성 의도(Tier1) — 있으면 노드 rule_query/facets 갱신
+
+
+class InterpretedOut(BaseModel):
+    rule_query: dict
+    facets: dict
+    provider_used: str
 
 
 class SuggestOut(BaseModel):
     saved: list[LinkOut]
     skipped_count: int
+    interpreted: InterpretedOut | None = None  # intent 해석 결과(intent 사용 시)

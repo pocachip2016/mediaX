@@ -2135,9 +2135,16 @@ export interface BackrefOut {
   window_end: string | null
 }
 
+export interface InterpretedOut {
+  rule_query: Record<string, unknown>
+  facets: Record<string, unknown>
+  provider_used: string
+}
+
 export interface SuggestOut {
   saved: ProgrammingLink[]
   skipped_count: number
+  interpreted?: InterpretedOut | null
 }
 
 const SCHED = "/api/programming/scheduling"
@@ -2268,10 +2275,14 @@ export const schedulingApi = {
     request<void>(`${SCHED}/links/${linkId}`, { method: "DELETE" }),
 
   // ── Suggest / Review ─────────────────────────────────────────────────────────
-  suggestLinks: (nodeId: number, opts?: { threshold?: number; limit?: number }) =>
+  suggestLinks: (nodeId: number, opts?: { threshold?: number; limit?: number; intent?: string }) =>
     request<SuggestOut>(`${SCHED}/nodes/${nodeId}/suggest`, {
       method: "POST",
-      body: JSON.stringify({ threshold: opts?.threshold ?? 0.3, limit: opts?.limit ?? 50 }),
+      body: JSON.stringify({
+        threshold: opts?.threshold ?? 0.3,
+        limit: opts?.limit ?? 50,
+        ...(opts?.intent ? { intent: opts.intent } : {}),
+      }),
     }),
 
   confirmLink: (linkId: number) =>

@@ -128,8 +128,9 @@
     {
       "id": "4.3",
       "name": "fe-ai-suggest",
-      "summary": "AiSuggestPanel — 자연어 의도 입력 + AI 추천(근거+confidence) + 선택/전체 확정 + 신뢰도 자동제외 토글",
-      "status": "pending"
+      "summary": "SuggestRequest.intent + InterpretedOut BE 배선(13테스트) + AiSuggestPanel(자연어의도/해석칩/체크박스확정) + NodePropsPanel 2탭 전환",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "4.4",

@@ -1,10 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Sparkles, Check, X, ChevronDown, ChevronUp } from "lucide-react"
-import { schedulingApi } from "@/lib/api"
-import type { ProgrammingNode, ProgrammingLink } from "@/lib/api"
+import { Sparkles } from "lucide-react"
+import type { ProgrammingLink, ProgrammingNode } from "@/lib/api"
 import { cn } from "@workspace/ui/lib/utils"
+import { AiSuggestPanel } from "./AiSuggestPanel"
 
 type Props = {
   node: ProgrammingNode | null
@@ -12,44 +12,13 @@ type Props = {
   onReload: () => void
 }
 
+type Tab = "props" | "ai"
+
 export function NodePropsPanel({ node, links, onReload }: Props) {
-  const [suggesting, setSuggesting] = useState(false)
-  const [suggestResult, setSuggestResult] = useState<{ saved: number; skipped: number } | null>(null)
-  const [threshold, setThreshold] = useState(0.3)
-  const [showSuggested, setShowSuggested] = useState(true)
-  const [busyId, setBusyId] = useState<number | null>(null)
+  const [tab, setTab] = useState<Tab>("props")
 
-  const suggestedLinks = links.filter((l) => l.status === "suggested")
   const activeCount = links.filter((l) => l.status === "active").length
-
-  async function handleSuggest() {
-    if (!node) return
-    setSuggesting(true)
-    setSuggestResult(null)
-    try {
-      const result = await schedulingApi.suggestLinks(node.id, { threshold })
-      setSuggestResult({ saved: result.saved.length, skipped: result.skipped_count })
-      onReload()
-    } catch {
-      /* ignore */
-    } finally {
-      setSuggesting(false)
-    }
-  }
-
-  async function handleConfirm(linkId: number) {
-    setBusyId(linkId)
-    await schedulingApi.confirmLink(linkId).catch(() => {})
-    setBusyId(null)
-    onReload()
-  }
-
-  async function handleReject(linkId: number) {
-    setBusyId(linkId)
-    await schedulingApi.rejectLink(linkId).catch(() => {})
-    setBusyId(null)
-    onReload()
-  }
+  const suggestedCount = links.filter((l) => l.status === "suggested").length
 
   if (!node) {
     return (
@@ -61,7 +30,7 @@ export function NodePropsPanel({ node, links, onReload }: Props) {
 
   return (
     <div className="h-full flex flex-col border rounded-xl bg-card overflow-hidden">
-      {/* Node info */}
+      {/* 공통 헤더 */}
       <div className="px-4 py-3 border-b space-y-1 flex-shrink-0">
         <p className="text-xs text-muted-foreground">노드</p>
         <p className="font-semibold text-sm truncate">{node.name}</p>
@@ -73,110 +42,111 @@ export function NodePropsPanel({ node, links, onReload }: Props) {
             <span className="font-medium text-foreground">{activeCount}</span> 활성
           </span>
           <span className="text-xs text-muted-foreground">
-            <span className={cn("font-medium", suggestedLinks.length > 0 ? "text-amber-600" : "text-foreground")}>
-              {suggestedLinks.length}
+            <span className={cn("font-medium", suggestedCount > 0 ? "text-amber-600" : "text-foreground")}>
+              {suggestedCount}
             </span>{" "}
             추천
           </span>
         </div>
       </div>
 
-      {/* AI Suggest */}
-      <div className="px-4 py-3 border-b space-y-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-blue-500" />
-          <span className="text-sm font-medium">AI 자동 추천</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground whitespace-nowrap">임계값</label>
-          <input
-            type="range"
-            min={0.1}
-            max={0.9}
-            step={0.05}
-            value={threshold}
-            onChange={(e) => setThreshold(Number(e.target.value))}
-            className="flex-1 h-1 accent-primary"
-          />
-          <span className="text-xs text-muted-foreground w-8 text-right">{threshold.toFixed(2)}</span>
-        </div>
-
+      {/* 탭 스위처 */}
+      <div className="flex border-b flex-shrink-0">
         <button
-          onClick={handleSuggest}
-          disabled={suggesting}
-          className="w-full text-sm py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          onClick={() => setTab("props")}
+          className={cn(
+            "flex-1 py-2 text-xs font-medium transition-colors",
+            tab === "props"
+              ? "text-foreground border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          )}
         >
-          {suggesting ? "분석중…" : "추천 실행"}
+          속성
         </button>
-
-        {suggestResult && (
-          <p className="text-xs text-center text-muted-foreground">
-            <span className="text-green-600 font-medium">{suggestResult.saved}</span>건 저장 ·{" "}
-            {suggestResult.skipped}건 제외
-          </p>
-        )}
+        <button
+          onClick={() => setTab("ai")}
+          className={cn(
+            "flex-1 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1",
+            tab === "ai"
+              ? "text-foreground border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          AI 추천
+          {suggestedCount > 0 && (
+            <span className="ml-0.5 rounded-full bg-amber-500 text-white text-[10px] px-1.5 leading-4">
+              {suggestedCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Suggested list */}
-      {suggestedLinks.length > 0 ? (
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <button
-            onClick={() => setShowSuggested((v) => !v)}
-            className="flex items-center justify-between px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border-b flex-shrink-0"
-          >
-            <span>추천 링크 ({suggestedLinks.length})</span>
-            {showSuggested ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
+      {/* 탭 콘텐츠 */}
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        {tab === "props" ? (
+          <NodePropsContent node={node} links={links} />
+        ) : (
+          <AiSuggestPanel node={node} links={links} onReload={onReload} />
+        )}
+      </div>
+    </div>
+  )
+}
 
-          {showSuggested && (
-            <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              {suggestedLinks.map((link) => {
-                const aiReason = link.copy_override?.["_ai_reason"] as string | undefined
-                const label =
-                  link.child_content_id != null
-                    ? `콘텐츠 #${link.child_content_id}`
-                    : `노드 #${link.child_node_id}`
-                return (
-                  <div key={link.id} className="rounded-lg border bg-amber-50/50 px-3 py-2 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium truncate flex-1">{label}</span>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {link.confidence != null && (
-                          <span className="text-xs text-muted-foreground">
-                            {Math.round(link.confidence * 100)}%
-                          </span>
-                        )}
-                        <button
-                          disabled={busyId === link.id}
-                          onClick={() => handleConfirm(link.id)}
-                          title="확정"
-                          className="p-0.5 rounded hover:bg-green-100 text-green-600 disabled:opacity-50"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          disabled={busyId === link.id}
-                          onClick={() => handleReject(link.id)}
-                          title="거부"
-                          className="p-0.5 rounded hover:bg-red-100 text-red-600 disabled:opacity-50"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    {aiReason && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">{aiReason}</p>
-                    )}
-                  </div>
-                )
-              })}
+function NodePropsContent({ node, links }: { node: ProgrammingNode; links: ProgrammingLink[] }) {
+  const activeLinks = links.filter((l) => l.status === "active")
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* 노드 세부 정보 */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">기본 정보</p>
+        <div className="space-y-1.5 text-sm">
+          <div className="flex gap-2">
+            <span className="text-xs text-muted-foreground w-20 flex-shrink-0">종류</span>
+            <span className="text-xs">{node.kind}</span>
+          </div>
+          {node.sub_copy && (
+            <div className="flex gap-2">
+              <span className="text-xs text-muted-foreground w-20 flex-shrink-0">서브카피</span>
+              <span className="text-xs line-clamp-2">{node.sub_copy}</span>
+            </div>
+          )}
+          {node.rule_query && Object.keys(node.rule_query).length > 0 && (
+            <div className="flex gap-2">
+              <span className="text-xs text-muted-foreground w-20 flex-shrink-0">규칙</span>
+              <span className="text-xs text-muted-foreground font-mono line-clamp-3">
+                {JSON.stringify(node.rule_query)}
+              </span>
             </div>
           )}
         </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-xs text-muted-foreground">추천 링크 없음</p>
+      </div>
+
+      {/* 활성 링크 요약 */}
+      {activeLinks.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            활성 링크 ({activeLinks.length})
+          </p>
+          <div className="space-y-1">
+            {activeLinks.slice(0, 10).map((l) => (
+              <div key={l.id} className="text-xs text-muted-foreground px-2 py-1 rounded bg-muted/50">
+                {l.child_content_id != null ? `콘텐츠 #${l.child_content_id}` : `노드 #${l.child_node_id}`}
+                {l.is_pinned && <span className="ml-1 text-amber-500">📌</span>}
+              </div>
+            ))}
+            {activeLinks.length > 10 && (
+              <p className="text-xs text-muted-foreground text-center">+{activeLinks.length - 10}개 더</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeLinks.length === 0 && (
+        <div className="flex items-center justify-center py-8">
+          <p className="text-xs text-muted-foreground">활성 링크 없음</p>
         </div>
       )}
     </div>

@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from shared.database import get_db
 from .models import ProgrammingLink, ProgrammingNode
 from . import node_service, link_service, suggest_service
+from .intent_service import apply_intent_to_node, interpret_intent
 from .schemas import (
     BackrefOut,
+    InterpretedOut,
     LinkBatchRequest,
     LinkCreate,
     LinkMoveRequest,
@@ -286,16 +288,36 @@ def reject_link(link_id: int, db: Session = Depends(get_db)):
 # ── Suggest ────────────────────────────────────────────────────────────────────
 
 @router.post("/nodes/{node_id}/suggest", response_model=SuggestOut, status_code=201)
-def suggest_links(node_id: int, data: SuggestRequest, db: Session = Depends(get_db)):
-    """Tier2 AI 매칭 실행 → suggested 링크 저장."""
+async def suggest_links(node_id: int, data: SuggestRequest, db: Session = Depends(get_db)):
+    """Tier2 AI 매칭 실행 → suggested 링크 저장.
+
+    intent(자연어 의도)가 있으면 Tier1 interpret_intent 로 해석해 노드의
+    rule_query/theme_features.facets 를 갱신(영구)한 뒤 매칭한다.
+    """
     node = _node_or_404(db, node_id)
+
+    interpreted: InterpretedOut | None = None
+    if data.intent and data.intent.strip():
+        res = await interpret_intent(data.intent)
+        apply_intent_to_node(node, res)
+        db.flush()
+        interpreted = InterpretedOut(
+            rule_query=res.rule_query,
+            facets=res.facets,
+            provider_used=res.provider_used,
+        )
+
     result = suggest_service.suggest_links(
         db, node, threshold=data.threshold, limit=data.limit
     )
     db.commit()
     for lnk in result.saved:
         db.refresh(lnk)
-    return SuggestOut(saved=result.saved, skipped_count=result.skipped_count)
+    return SuggestOut(
+        saved=result.saved,
+        skipped_count=result.skipped_count,
+        interpreted=interpreted,
+    )
 
 
 # ── Backref ────────────────────────────────────────────────────────────────────

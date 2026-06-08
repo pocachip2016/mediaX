@@ -6524,6 +6524,84 @@ print('  ✓ suggest_service 심볼 import 확인')
     echo "=== PASS ==="
     ;;
 
+  4.3a|intent-suggest-api)
+    echo "=== 4.3a intent-suggest-api: Tier1 intent → suggest 엔드포인트 배선 ==="
+    cd "$BACKEND"
+    # 1. schemas — intent 필드 + InterpretedOut + SuggestOut.interpreted
+    python3 -c "
+from api.programming.scheduling.schemas import SuggestRequest, SuggestOut, InterpretedOut
+sr = SuggestRequest(threshold=0.3)
+assert sr.intent is None, 'intent 기본값 None 이어야 함'
+sr2 = SuggestRequest(threshold=0.3, intent='테스트 의도')
+assert sr2.intent == '테스트 의도', 'intent 필드 누락'
+_ = InterpretedOut(rule_query={}, facets={}, provider_used='test')
+so = SuggestOut(saved=[], skipped_count=0, interpreted=None)
+assert so.interpreted is None
+print('  ✓ schemas: SuggestRequest.intent + InterpretedOut + SuggestOut.interpreted 확인')
+"
+    # 2. router — async def + interpret_intent import
+    grep -q "async def suggest_links" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: suggest_links 가 async def 가 아님"; exit 1; }
+    echo "  ✓ router suggest_links async def"
+    grep -q "interpret_intent" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: interpret_intent import 누락"; exit 1; }
+    echo "  ✓ router interpret_intent import"
+    grep -q "apply_intent_to_node" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: apply_intent_to_node 호출 누락"; exit 1; }
+    echo "  ✓ router apply_intent_to_node 호출"
+    # 3. pytest — suggest + intent 관련 13 테스트
+    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_scheduling_api.py tests/test_suggest_service.py -k "suggest or intent" -q 2>&1 | tail -5
+    COUNT=$(DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_scheduling_api.py tests/test_suggest_service.py -k "suggest or intent" -q 2>/dev/null | grep -oP '\d+ passed' | grep -oP '\d+')
+    [ "${COUNT:-0}" -ge 13 ] || { echo "FAIL: suggest/intent 테스트 13개 이상 통과해야 함 (현재 $COUNT)"; exit 1; }
+    echo "  ✓ pytest suggest/intent ${COUNT} 통과"
+    echo "=== PASS ==="
+    ;;
+
+  4.3b|ai-suggest-panel)
+    echo "=== 4.3b ai-suggest-panel: AiSuggestPanel + NodePropsPanel 탭화 ==="
+    FE="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # 1. api.ts — InterpretedOut + SuggestOut.interpreted + suggestLinks intent
+    python3 -c "
+import subprocess, sys
+content = open('$FE/lib/api.ts').read()
+checks = [
+    ('InterpretedOut', 'InterpretedOut 타입'),
+    ('interpreted?: InterpretedOut', 'SuggestOut.interpreted 필드'),
+    ('intent?: string', 'suggestLinks intent 옵션'),
+]
+ok = True
+for needle, label in checks:
+    if needle not in content:
+        print(f'FAIL: {label} 누락')
+        ok = False
+    else:
+        print(f'  ✓ {label}')
+sys.exit(0 if ok else 1)
+" || exit 1
+    # 2. AiSuggestPanel.tsx 존재 + 핵심 심볼
+    [ -f "$FE/components/scheduling/AiSuggestPanel.tsx" ] \
+      || { echo "FAIL: AiSuggestPanel.tsx 파일 없음"; exit 1; }
+    echo "  ✓ AiSuggestPanel.tsx 존재"
+    for sym in "handleConfirmSelected" "handleConfirmAll" "toggleSelect" "InterpretedOut" "interpreted" "autoExclude"; do
+      grep -q "$sym" "$FE/components/scheduling/AiSuggestPanel.tsx" \
+        || { echo "FAIL: AiSuggestPanel.tsx 에 $sym 없음"; exit 1; }
+    done
+    echo "  ✓ AiSuggestPanel 핵심 심볼 확인"
+    # 3. NodePropsPanel.tsx — 탭 구조
+    for sym in "AiSuggestPanel" "AI 추천" "setTab" "tab === "; do
+      grep -q "$sym" "$FE/components/scheduling/NodePropsPanel.tsx" \
+        || { echo "FAIL: NodePropsPanel.tsx 에 '$sym' 없음"; exit 1; }
+    done
+    echo "  ✓ NodePropsPanel 탭 구조 확인"
+    # 4. typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    npm run typecheck 2>&1 | tail -5
+    npm run typecheck 2>&1 | grep -q "Tasks:.*successful" \
+      || { echo "FAIL: typecheck 실패"; exit 1; }
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
   fe-board)
     echo "=== fe-board: 편성 보드 3컬럼 컴포넌트 ==="
     FE_SCHED="$SCRIPT_DIR/../mediaX-CMS/apps/web/components/scheduling"

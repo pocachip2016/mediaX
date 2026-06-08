@@ -215,3 +215,77 @@ def test_node_backref(client):
     assert r.status_code == 200
     assert len(r.json()) == 1
     assert r.json()[0]["parent_node_id"] == parent
+
+
+# ── Suggest (Tier1 intent 배선) ─────────────────────────────────────────────────
+
+def _seed_korean_content(db):
+    """매칭 후보가 될 한국 콘텐츠 + 시맨틱 프로파일 1건 생성."""
+    from api.programming.metadata.models.content import Content, ContentStatus, ContentType
+    from api.programming.scheduling.profile_models import ContentSemanticProfile
+
+    c = Content(
+        title="한국 드라마",
+        content_type=ContentType.movie,
+        production_year=2024,
+        country="한국",
+        status=ContentStatus.approved,
+        cp_name="TEST",
+    )
+    db.add(c)
+    db.flush()
+    db.add(ContentSemanticProfile(
+        content_id=c.id,
+        embed_synopsis=[1.0, 0.0],
+        facets={"mood": ["감성"]},
+        model_version="test:1.0",
+    ))
+    db.flush()
+    return c
+
+
+def test_suggest_with_intent_applies_to_node(client, db, monkeypatch):
+    """intent 전달 시 interpret_intent → 노드 rule_query/facets 갱신 + interpreted 반환."""
+    from api.programming.scheduling import router as sched_router
+    from api.programming.scheduling.intent_service import IntentResult
+    from api.programming.scheduling.models import ProgrammingNode
+
+    async def fake_interpret(text):
+        return IntentResult(
+            rule_query={"country": "한국"},
+            facets={"mood": ["감성"]},
+            provider_used="FakeProvider",
+        )
+
+    monkeypatch.setattr(sched_router, "interpret_intent", fake_interpret)
+
+    node_id = client.post(f"{BASE}/nodes", json={"kind": "manual", "name": "감성 드라마"}).json()["id"]
+    _seed_korean_content(db)
+
+    r = client.post(
+        f"{BASE}/nodes/{node_id}/suggest",
+        json={"intent": "감성적인 한국 드라마", "threshold": 0.0},
+    )
+    assert r.status_code == 201
+    data = r.json()
+
+    # interpreted 반환 확인
+    assert data["interpreted"] is not None
+    assert data["interpreted"]["provider_used"] == "FakeProvider"
+    assert data["interpreted"]["rule_query"] == {"country": "한국"}
+
+    # 노드에 영구 반영 확인
+    node = db.query(ProgrammingNode).filter(ProgrammingNode.id == node_id).first()
+    assert node.rule_query.get("country") == "한국"
+    assert node.theme_features.get("facets", {}).get("mood") == ["감성"]
+
+    # 후보 저장 확인
+    assert len(data["saved"]) >= 1
+
+
+def test_suggest_without_intent_no_interpreted(client, db):
+    """intent 없으면 interpreted=None (기존 동작 회귀)."""
+    node_id = client.post(f"{BASE}/nodes", json={"kind": "manual", "name": "N"}).json()["id"]
+    r = client.post(f"{BASE}/nodes/{node_id}/suggest", json={"threshold": 0.0})
+    assert r.status_code == 201
+    assert r.json()["interpreted"] is None
