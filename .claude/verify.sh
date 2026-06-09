@@ -6888,6 +6888,42 @@ sys.exit(0 if ok else 1)
     echo "=== PASS ==="
     ;;
 
+  # ── dev-curation ───────────────────────────────────────────────────────────
+  curation-design)
+    echo "=== curation-design: ADR-013 3문서 + plan 스캐폴드 정합성 ==="
+    ROOT="$SCRIPT_DIR/.."
+    ADR_DIR="$ROOT/docs/dev/dev-curation"
+    # 1. ADR 3문서 존재
+    for f in adr-013-curation_index.md adr-013-01-slot-model.md adr-013-02-banner-pipeline.md; do
+      [ -f "$ADR_DIR/$f" ] && echo "  ✓ $f 존재" || { echo "FAIL: $f 없음"; exit 1; }
+    done
+    # 2. _index 가 01/02 섹션 링크
+    grep -q "adr-013-01-slot-model" "$ADR_DIR/adr-013-curation_index.md" \
+      && grep -q "adr-013-02-banner-pipeline" "$ADR_DIR/adr-013-curation_index.md" \
+      && echo "  ✓ _index → 01/02 섹션 링크" \
+      || { echo "FAIL: _index 섹션 링크 누락"; exit 1; }
+    # 3. 재사용 매핑이 실존 심볼 참조
+    grep -q "auto_service" "$ADR_DIR/adr-013-curation_index.md" \
+      && grep -q "match_service" "$ADR_DIR/adr-013-curation_index.md" \
+      && grep -q "publish_node_set" "$ADR_DIR/adr-013-curation_index.md" \
+      && echo "  ✓ 재사용 매핑 심볼 참조 확인" \
+      || { echo "FAIL: 재사용 매핑 심볼 누락"; exit 1; }
+    [ -f "$ROOT/backend/api/programming/scheduling/auto_service.py" ] \
+      && [ -f "$ROOT/backend/api/programming/scheduling/match_service.py" ] \
+      && echo "  ✓ 참조 심볼 파일 실존(auto_service/match_service)" \
+      || { echo "FAIL: 참조 대상 파일 없음"; exit 1; }
+    # 4. plan JSON 유효 + step 8 + step1 completed
+    PLAN="$ROOT/plans/dev-curation/index.json"
+    python3 -m json.tool "$PLAN" > /dev/null \
+      && echo "  ✓ index.json 유효 JSON" \
+      || { echo "FAIL: index.json 파싱 실패"; exit 1; }
+    STEP_COUNT=$(python3 -c "import json; print(len(json.load(open('$PLAN'))['steps']))")
+    [ "$STEP_COUNT" -eq 8 ] && echo "  ✓ step 8개" || { echo "FAIL: step 수 $STEP_COUNT (≠8)"; exit 1; }
+    STEP1=$(python3 -c "import json; print(json.load(open('$PLAN'))['steps'][0]['status'])")
+    [ "$STEP1" = "completed" ] && echo "  ✓ step 1 completed" || { echo "FAIL: step1 status=$STEP1"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
   # ── dev-auto-schedule ──────────────────────────────────────────────────────
   auto-schedule-s8)
     echo "=== auto-schedule-s8: conflict_service pytest + BE 배선 + FE ConflictPanel + typecheck ==="
