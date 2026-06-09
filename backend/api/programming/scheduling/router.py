@@ -15,6 +15,7 @@ from .schemas import (
     AutoStageEventOut,
     AutoSummaryOut,
     BackrefOut,
+    ConflictReportOut,
     GraphEdge,
     InterpretedOut,
     LinkBatchRequest,
@@ -546,3 +547,15 @@ def toggle_auto_enable(node_id: int, body: AutoEnableIn, db: Session = Depends(g
         auto_stage=node.auto_stage,
         schedule_score=node.schedule_score,
     )
+
+
+@router.get("/auto/sets/{set_id}/conflicts", response_model=ConflictReportOut)
+def get_set_conflicts(set_id: int, db: Session = Depends(get_db)):
+    """NodeSet 내 active 링크 충돌 리포트 (read-only)."""
+    from .conflict_service import detect_conflicts
+    from .models import ProgrammingNodeSet
+
+    ns = db.get(ProgrammingNodeSet, set_id)
+    if ns is None:
+        raise HTTPException(status_code=404, detail="node set not found")
+    return detect_conflicts(db, set_id)

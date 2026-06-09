@@ -13,6 +13,7 @@ import {
 } from "@/lib/api"
 import { AutoPolicyPanel, StageActionBar } from "@/components/scheduling/auto/AutoRunPanel"
 import { StageEventLogCard } from "@/components/scheduling/auto/StageEventLog"
+import { ConflictPanel } from "@/components/scheduling/auto/ConflictPanel"
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 
@@ -124,6 +125,15 @@ function NodeDetailPanel({
 
       {/* 이벤트 로그 */}
       <StageEventLogCard nodeId={node.id} />
+
+      {/* 충돌 패널 — set_id 있고 P5/P6 단계일 때 표시 */}
+      {node.set_id != null &&
+        (node.auto_stage === "p5_conflict" || node.auto_stage === "p6_publish" || node.auto_hold) && (
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">충돌 분석</p>
+            <ConflictPanel setId={node.set_id} />
+          </div>
+        )}
     </div>
   )
 }

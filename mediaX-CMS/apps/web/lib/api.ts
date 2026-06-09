@@ -2363,6 +2363,23 @@ export interface AutoSummary {
   total_auto_enabled: number
 }
 
+export interface ConflictItem {
+  type: "window_overlap" | "duplicate_content"
+  content_id: number
+  link_ids: number[]
+  node_ids: number[]
+  detail: string
+}
+
+export interface ConflictReport {
+  set_id: number
+  conflict_count: number
+  blocking_count: number
+  window_overlap_count: number
+  duplicate_content_count: number
+  conflicts: ConflictItem[]
+}
+
 export interface AutoNodeAdvanceOut {
   node_id: number
   result: "ok" | "not_found" | "terminal" | "hold" | "skipped"
@@ -2462,4 +2479,7 @@ export const schedulingAutoApi = {
       method: "POST",
       body: JSON.stringify({ auto_enabled: enabled }),
     }),
+
+  getSetConflicts: (setId: number) =>
+    request<ConflictReport>(`${AUTO}/sets/${setId}/conflicts`),
 }

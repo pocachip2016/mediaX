@@ -58,8 +58,9 @@
     {
       "id": "8",
       "name": "fe-conflict-calendar",
-      "summary": "conflict_service.detect_conflicts 실구현 + GET /auto/sets/{id}/conflicts + 콘솔 충돌 패널(ExposureCalendar 재사용) + P6 발행 가드 + BE 충돌 단위 테스트 + FE typecheck",
-      "status": "pending"
+      "summary": "conflict_service 6 pytest pass + _exec_p5_conflict 실구현(blocking → auto_hold) + P6 발행 가드(blocking_count>0 → hold) + ConflictItemOut/ConflictReportOut 스키마 + GET /auto/sets/{id}/conflicts + ConflictPanel.tsx(ExposureCalendar 재사용) + typecheck 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     }
   ]
 }

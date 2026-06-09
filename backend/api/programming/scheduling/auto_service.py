@@ -344,20 +344,57 @@ def _exec_p4_autoconfirm(db: Session, node: ProgrammingNode, actor: str) -> None
 
 
 def _exec_p5_conflict(db: Session, node: ProgrammingNode, actor: str) -> None:
-    """P5: set 내 노출 window 충돌 검사 (Step 8에서 실구현; 현재 stub)."""
-    # Step 8(fe-conflict-calendar)에서 conflict_service 연결 예정
-    conflict_count = 0  # stub: 충돌 없음으로 처리
+    """P5: set 내 노출 window 충돌 검사. blocking 충돌 있으면 auto_hold=True."""
+    from .conflict_service import detect_conflicts
+
+    if node.set_id is None:
+        recompute_schedule_score(db, node)
+        _record_event(
+            db, node.id, AutoStage.P5_CONFLICT, AutoEventType.COMPLETED,
+            actor=actor,
+            payload_json={"conflict_count": 0, "blocking_count": 0},
+        )
+        return
+
+    report = detect_conflicts(db, node.set_id)
+    if report["blocking_count"] > 0:
+        node.auto_hold = True
+        db.flush()
+
     recompute_schedule_score(db, node)
     _record_event(
         db, node.id, AutoStage.P5_CONFLICT, AutoEventType.COMPLETED,
         actor=actor,
-        payload_json={"conflict_count": conflict_count},
+        payload_json={
+            "conflict_count": report["conflict_count"],
+            "blocking_count": report["blocking_count"],
+            "window_overlap_count": report["window_overlap_count"],
+            "duplicate_content_count": report["duplicate_content_count"],
+            "held": report["blocking_count"] > 0,
+        },
     )
 
 
 def _exec_p6_publish(db: Session, node: ProgrammingNode, actor: str) -> None:
-    """P6: 노드의 소속 NodeSet status=published → 서비스 편성표 발행."""
+    """P6: blocking 충돌 없을 때만 NodeSet 발행. 충돌 있으면 hold."""
     from .node_service import publish_node_set
+    from .conflict_service import detect_conflicts
+
+    if node.set_id is not None:
+        report = detect_conflicts(db, node.set_id)
+        if report["blocking_count"] > 0:
+            node.auto_hold = True
+            db.flush()
+            _record_event(
+                db, node.id, AutoStage.P6_PUBLISH, AutoEventType.SKIPPED,
+                actor=actor,
+                payload_json={
+                    "reason": "blocking_conflicts",
+                    "blocking_count": report["blocking_count"],
+                    "published": False,
+                },
+            )
+            return
 
     ns = db.get(ProgrammingNodeSet, node.set_id)
     if ns is not None and ns.status != "published":

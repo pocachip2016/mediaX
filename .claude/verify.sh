@@ -6889,6 +6889,47 @@ sys.exit(0 if ok else 1)
     ;;
 
   # ── dev-auto-schedule ──────────────────────────────────────────────────────
+  auto-schedule-s8)
+    echo "=== auto-schedule-s8: conflict_service pytest + BE 배선 + FE ConflictPanel + typecheck ==="
+    ROOT="$SCRIPT_DIR/.."
+    BACKEND="$ROOT/backend"
+    # 1. pytest — conflict_service 6건
+    cd "$BACKEND" && DATABASE_URL=sqlite:///./test_auto_s8.db .venv/bin/pytest tests/test_conflict_service.py -q --tb=short 2>&1 | tail -5
+    grep -q "6 passed" <(DATABASE_URL=sqlite:///./test_auto_s8.db .venv/bin/pytest tests/test_conflict_service.py -q --tb=short 2>&1) \
+      && echo "  ✓ conflict_service 6 passed" \
+      || { echo "FAIL: conflict_service pytest 실패"; exit 1; }
+    # 2. _exec_p5_conflict 실구현 확인 (stub 주석 제거)
+    grep -q "detect_conflicts" "$BACKEND/api/programming/scheduling/auto_service.py" \
+      && echo "  ✓ _exec_p5_conflict — conflict_service 연결" \
+      || { echo "FAIL: _exec_p5_conflict stub 미제거"; exit 1; }
+    # 3. P6 발행 가드 확인
+    grep -q "blocking_count" "$BACKEND/api/programming/scheduling/auto_service.py" \
+      && echo "  ✓ P6 blocking_count 가드 확인" \
+      || { echo "FAIL: P6 가드 없음"; exit 1; }
+    # 4. ConflictItemOut/ConflictReportOut 스키마 확인
+    grep -q "ConflictReportOut" "$BACKEND/api/programming/scheduling/schemas.py" \
+      && echo "  ✓ ConflictReportOut 스키마 확인" \
+      || { echo "FAIL: ConflictReportOut 없음"; exit 1; }
+    # 5. router 엔드포인트 확인
+    grep -q "auto/sets/{set_id}/conflicts" "$BACKEND/api/programming/scheduling/router.py" \
+      && echo "  ✓ GET /auto/sets/{id}/conflicts 엔드포인트 확인" \
+      || { echo "FAIL: conflicts 엔드포인트 없음"; exit 1; }
+    # 6. FE ConflictPanel 컴포넌트 존재
+    [ -f "$ROOT/mediaX-CMS/apps/web/components/scheduling/auto/ConflictPanel.tsx" ] \
+      && echo "  ✓ ConflictPanel.tsx 존재" \
+      || { echo "FAIL: ConflictPanel.tsx 없음"; exit 1; }
+    # 7. FE api.ts getSetConflicts + ConflictReport 타입
+    grep -q "getSetConflicts" "$ROOT/mediaX-CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ getSetConflicts API 함수 확인" \
+      || { echo "FAIL: getSetConflicts 없음"; exit 1; }
+    # 8. FE typecheck
+    TS_ERRORS=$(cd "$ROOT/mediaX-CMS/apps/web" && npx tsc --noEmit 2>&1 | grep "error TS" | wc -l || true)
+    [ "$TS_ERRORS" -eq 0 ] \
+      && echo "  ✓ typecheck 통과" \
+      || { echo "FAIL: typecheck 실패 (${TS_ERRORS}건)"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
   auto-schedule-s7)
     echo "=== auto-schedule-s7: AutoRunPanel + StageEventLog 컴포넌트 분리 + 실배선 + typecheck ==="
     ROOT="$SCRIPT_DIR/.."

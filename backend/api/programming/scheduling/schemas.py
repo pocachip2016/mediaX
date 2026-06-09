@@ -299,3 +299,22 @@ class AutoPolicyIn(BaseModel):
 
 class AutoEnableIn(BaseModel):
     auto_enabled: bool
+
+
+# ── 충돌 탐지 (ADR-012 P5) ────────────────────────────────────────────────────
+
+class ConflictItemOut(BaseModel):
+    type: str           # "window_overlap" | "duplicate_content"
+    content_id: int
+    link_ids: list[int]
+    node_ids: list[int]
+    detail: str
+
+
+class ConflictReportOut(BaseModel):
+    set_id: int
+    conflict_count: int
+    blocking_count: int
+    window_overlap_count: int
+    duplicate_content_count: int
+    conflicts: list[ConflictItemOut]
