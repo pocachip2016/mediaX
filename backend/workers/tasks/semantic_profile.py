@@ -61,6 +61,12 @@ def build_semantic_profiles(self):
                 else:
                     updated += 1
                 db.commit()
+                # ADR-012: 프로파일 완성 → 자동편성 노드 재매칭 큐잉 (auto_enabled 노드만, 조건 내부에서 재필터)
+                try:
+                    from workers.tasks.scheduling_auto import rematch_scheduling_nodes
+                    rematch_scheduling_nodes.apply_async(args=[content_id], queue="pipeline_fast")
+                except Exception as hook_exc:
+                    logger.debug("[semantic_profile] scheduling hook skip content_id=%s: %s", content_id, hook_exc)
             except Exception as e:
                 db.rollback()
                 errors += 1

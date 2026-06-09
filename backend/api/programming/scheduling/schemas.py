@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from .models import ChildType, LinkSource, LinkStatus, NodeKind
+from .models import AutoEventType, AutoStage, ChildType, LinkSource, LinkStatus, NodeKind
 
 
 # ── NodeSet ────────────────────────────────────────────────────────────────────
@@ -221,3 +221,100 @@ class SuggestOut(BaseModel):
     saved: list[LinkOut]
     skipped_count: int
     interpreted: InterpretedOut | None = None  # intent 해석 결과(intent 사용 시)
+
+
+# ── 자동편성 파이프라인 (ADR-012) ─────────────────────────────────────────────
+
+class AutoStageEventOut(BaseModel):
+    id: int
+    node_id: int
+    stage: AutoStage
+    event_type: AutoEventType
+    source: Optional[str] = None
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    latency_ms: Optional[int] = None
+    payload_json: Optional[Any] = None
+    error_text: Optional[str] = None
+    actor: str
+
+    model_config = {"from_attributes": True}
+
+
+class AutoBucketCount(BaseModel):
+    bucket: int
+    stage_range: str       # 예: "P1", "P2/P3", "P4" …
+    count: int
+    label: str
+
+
+class AutoSummaryOut(BaseModel):
+    """버킷별 auto_enabled 노드 카운트."""
+    buckets: list[AutoBucketCount]
+    total_auto_enabled: int
+
+
+class AutoNodeAdvanceOut(BaseModel):
+    node_id: int
+    result: str            # "ok" | "not_found" | "terminal" | "hold" | "skipped"
+    auto_stage: Optional[AutoStage] = None
+    schedule_score: Optional[float] = None
+
+
+class AutoNodeRunOut(BaseModel):
+    node_id: int
+    stages_advanced: int
+    final_result: str
+    auto_stage: Optional[AutoStage] = None
+    schedule_score: Optional[float] = None
+
+
+class AutoPolicyOut(BaseModel):
+    id: int
+    p2_auto: bool
+    p3_auto: bool
+    p4_auto: bool
+    p5_auto: bool
+    p6_auto: bool
+    confidence_threshold: float
+    auto_tick_enabled: bool
+    batch_size: int
+    visibility_timeout: int
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class AutoPolicyIn(BaseModel):
+    p2_auto: Optional[bool] = None
+    p3_auto: Optional[bool] = None
+    p4_auto: Optional[bool] = None
+    p5_auto: Optional[bool] = None
+    p6_auto: Optional[bool] = None
+    confidence_threshold: Optional[float] = None
+    auto_tick_enabled: Optional[bool] = None
+    batch_size: Optional[int] = None
+    visibility_timeout: Optional[int] = None
+
+
+class AutoEnableIn(BaseModel):
+    auto_enabled: bool
+
+
+# ── 충돌 탐지 (ADR-012 P5) ────────────────────────────────────────────────────
+
+class ConflictItemOut(BaseModel):
+    type: str           # "window_overlap" | "duplicate_content"
+    content_id: int
+    link_ids: list[int]
+    node_ids: list[int]
+    detail: str
+
+
+class ConflictReportOut(BaseModel):
+    set_id: int
+    conflict_count: int
+    blocking_count: int
+    window_overlap_count: int
+    duplicate_content_count: int
+    conflicts: list[ConflictItemOut]

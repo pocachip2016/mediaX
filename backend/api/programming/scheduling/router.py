@@ -2,11 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from shared.database import get_db
-from .models import ProgrammingLink, ProgrammingNode
+from .models import AutoStage, ProgrammingLink, ProgrammingNode, SchedulingStageEvent
 from . import node_service, link_service, suggest_service
 from .intent_service import apply_intent_to_node, interpret_intent
 from .schemas import (
+    AutoBucketCount,
+    AutoEnableIn,
+    AutoNodeAdvanceOut,
+    AutoNodeRunOut,
+    AutoPolicyIn,
+    AutoPolicyOut,
+    AutoStageEventOut,
+    AutoSummaryOut,
     BackrefOut,
+    ConflictReportOut,
     GraphEdge,
     InterpretedOut,
     LinkBatchRequest,
@@ -396,3 +405,157 @@ def get_node_backrefs(
         db, child_node_id=node_id, include_rejected=include_rejected
     )
     return [BackrefOut(**vars(r)) for r in refs]
+
+
+# ── 자동편성 파이프라인 (ADR-012) ─────────────────────────────────────────────
+
+_BUCKET_LABELS = {
+    1: ("P1", "조건정의"),
+    2: ("P2/P3", "후보생성·AI매칭"),
+    3: ("P4", "자동확정"),
+    4: ("P5", "충돌검사"),
+    5: ("P6", "발행"),
+}
+
+
+@router.get("/auto/summary", response_model=AutoSummaryOut)
+def get_auto_summary(db: Session = Depends(get_db)):
+    """버킷별 auto_enabled 노드 카운트 요약."""
+    from .auto_service import _STAGE_BUCKET
+
+    total = db.query(ProgrammingNode).filter(ProgrammingNode.auto_enabled.is_(True)).count()
+
+    bucket_counts: dict[int, int] = {b: 0 for b in range(1, 6)}
+    nodes = db.query(ProgrammingNode).filter(ProgrammingNode.auto_enabled.is_(True)).all()
+    for n in nodes:
+        bkt = _STAGE_BUCKET.get(n.auto_stage.value if n.auto_stage else "", 1)
+        bucket_counts[bkt] = bucket_counts.get(bkt, 0) + 1
+
+    buckets = [
+        AutoBucketCount(
+            bucket=b,
+            stage_range=_BUCKET_LABELS[b][0],
+            count=bucket_counts.get(b, 0),
+            label=_BUCKET_LABELS[b][1],
+        )
+        for b in range(1, 6)
+    ]
+    return AutoSummaryOut(buckets=buckets, total_auto_enabled=total)
+
+
+@router.post("/auto/nodes/{node_id}/advance", response_model=AutoNodeAdvanceOut)
+def advance_node(node_id: int, db: Session = Depends(get_db)):
+    """단건 멱등 advance — 다음 P-stage 로 전이."""
+    from .auto_service import advance_one
+
+    result = advance_one(db, node_id, actor="user")
+    db.commit()
+
+    node = db.get(ProgrammingNode, node_id)
+    return AutoNodeAdvanceOut(
+        node_id=node_id,
+        result=result["result"],
+        auto_stage=node.auto_stage if node else None,
+        schedule_score=node.schedule_score if node else None,
+    )
+
+
+@router.post("/auto/nodes/{node_id}/run", response_model=AutoNodeRunOut)
+def run_node(node_id: int, db: Session = Depends(get_db)):
+    """run-to-stable — terminal/잔류/hold 까지 단계 연쇄 실행 (온디맨드)."""
+    from .auto_service import run_to_stable
+
+    result = run_to_stable(db, node_id, actor="user")
+    db.commit()
+
+    node = db.get(ProgrammingNode, node_id)
+    return AutoNodeRunOut(
+        node_id=node_id,
+        stages_advanced=result["stages_advanced"],
+        final_result=result["final_result"],
+        auto_stage=node.auto_stage if node else None,
+        schedule_score=node.schedule_score if node else None,
+    )
+
+
+@router.get("/auto/nodes/{node_id}/events", response_model=list[AutoStageEventOut])
+def get_node_events(
+    node_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """노드의 자동편성 단계 이벤트 로그 (최신순)."""
+    events = (
+        db.query(SchedulingStageEvent)
+        .filter(SchedulingStageEvent.node_id == node_id)
+        .order_by(SchedulingStageEvent.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return events
+
+
+@router.get("/auto/policy", response_model=AutoPolicyOut)
+def get_auto_policy(db: Session = Depends(get_db)):
+    """자동편성 정책 조회."""
+    from .auto_service import get_policy
+    return get_policy(db)
+
+
+@router.patch("/auto/policy", response_model=AutoPolicyOut)
+def patch_auto_policy(body: AutoPolicyIn, db: Session = Depends(get_db)):
+    """자동편성 정책 수정. confidence_threshold 변경 시 전 노드 auto_skipped_at clear."""
+    from .auto_service import get_policy
+    from datetime import datetime, timezone
+
+    policy = get_policy(db)
+    payload = body.model_dump(exclude_none=True)
+
+    threshold_changed = (
+        "confidence_threshold" in payload
+        and payload["confidence_threshold"] != policy.confidence_threshold
+    )
+
+    for field, value in payload.items():
+        setattr(policy, field, value)
+    policy.updated_at = datetime.now(timezone.utc)
+    db.flush()
+
+    if threshold_changed:
+        db.query(ProgrammingNode).filter(
+            ProgrammingNode.auto_skipped_at.isnot(None)
+        ).update({"auto_skipped_at": None})
+        db.flush()
+
+    db.commit()
+    return policy
+
+
+@router.post("/auto/nodes/{node_id}/enable", response_model=AutoNodeAdvanceOut)
+def toggle_auto_enable(node_id: int, body: AutoEnableIn, db: Session = Depends(get_db)):
+    """노드 auto_enabled 토글."""
+    node = db.get(ProgrammingNode, node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="node not found")
+    node.auto_enabled = body.auto_enabled
+    if body.auto_enabled and node.auto_stage is None:
+        node.auto_stage = AutoStage.P1_DEFINE
+    db.commit()
+    return AutoNodeAdvanceOut(
+        node_id=node_id,
+        result="ok",
+        auto_stage=node.auto_stage,
+        schedule_score=node.schedule_score,
+    )
+
+
+@router.get("/auto/sets/{set_id}/conflicts", response_model=ConflictReportOut)
+def get_set_conflicts(set_id: int, db: Session = Depends(get_db)):
+    """NodeSet 내 active 링크 충돌 리포트 (read-only)."""
+    from .conflict_service import detect_conflicts
+    from .models import ProgrammingNodeSet
+
+    ns = db.get(ProgrammingNodeSet, set_id)
+    if ns is None:
+        raise HTTPException(status_code=404, detail="node set not found")
+    return detect_conflicts(db, set_id)

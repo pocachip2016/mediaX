@@ -2097,6 +2097,12 @@ export interface ProgrammingNode {
   is_draft: boolean
   created_at: string
   updated_at: string
+  // ADR-012 자동편성 파이프라인 필드
+  auto_enabled?: boolean
+  auto_stage?: AutoStage | null
+  auto_hold?: boolean
+  auto_skipped_at?: string | null
+  schedule_score?: number | null
 }
 
 export interface ProgrammingLink {
@@ -2325,4 +2331,155 @@ export const schedulingApi = {
     request<BackrefOut[]>(
       `${SCHED}/backref/node/${nodeId}?include_rejected=${includeRejected}`
     ),
+}
+
+// ── 자동편성 파이프라인 (ADR-012) ─────────────────────────────────────────────
+
+export type AutoStage =
+  | "p1_define"
+  | "p2_candidate"
+  | "p3_match"
+  | "p4_autoconfirm"
+  | "p5_conflict"
+  | "p6_publish"
+
+export type AutoEventType =
+  | "entered"
+  | "completed"
+  | "skipped"
+  | "failed"
+  | "advanced"
+  | "rejected"
+
+export interface AutoBucketCount {
+  bucket: number
+  stage_range: string
+  count: number
+  label: string
+}
+
+export interface AutoSummary {
+  buckets: AutoBucketCount[]
+  total_auto_enabled: number
+}
+
+export interface ConflictItem {
+  type: "window_overlap" | "duplicate_content"
+  content_id: number
+  link_ids: number[]
+  node_ids: number[]
+  detail: string
+}
+
+export interface ConflictReport {
+  set_id: number
+  conflict_count: number
+  blocking_count: number
+  window_overlap_count: number
+  duplicate_content_count: number
+  conflicts: ConflictItem[]
+}
+
+export interface AutoNodeAdvanceOut {
+  node_id: number
+  result: "ok" | "not_found" | "terminal" | "hold" | "skipped"
+  auto_stage: AutoStage | null
+  schedule_score: number | null
+}
+
+export interface AutoNodeRunOut {
+  node_id: number
+  stages_advanced: number
+  final_result: string
+  auto_stage: AutoStage | null
+  schedule_score: number | null
+}
+
+export interface AutoStageEventOut {
+  id: number
+  node_id: number
+  stage: AutoStage
+  event_type: AutoEventType
+  source: string | null
+  started_at: string | null
+  ended_at: string | null
+  latency_ms: number | null
+  payload_json: Record<string, unknown> | null
+  error_text: string | null
+  actor: string
+}
+
+export interface AutoPolicy {
+  id: number
+  p2_auto: boolean
+  p3_auto: boolean
+  p4_auto: boolean
+  p5_auto: boolean
+  p6_auto: boolean
+  confidence_threshold: number
+  auto_tick_enabled: boolean
+  batch_size: number
+  visibility_timeout: number
+  updated_at: string | null
+}
+
+export type AutoPolicyPatch = Partial<Omit<AutoPolicy, "id" | "updated_at">>
+
+const AUTO = `${SCHED}/auto`
+
+const AUTO_MOCK_SUMMARY: AutoSummary = {
+  buckets: [
+    { bucket: 1, stage_range: "P1",    count: 0, label: "조건정의" },
+    { bucket: 2, stage_range: "P2/P3", count: 0, label: "후보/매칭" },
+    { bucket: 3, stage_range: "P4",    count: 0, label: "자동확정" },
+    { bucket: 4, stage_range: "P5",    count: 0, label: "충돌검사" },
+    { bucket: 5, stage_range: "P6",    count: 0, label: "발행" },
+  ],
+  total_auto_enabled: 0,
+}
+
+const AUTO_MOCK_POLICY: AutoPolicy = {
+  id: 1,
+  p2_auto: true,
+  p3_auto: true,
+  p4_auto: true,
+  p5_auto: true,
+  p6_auto: false,
+  confidence_threshold: 0.5,
+  auto_tick_enabled: false,
+  batch_size: 20,
+  visibility_timeout: 300,
+  updated_at: null,
+}
+
+export const schedulingAutoApi = {
+  getSummary: () =>
+    request<AutoSummary>(`${AUTO}/summary`).catch(() => AUTO_MOCK_SUMMARY),
+
+  advanceNode: (nodeId: number) =>
+    request<AutoNodeAdvanceOut>(`${AUTO}/nodes/${nodeId}/advance`, { method: "POST" }),
+
+  runNode: (nodeId: number) =>
+    request<AutoNodeRunOut>(`${AUTO}/nodes/${nodeId}/run`, { method: "POST" }),
+
+  getNodeEvents: (nodeId: number) =>
+    request<AutoStageEventOut[]>(`${AUTO}/nodes/${nodeId}/events`).catch(() => [] as AutoStageEventOut[]),
+
+  getPolicy: () =>
+    request<AutoPolicy>(`${AUTO}/policy`).catch(() => AUTO_MOCK_POLICY),
+
+  patchPolicy: (body: AutoPolicyPatch) =>
+    request<AutoPolicy>(`${AUTO}/policy`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  enableAuto: (nodeId: number, enabled: boolean) =>
+    request<AutoNodeAdvanceOut>(`${AUTO}/nodes/${nodeId}/enable`, {
+      method: "POST",
+      body: JSON.stringify({ auto_enabled: enabled }),
+    }),
+
+  getSetConflicts: (setId: number) =>
+    request<ConflictReport>(`${AUTO}/sets/${setId}/conflicts`),
 }

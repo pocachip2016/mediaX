@@ -18,6 +18,7 @@ celery_app = Celery(
         "workers.tasks.distribution",      # OTT popularity sync (Watcha/Netflix/Wave/Tving)
         "workers.tasks.pipeline_auto",     # ADR-010 파이프라인 AUTO 워커
         "workers.tasks.semantic_profile",  # ADR-011-05 ingest-time CUP
+        "workers.tasks.scheduling_auto",   # ADR-012 자동편성 Beat + 이벤트 훅
     ],
 )
 
@@ -163,6 +164,11 @@ celery_app.conf.update(
         "pipeline-auto-tick": {
             "task": "workers.tasks.pipeline_auto.pipeline_auto_tick",
             "schedule": 15.0,  # seconds
+        },
+        # ADR-012 자동편성 AUTO tick — 2분 off-peak (auto_tick_enabled=False 시 즉시 종료)
+        "auto-schedule-tick": {
+            "task": "workers.tasks.scheduling_auto.auto_schedule_tick",
+            "schedule": 120.0,  # seconds
         },
     },
     broker_connection_retry_on_startup=True,

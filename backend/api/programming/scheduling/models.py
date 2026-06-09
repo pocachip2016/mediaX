@@ -1,4 +1,5 @@
 import enum
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, Date, DateTime,
@@ -11,11 +12,33 @@ from sqlalchemy.sql import func
 from shared.database import Base
 
 
+def _utcnow():
+    return datetime.now(timezone.utc)
+
+
 class NodeKind(str, enum.Enum):
     container = "container"
     rule = "rule"
     rank = "rank"
     manual = "manual"
+
+
+class AutoStage(str, enum.Enum):
+    P1_DEFINE      = "p1_define"       # 조건정의 (rule_query+headline+window) = intake
+    P2_CANDIDATE   = "p2_candidate"    # Tier0 후보생성 (read-time, 저장 안 함)
+    P3_MATCH       = "p3_match"        # Tier1+2 AI매칭 → suggested 링크 저장
+    P4_AUTOCONFIRM = "p4_autoconfirm"  # confidence ≥ threshold → active, 미달 잔류
+    P5_CONFLICT    = "p5_conflict"     # 노출 window 충돌 검사
+    P6_PUBLISH     = "p6_publish"      # NodeSet status=published
+
+
+class AutoEventType(str, enum.Enum):
+    ENTERED    = "entered"
+    COMPLETED  = "completed"
+    SKIPPED    = "skipped"
+    FAILED     = "failed"
+    ADVANCED   = "advanced"
+    REJECTED   = "rejected"
 
 
 class ChildType(str, enum.Enum):
@@ -70,9 +93,19 @@ class ProgrammingNode(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    # ── 자동편성 파이프라인 추적 필드 (ADR-012) ───────────────────────────────
+    auto_enabled    = Column(Boolean, nullable=False, default=False, server_default="false")  # 자동편성 파이프라인 대상 여부
+    auto_stage      = Column(SAEnum(AutoStage, name="auto_stage"), nullable=True)             # 현재 P-stage (None=미시작)
+    auto_hold       = Column(Boolean, nullable=False, default=False, server_default="false")  # AUTO claim 제외 (재검수·hold)
+    auto_claimed_at = Column(DateTime(timezone=True), nullable=True)                         # in-flight 마킹 (visibility_timeout 기준)
+    auto_skipped_at = Column(DateTime(timezone=True), nullable=True)                         # P4 잔류: threshold 미달, 임계값 변경 전까지 재진입 안 함
+    schedule_score  = Column(Float, nullable=True)                                            # 편성 완성도 0~100 (P5 진입 시 갱신)
+
     __table_args__ = (
         Index("ix_programming_nodes_set_id", "set_id"),
         Index("ix_programming_nodes_kind", "kind"),
+        Index("ix_programming_nodes_auto_enabled", "auto_enabled"),
+        Index("ix_programming_nodes_auto_stage", "auto_stage"),
     )
 
 
@@ -106,3 +139,45 @@ class ProgrammingLink(Base):
         Index("ix_programming_links_child_content_id", "child_content_id"),
         Index("ix_programming_links_parent_sort", "parent_node_id", "sort_order"),
     )
+
+
+class SchedulingStageEvent(Base):
+    """자동편성 파이프라인 노드 단계 전이 SSOT — ADR-012. StageEvent 패턴 복제."""
+    __tablename__ = "scheduling_stage_events"
+
+    id           = Column(Integer, primary_key=True)
+    node_id      = Column(Integer, ForeignKey("programming_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    stage        = Column(SAEnum(AutoStage,     name="auto_stage",     create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    event_type   = Column(SAEnum(AutoEventType, name="auto_event_type",                  values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    source       = Column(String(100), nullable=True)   # beat/event/user/system
+    started_at   = Column(DateTime(timezone=True), default=_utcnow, index=True)
+    ended_at     = Column(DateTime(timezone=True), nullable=True)
+    latency_ms   = Column(Integer, nullable=True)
+    payload_json = Column(JSON, nullable=True)           # 단계별 부가 정보 (후보 수, 링크 수 등) ≤4KB
+    error_text   = Column(Text, nullable=True)
+    actor        = Column(String(100), nullable=False, default="system")
+
+    __table_args__ = (
+        Index("ix_scheduling_stage_event_node_stage",   "node_id", "stage"),
+        Index("ix_scheduling_stage_event_type_started", "event_type", "started_at"),
+    )
+
+
+class ScheduleAutoPolicy(Base):
+    """자동편성 정책 — ADR-012. 싱글톤(id=1)."""
+    __tablename__ = "schedule_auto_policy"
+
+    id = Column(Integer, primary_key=True, default=1)
+    # per-stage AUTO 토글 (False = 해당 단계에서 자동 전이 안 함)
+    p2_auto = Column(Boolean, nullable=False, default=True,  server_default="true")
+    p3_auto = Column(Boolean, nullable=False, default=True,  server_default="true")
+    p4_auto = Column(Boolean, nullable=False, default=True,  server_default="true")
+    p5_auto = Column(Boolean, nullable=False, default=True,  server_default="true")
+    p6_auto = Column(Boolean, nullable=False, default=False, server_default="false")  # 최종 발행은 기본 수동
+    # P4 자동확정 임계값 (confidence ≥ 이 값인 suggested 링크만 auto-active)
+    confidence_threshold = Column(Float,    nullable=False, default=0.5,   server_default="0.5")
+    # AUTO tick 마스터 스위치 (기본 꺼짐 — 운영자 명시 활성)
+    auto_tick_enabled  = Column(Boolean, nullable=False, default=False, server_default="false")
+    batch_size         = Column(Integer, nullable=False, default=20,    server_default="20")    # tick 당 claim 상한
+    visibility_timeout = Column(Integer, nullable=False, default=300,   server_default="300")  # stuck 재claim 초
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
