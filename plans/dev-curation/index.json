@@ -1,0 +1,59 @@
+{
+  "project": "mediaX",
+  "task": "dev-curation",
+  "title": "홈 큐레이션 모듈 — 편성 기획 ▸ 큐레이션 (홈 슬롯 + 배너 AI 편성 + 테마관 자동 생성)",
+  "branch": "feature/curation",
+  "adr": "docs/dev/dev-curation/adr-013-curation_index.md",
+  "decision": "하이브리드 — 슬롯/배치/테마매칭은 scheduling ProgrammingNode/Link 재사용, 큐레이션 고유(홈 배치 컨텍스트 home_slots + 배너 편성안 승인 curation_banner_plans)만 신규 테이블. MVP=홈슬롯+배너AI편성+테마관자동생성. 개인화/트렌드외부/AB는 Phase 2.",
+  "steps": [
+    {
+      "id": "1",
+      "name": "adr-013-curation",
+      "summary": "ADR-013 작성(_index + 01-slot-model + 02-banner-pipeline) — 하이브리드 결정/재사용 매핑/MVP 경계 + home_slots·curation_banner_plans 스키마 + 배너 워크플로우 + 테마관 auto 재사용. plan 스캐폴드 8 step.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "2",
+      "name": "curation-model-migration",
+      "summary": "curation/models.py — HomeSlot/CurationBannerPlan + enum(SlotCode/SlotType/Device/TimeBand/BannerPlanStatus) + alembic 0048 + SQLite create_all 스모크. scheduling.models 재사용(중복정의 금지).",
+      "status": "pending"
+    },
+    {
+      "id": "3",
+      "name": "slot-service",
+      "summary": "curation/slot_service.py — 슬롯 CRUD + resolve(device, time_band) 구체값>all fallback + node_set 바인딩 + 단위 테스트.",
+      "status": "pending"
+    },
+    {
+      "id": "4",
+      "name": "banner-service",
+      "summary": "curation/banner_service.py — create_plan(auto 노드 수집→node_set) + predict_ctr 휴리스틱 스텁 + submit/approve/publish 상태 전이(멱등) + 테마관 auto_service 위임 + 단위 테스트.",
+      "status": "pending"
+    },
+    {
+      "id": "5",
+      "name": "curation-endpoints",
+      "summary": "curation/router.py — slots CRUD+resolve, banner/plans CRUD+submit+approve+publish (/api/programming/curation prefix) + main.py 마운트 + TestClient.",
+      "status": "pending"
+    },
+    {
+      "id": "6",
+      "name": "fe-nav-slot-board",
+      "summary": "docs.ts 큐레이션 nav + /programming/curation 슬롯 보드 골격(A~F 레이아웃 미리보기 + 슬롯→node_set 바인딩) + lib/api.ts curationApi + 타입 + typecheck.",
+      "status": "pending"
+    },
+    {
+      "id": "7",
+      "name": "fe-banner-review",
+      "summary": "배너 주간 편성안 리뷰/승인 패널(draft→review→approved→published) + 슬롯 디바이스/시간대 토글 + typecheck.",
+      "status": "pending"
+    },
+    {
+      "id": "8",
+      "name": "curation-triggers",
+      "summary": "(선택) 주간 배너 편성안 자동 생성 Beat(월요일) + 테마관 auto 재매칭 훅 재사용 + 단위 테스트.",
+      "status": "pending"
+    }
+  ]
+}
