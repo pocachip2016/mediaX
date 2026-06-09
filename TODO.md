@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-curation Step 2 — curation-model-migration (home_slots + curation_banner_plans + alembic 0048)
+- [x] dev-curation Step 8 — curation-beat (주간 배너 Beat + CLAUDE.md 업데이트)
 
 ## Next (이번 마일스톤)
 

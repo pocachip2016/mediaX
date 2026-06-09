@@ -6,6 +6,7 @@
 set -euo pipefail
 STEP="${1:-}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJ="$SCRIPT_DIR/.."
 BACKEND="$SCRIPT_DIR/../backend"
 cd "$BACKEND"
 
@@ -7125,11 +7126,191 @@ print('  ✓ SQLite create_all 스모크 통과 (3 신규 테이블)')
     echo "=== PASS ==="
     ;;
 
+  # ── dev-curation step 8 ─────────────────────────────────────────
+  curation-beat)
+    echo "=== curation-beat: weekly_banner_plan Beat 태스크 + celery_app 등록 검증 ==="
+    [ -f "workers/tasks/curation.py" ] \
+      || { echo "FAIL: workers/tasks/curation.py 없음"; exit 1; }
+    echo "  ✓ workers/tasks/curation.py 존재"
+    grep -q "weekly_banner_plan" workers/tasks/curation.py \
+      || { echo "FAIL: weekly_banner_plan 태스크 없음"; exit 1; }
+    echo "  ✓ weekly_banner_plan 태스크 정의 확인"
+    grep -q "workers.tasks.curation" workers/celery_app.py \
+      || { echo "FAIL: celery_app.py include 미등록"; exit 1; }
+    echo "  ✓ celery_app.py include 등록 확인"
+    grep -q "weekly-banner-plan" workers/celery_app.py \
+      || { echo "FAIL: beat_schedule에 weekly-banner-plan 없음"; exit 1; }
+    echo "  ✓ beat_schedule 등록 확인"
+    [ -f "tests/test_curation_beat.py" ] \
+      || { echo "FAIL: test_curation_beat.py 없음"; exit 1; }
+    echo "  ✓ test_curation_beat.py 존재"
+    echo "  → pytest 실행 중..."
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_beat.py -v 2>&1 \
+      | grep -E "PASSED|FAILED|ERROR|passed|failed|error"
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_beat.py 2>&1 | grep -q "6 passed" \
+      || { echo "FAIL: test_curation_beat 테스트 실패"; exit 1; }
+    echo "  ✓ 6 tests pass"
+    echo "=== PASS ==="
+    ;;
+
+  # ── dev-curation step 7 ─────────────────────────────────────────
+  fe-banner-review)
+    echo "=== fe-banner-review: BannerReviewPanel + page.tsx + typecheck ==="
+    FE="$PROJ/mediaX-CMS/apps/web"
+    [ -f "$FE/app/(main)/programming/curation/banner/page.tsx" ] \
+      || { echo "FAIL: banner/page.tsx 없음"; exit 1; }
+    [ -f "$FE/components/curation/BannerReviewPanel.tsx" ] \
+      || { echo "FAIL: BannerReviewPanel.tsx 없음"; exit 1; }
+    echo "  ✓ banner/page.tsx + BannerReviewPanel.tsx 존재"
+    echo "  → typecheck 실행 중..."
+    cd "$FE" && npx tsc --noEmit 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: TypeScript 타입 에러"; exit 1; }
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
+  # ── dev-curation step 6 ─────────────────────────────────────────
+  fe-nav-slot-board)
+    echo "=== fe-nav-slot-board: 큐레이션 nav + SlotBoard FE + typecheck ==="
+    FE="$PROJ/mediaX-CMS/apps/web"
+    # 파일 존재 확인
+    [ -f "$FE/app/(main)/programming/curation/page.tsx" ] \
+      || { echo "FAIL: curation/page.tsx 없음"; exit 1; }
+    [ -f "$FE/components/curation/SlotBoard.tsx" ] \
+      || { echo "FAIL: SlotBoard.tsx 없음"; exit 1; }
+    [ -f "$FE/components/curation/SlotCard.tsx" ] \
+      || { echo "FAIL: SlotCard.tsx 없음"; exit 1; }
+    echo "  ✓ page.tsx + SlotBoard.tsx + SlotCard.tsx 존재"
+    # nav 등록 확인
+    grep -q "홈 큐레이션" "$FE/config/docs.ts" \
+      || { echo "FAIL: docs.ts에 큐레이션 nav 없음"; exit 1; }
+    echo "  ✓ docs.ts nav 등록 확인"
+    # curationApi 타입 확인
+    grep -q "curationApi" "$FE/lib/api.ts" \
+      || { echo "FAIL: api.ts에 curationApi 없음"; exit 1; }
+    echo "  ✓ api.ts curationApi 등록 확인"
+    # typecheck
+    echo "  → typecheck 실행 중..."
+    cd "$FE" && npx tsc --noEmit 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: TypeScript 타입 에러"; exit 1; }
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
+  # ── dev-curation step 5 ─────────────────────────────────────────
+  curation-endpoints)
+    echo "=== curation-endpoints: 슬롯/배너 라우터 + TestClient 검증 ==="
+    [ -f "api/programming/curation/router.py" ] \
+      || { echo "FAIL: curation/router.py 없음"; exit 1; }
+    [ -f "api/programming/curation/schemas.py" ] \
+      || { echo "FAIL: curation/schemas.py 없음"; exit 1; }
+    grep -q "curation_router" api/programming/router.py \
+      || { echo "FAIL: programming/router.py에 curation 미등록"; exit 1; }
+    echo "  ✓ router.py + schemas.py + programming/router.py 등록 확인"
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_api.py -v 2>&1 \
+      | grep -E "PASSED|FAILED|ERROR|passed|failed"
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_api.py 2>&1 | grep -q "11 passed" \
+      || { echo "FAIL: 테스트 미통과"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  # ── dev-curation step 4 ─────────────────────────────────────────
+  banner-service)
+    echo "=== banner-service: CurationBannerPlan 워크플로우 + 단위 테스트 ==="
+    [ -f "api/programming/curation/banner_service.py" ] \
+      || { echo "FAIL: banner_service.py 없음"; exit 1; }
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_banner_service.py -v 2>&1 \
+      | grep -E "PASSED|FAILED|ERROR|passed|failed"
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_banner_service.py 2>&1 | grep -q "14 passed" \
+      || { echo "FAIL: 테스트 미통과"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  # ── dev-curation step 3 ─────────────────────────────────────────
+  slot-service)
+    echo "=== slot-service: HomeSlot CRUD + resolve 단위 테스트 ==="
+    [ -f "api/programming/curation/slot_service.py" ] \
+      || { echo "FAIL: slot_service.py 없음"; exit 1; }
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_slot_service.py -v 2>&1 \
+      | grep -E "PASSED|FAILED|ERROR|passed|failed"
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_slot_service.py -q 2>&1 \
+      | tail -3
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_slot_service.py 2>&1 | grep -q "10 passed" \
+      || { echo "FAIL: 테스트 미통과"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  # ── dev-curation step 2 ─────────────────────────────────────────
+  curation-model-migration)
+    echo "=== curation-model-migration: HomeSlot + CurationBannerPlan 모델 + 0048 마이그레이션 검증 ==="
+    # 1. 모델 파일 존재 확인
+    [ -f "api/programming/curation/models.py" ] \
+      || { echo "FAIL: curation/models.py 없음"; exit 1; }
+    echo "  ✓ curation/models.py 존재"
+
+    # 2. 필수 클래스 포함 여부
+    python3 -c "
+import ast, pathlib
+src = pathlib.Path('api/programming/curation/models.py').read_text()
+for cls in ('HomeSlot', 'CurationBannerPlan', 'SlotCode', 'SlotType', 'Device', 'TimeBand', 'BannerPlanStatus'):
+    assert cls in src, f'{cls} 정의 없음'
+print('  ✓ 필수 클래스/enum 7종 모두 존재')
+"
+    [ $? -eq 0 ] || exit 1
+
+    # 3. ProgrammingNodeSet 중복 정의 없음 (shadowing 금지)
+    python3 -c "
+import pathlib
+src = pathlib.Path('api/programming/curation/models.py').read_text()
+assert 'class ProgrammingNodeSet' not in src, 'ProgrammingNodeSet 중복 정의 — shadowing 금지'
+assert 'class ProgrammingNode(' not in src, 'ProgrammingNode 중복 정의 — shadowing 금지'
+print('  ✓ scheduling 모델 중복 정의 없음')
+"
+    [ $? -eq 0 ] || exit 1
+
+    # 4. alembic 0048 파일 존재 + revision 확인
+    [ -f "alembic/versions/0048_curation_models.py" ] \
+      || { echo "FAIL: 0048_curation_models.py 없음"; exit 1; }
+    python3 -c "
+import pathlib
+src = pathlib.Path('alembic/versions/0048_curation_models.py').read_text()
+assert 'revision = \"0048\"' in src, 'revision 0048 없음'
+assert 'down_revision = \"0047\"' in src, 'down_revision 0047 없음'
+assert 'home_slots' in src, 'home_slots 테이블 없음'
+assert 'curation_banner_plans' in src, 'curation_banner_plans 테이블 없음'
+print('  ✓ 0048 마이그레이션 revision 체인 + 테이블 확인')
+"
+    [ $? -eq 0 ] || exit 1
+
+    # 5. SQLite create_all 스모크
+    DATABASE_URL="sqlite:///./smoke_curation_step2.db" python3 -c "
+from shared.database import Base, engine
+import api.programming.metadata.models
+import api.programming.scheduling.models
+import api.programming.curation.models
+Base.metadata.create_all(engine)
+from sqlalchemy import inspect
+insp = inspect(engine)
+names = insp.get_table_names()
+for t in ('home_slots', 'curation_banner_plans'):
+    assert t in names, f'{t} 테이블 create_all 실패'
+print('  ✓ SQLite create_all 스모크 통과 (home_slots, curation_banner_plans)')
+" && rm -f smoke_curation_step2.db
+    [ $? -eq 0 ] || { rm -f smoke_curation_step2.db; echo "FAIL: SQLite create_all 실패"; exit 1; }
+
+    # 6. env.py import 등록 확인
+    grep -q "api.programming.curation.models" alembic/env.py \
+      || { echo "FAIL: env.py에 curation models import 없음"; exit 1; }
+    echo "  ✓ alembic/env.py import 등록 확인"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
     echo "  dev-catalog-pricing: 2.1~2.6 또는 pricing-holdback-models, pricing-holdback-migration, pricing-service, holdback-service, catalog-pricing-api, catalog-pricing-fe"
     echo "  dev-auto-schedule: auto-schedule-s2~s8"
+    echo "  dev-curation: curation-model-migration"
     exit 1
     ;;
 esac

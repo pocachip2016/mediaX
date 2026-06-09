@@ -16,44 +16,51 @@
     {
       "id": "2",
       "name": "curation-model-migration",
-      "summary": "curation/models.py — HomeSlot/CurationBannerPlan + enum(SlotCode/SlotType/Device/TimeBand/BannerPlanStatus) + alembic 0048 + SQLite create_all 스모크. scheduling.models 재사용(중복정의 금지).",
-      "status": "pending"
+      "summary": "HomeSlot/CurationBannerPlan 모델 + enum 5종(SlotCode/SlotType/Device/TimeBand/BannerPlanStatus) + alembic 0048 + SQLite create_all 스모크 pass. scheduling.models 중복 정의 없음.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "3",
       "name": "slot-service",
-      "summary": "curation/slot_service.py — 슬롯 CRUD + resolve(device, time_band) 구체값>all fallback + node_set 바인딩 + 단위 테스트.",
-      "status": "pending"
+      "summary": "slot_service.py — HomeSlot CRUD 6함수 + resolve_slots 구체값>all 우선순위 + conftest curation import + 단위 테스트 10 pass.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "4",
       "name": "banner-service",
-      "summary": "curation/banner_service.py — create_plan(auto 노드 수집→node_set) + predict_ctr 휴리스틱 스텁 + submit/approve/publish 상태 전이(멱등) + 테마관 auto_service 위임 + 단위 테스트.",
-      "status": "pending"
+      "summary": "banner_service.py — create_plan(auto노드수집+NodeSet생성) + CTR 휴리스틱 스텁 + submit/approve/publish 상태전이(멱등) + 슬롯A 자동 바인딩 + 테스트 14 pass.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "5",
       "name": "curation-endpoints",
-      "summary": "curation/router.py — slots CRUD+resolve, banner/plans CRUD+submit+approve+publish (/api/programming/curation prefix) + main.py 마운트 + TestClient.",
-      "status": "pending"
+      "summary": "curation router 12 EP(슬롯6+배너6) + schemas + programming/router 등록 + TestClient 11 pass.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "6",
       "name": "fe-nav-slot-board",
-      "summary": "docs.ts 큐레이션 nav + /programming/curation 슬롯 보드 골격(A~F 레이아웃 미리보기 + 슬롯→node_set 바인딩) + lib/api.ts curationApi + 타입 + typecheck.",
-      "status": "pending"
+      "summary": "docs.ts nav + curationApi(12함수+타입) + SlotBoard/SlotCard(바인딩 Select) + page.tsx + typecheck pass.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "7",
       "name": "fe-banner-review",
-      "summary": "배너 주간 편성안 리뷰/승인 패널(draft→review→approved→published) + 슬롯 디바이스/시간대 토글 + typecheck.",
-      "status": "pending"
+      "summary": "BannerReviewPanel 2컬럼(목록+상세) + submit/approve/publish 액션바 + banner/page.tsx + typecheck pass.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "8",
       "name": "curation-triggers",
-      "summary": "(선택) 주간 배너 편성안 자동 생성 Beat(월요일) + 테마관 auto 재매칭 훅 재사용 + 단위 테스트.",
-      "status": "pending"
+      "summary": "weekly_banner_plan Beat 태스크(월요일 01:10) + celery_app include/schedule 등록 + 6 tests pass.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     }
   ]
 }

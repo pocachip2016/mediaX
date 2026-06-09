@@ -41,7 +41,7 @@ docker compose up
 | pt-pipeline-test-console | ✅ | ✅ | 6단계 파이프라인 검증 콘솔 — TEST_PIPELINE 15건 시드 + 단계별 트리거(S0~S5) + ContentPipelineTimeline. ADR-002 |
 | dev-stage-auto-autofill | ✅ | ✅ | 콘솔 AUTO 모드 — S2 enrich-autofill/S3 ai-autofill(빈 필드만 채움) + S4 quality_threshold 자동승인(0036) + AutoRunPanel/runAuto. ADR-009 후속(단발 커밋 a854413) |
 | 1.2 카탈로그 | 스텁 | 스텁 | |
-| 1.3 큐레이션 | 스텁 | 스텁 | |
+| dev-curation (1.3 홈 큐레이션) | ✅ | ✅ | HomeSlot+CurationBannerPlan(ADR-013) + 슬롯 보드 + 배너 편성안 워크플로우 + weekly Beat(월요일 01:10) |
 | 1.4 결재 워크플로우 | 스텁 | 스텁 | |
 | 1.5 CP 수급 관리 | 스텁 | 스텁 | |
 | dev-service-distribution | 미착수 | 미착수 | ContentDistribution(IPTV/OTT) + ServiceCategory + DeviceVariant |

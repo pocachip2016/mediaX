@@ -2483,3 +2483,80 @@ export const schedulingAutoApi = {
   getSetConflicts: (setId: number) =>
     request<ConflictReport>(`${AUTO}/sets/${setId}/conflicts`),
 }
+
+// ── 큐레이션 타입 ─────────────────────────────────────────────────────────────
+
+export type SlotCode = "A" | "B" | "C" | "D" | "E" | "F"
+export type SlotType = "banner" | "theme" | "personal" | "genre" | "ranking" | "promo"
+export type CurationDevice = "all" | "tv" | "mobile" | "web"
+export type CurationTimeBand = "all" | "morning" | "afternoon" | "evening" | "night"
+export type BannerPlanStatus = "draft" | "review" | "approved" | "published"
+
+export interface SlotOut {
+  id: number
+  slot_code: SlotCode
+  slot_type: SlotType
+  device: CurationDevice
+  time_band: CurationTimeBand
+  position: number
+  node_set_id: number | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BannerPlanOut {
+  id: number
+  week_start: string
+  status: BannerPlanStatus
+  node_set_id: number | null
+  ctr_prediction: number | null
+  reviewer: string | null
+  reviewed_at: string | null
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+const CURATION = "/api/programming/curation"
+
+const MOCK_SLOTS: SlotOut[] = [
+  { id: 1, slot_code: "A", slot_type: "banner",  device: "all",  time_band: "all", position: 0, node_set_id: null, is_active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+  { id: 2, slot_code: "B", slot_type: "theme",   device: "all",  time_band: "all", position: 0, node_set_id: null, is_active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+  { id: 3, slot_code: "C", slot_type: "genre",   device: "all",  time_band: "all", position: 0, node_set_id: null, is_active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+]
+
+export const curationApi = {
+  listSlots: (activeOnly = true) =>
+    request<SlotOut[]>(`${CURATION}/slots?active_only=${activeOnly}`).catch(() => MOCK_SLOTS),
+
+  getSlot: (id: number) =>
+    request<SlotOut>(`${CURATION}/slots/${id}`),
+
+  createSlot: (data: { slot_code: SlotCode; slot_type: SlotType; device?: CurationDevice; time_band?: CurationTimeBand; position?: number; node_set_id?: number | null }) =>
+    request<SlotOut>(`${CURATION}/slots`, { method: "POST", body: JSON.stringify(data) }),
+
+  patchSlot: (id: number, data: { node_set_id?: number | null; position?: number; is_active?: boolean }) =>
+    request<SlotOut>(`${CURATION}/slots/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  deleteSlot: (id: number) =>
+    request<void>(`${CURATION}/slots/${id}`, { method: "DELETE" }),
+
+  resolveSlots: (device: CurationDevice, timeBand: CurationTimeBand) =>
+    request<{ slots: SlotOut[] }>(`${CURATION}/slots/resolve?device=${device}&time_band=${timeBand}`).catch(() => ({ slots: [] })),
+
+  listBannerPlans: () =>
+    request<BannerPlanOut[]>(`${CURATION}/banner/plans`).catch(() => [] as BannerPlanOut[]),
+
+  createBannerPlan: (weekStart: string) =>
+    request<BannerPlanOut>(`${CURATION}/banner/plans`, { method: "POST", body: JSON.stringify({ week_start: weekStart }) }),
+
+  submitPlan: (id: number) =>
+    request<BannerPlanOut>(`${CURATION}/banner/plans/${id}/submit`, { method: "POST" }),
+
+  approvePlan: (id: number, reviewer: string) =>
+    request<BannerPlanOut>(`${CURATION}/banner/plans/${id}/approve`, { method: "POST", body: JSON.stringify({ reviewer }) }),
+
+  publishPlan: (id: number) =>
+    request<BannerPlanOut>(`${CURATION}/banner/plans/${id}/publish`, { method: "POST" }),
+}
