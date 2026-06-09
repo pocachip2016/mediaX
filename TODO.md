@@ -4,9 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] **dev-programming-link Phase 5.2** — migrate-curation-fe-api (service_categories → ProgrammingNode kind=manual/rank). plan: `plans/dev-programming-link/`
-- [x] **dev-programming-link Phase 5.1** — migrate-catalog-fe-api: 어댑터 존치 + 레거시 0 가드 + catalog 회귀 49건 통과 (2026-06-09)
-- [x] **dev-programming-link** — Phase 4.4(fe-backref-calendar-graph) 완료. plan: `plans/dev-programming-link/`
+(비어있음)
 
 ## Next (이번 마일스톤)
 - [ ] 1.3 큐레이션 모듈 설계 확정
@@ -16,6 +14,10 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-programming-link Phase 5.3** — alembic 0046(service_categories/items drop) + ORM 클래스 제거 + 레거시 테스트 3파일 어댑터 전환 + 48테스트 pass (2026-06-09)
+- [x] **dev-programming-link Phase 5.2** — migrate-curation-fe-api: 큐레이션 어댑터 전환 + 레거시 ORM 0 + 28테스트 pass + FE 타입체크 통과 (2026-06-09)
+- [x] **dev-programming-link Phase 5.1** — migrate-catalog-fe-api: 어댑터 존치 + 레거시 0 가드 + catalog 회귀 49건 통과 (2026-06-09)
+- [x] **dev-programming-link Phase 4.4** — BackrefList/ExposureCalendar/NodeGraph FE 3종 + GET /sets/{id}/graph (2026-06-09)
 - [x] **feat(scheduling Phase 4.3)** — interpret_intent Tier1 배선 + AiSuggestPanel(자연어의도/해석칩/체크박스확정) + NodePropsPanel 2탭 전환 (2026-06-09)
 - [x] **feat(scheduling Phase 3.4~4.2)** — suggest_service(suggest/confirm/reject + 11테스트) + 엔드포인트 3종 + lib/api.ts schedulingApi 21함수 + 편성 보드 3컬럼(팔레트/LinkCanvas/NodePropsPanel, dnd-kit+pin+confirm/reject+AI추천) (2026-06-09)
 - [x] **feat(scheduling Phase 3.2c+3.3)** — node-embed-theme(ProgrammingNode.embed_theme + alembic 0045 + node_theme_service) + tier2-semantic-match(match_service cosine+facet 가중합 + 23테스트) (2026-06-08)

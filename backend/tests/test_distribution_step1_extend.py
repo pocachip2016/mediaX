@@ -1,54 +1,53 @@
 """
-Step 1 검증 — ServiceCategory 큐레이션 확장 컬럼
+Step 1 검증 — ServiceCategory 큐레이션 확장 컬럼 (노드 어댑터 기반)
+
+service_categories 테이블 제거 후 ProgrammingNode 어댑터로 동일 계약 유지 확인.
 """
 import pytest
-from api.distribution.models import ServiceCategory
-from api.distribution.schemas import ServiceCategoryCreate, ServiceCategoryUpdate, ServiceCategoryOut
+from api.distribution.schemas import (
+    ServiceCategoryCreate, ServiceCategoryUpdate, ServiceCategoryOut,
+)
 from api.distribution import service
 
 
 @pytest.fixture
 def category_full(db):
-    obj = ServiceCategory(
+    return service.create_category(db, ServiceCategoryCreate(
         name="퇴근 후 위로",
         category_type="recommendation",
         platform="ott_watcha",
+        position=0,
         headline_copy="퇴근 후 90분의 위로",
         sub_copy="가볍게 즐기는 코미디·드라마",
         theme_features={"genres": ["코미디", "드라마"], "moods": ["가벼운"], "runtime_min": 80},
         source_mode="ai_proposed",
         reference_external_id="watcha:section:top10",
         is_draft=True,
-    )
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    return obj
+    ))
 
 
-# ── 모델 컬럼 존재 확인 ──────────────────────────────────────────────────────
+# ── 스키마 필드 존재 확인 ─────────────────────────────────────────────────────
 
-def test_model_has_new_columns():
-    cols = {c.key for c in ServiceCategory.__table__.columns}
-    assert "headline_copy" in cols
-    assert "sub_copy" in cols
-    assert "theme_features" in cols
-    assert "source_mode" in cols
-    assert "reference_external_id" in cols
-    assert "is_draft" in cols
+def test_schema_has_curation_fields():
+    fields = ServiceCategoryOut.model_fields
+    assert "headline_copy" in fields
+    assert "sub_copy" in fields
+    assert "theme_features" in fields
+    assert "source_mode" in fields
+    assert "reference_external_id" in fields
+    assert "is_draft" in fields
 
 
 # ── 기본값 확인 ───────────────────────────────────────────────────────────────
 
 def test_default_source_mode(db):
-    obj = ServiceCategory(name="기본", category_type="ranking", platform="ott_watcha")
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    assert obj.source_mode == "manual"
-    assert obj.is_draft is False
-    assert obj.headline_copy is None
-    assert obj.theme_features is None
+    view = service.create_category(db, ServiceCategoryCreate(
+        name="기본", category_type="ranking", platform="ott_watcha", position=0,
+    ))
+    assert view.source_mode == "manual"
+    assert view.is_draft is False
+    assert view.headline_copy is None
+    assert view.theme_features is None
 
 
 # ── CRUD with new fields ──────────────────────────────────────────────────────
@@ -58,6 +57,7 @@ def test_create_with_curation_fields(db):
         name="AI 큐레이션",
         category_type="recommendation",
         platform="ott_netflix",
+        position=0,
         headline_copy="오늘은 짧고 깊게",
         sub_copy="짧은 러닝타임, 큰 여운",
         theme_features={"genres": ["드라마"], "runtime_max": 100},
@@ -110,7 +110,7 @@ def test_out_schema_includes_new_fields(db, category_full):
 
 
 def test_create_schema_new_fields_optional():
-    data = ServiceCategoryCreate(name="최소", category_type="ranking", platform="iptv")
+    data = ServiceCategoryCreate(name="최소", category_type="ranking", platform="iptv", position=0)
     assert data.headline_copy is None
     assert data.source_mode == "manual"
     assert data.is_draft is False

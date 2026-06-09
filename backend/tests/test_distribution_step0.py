@@ -5,7 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from shared.database import get_db
-from api.distribution.models import ContentDistribution, ServiceCategory, DeviceVariant
+from api.distribution.models import ContentDistribution, DeviceVariant
+from api.distribution.schemas import ServiceCategoryCreate
 from api.distribution import service
 from api.programming.metadata.models import Content
 
@@ -55,9 +56,8 @@ def test_get_categories_empty(db):
 
 
 def test_get_categories_filter_platform(db):
-    db.add(ServiceCategory(name="IPTV 추천", category_type="recommendation", platform="iptv_genie"))
-    db.add(ServiceCategory(name="Watcha TOP10", category_type="ranking", platform="ott_watcha"))
-    db.commit()
+    service.create_category(db, ServiceCategoryCreate(name="IPTV 추천", category_type="recommendation", platform="iptv_genie", position=0))
+    service.create_category(db, ServiceCategoryCreate(name="Watcha TOP10", category_type="ranking", platform="ott_watcha", position=1))
     result = service.get_categories(db, platform="iptv_genie")
     assert len(result) == 1
     assert result[0].platform == "iptv_genie"

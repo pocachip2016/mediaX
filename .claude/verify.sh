@@ -6715,6 +6715,148 @@ sys.exit(0 if ok else 1)
     echo "=== PASS ==="
     ;;
 
+  curation-node-adapter)
+    echo "=== curation-node-adapter: service_categories → ProgrammingNode 어댑터 검증 ==="
+    cd "$BACKEND"
+
+    DIST_SVC="api/distribution/service.py"
+
+    # 1) 어댑터 확인: distribution/service.py 가 scheduling.models 를 임포트하는가
+    if ! grep -q "from api.programming.scheduling.models" "$DIST_SVC" 2>/dev/null; then
+      echo "FAIL: $DIST_SVC 에 'from api.programming.scheduling.models' 없음 — 어댑터 미적용"
+      exit 1
+    fi
+    echo "  ✓ distribution 어댑터 → scheduling.models 임포트 확인"
+
+    # 2) 레거시 ORM ServiceCategory/ServiceCategoryItem 생성 호출 0 가드
+    LEGACY_HIT=$(grep -n "ServiceCategory(\|ServiceCategoryItem(" "$DIST_SVC" 2>/dev/null || true)
+    if [ -n "$LEGACY_HIT" ]; then
+      echo "FAIL: $DIST_SVC 에 레거시 ORM 생성 호출 발견:"
+      echo "$LEGACY_HIT"
+      exit 1
+    fi
+    echo "  ✓ distribution/service.py 레거시 ORM 생성 호출 0"
+
+    # 3) 신규 어댑터 테스트
+    echo "--- curation-node-adapter 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py -q
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: test_curation_node_adapter pytest 실패"; exit 1; }
+    echo "  ✓ curation-node-adapter 테스트 통과"
+
+    echo "=== PASS ==="
+    ;;
+
+  legacy-drop)
+    echo "=== legacy-drop: service_categories/items 제거 + 잔존 참조 0 + 회귀 pytest ==="
+    cd "$BACKEND"
+
+    # 1) 마이그레이션 0046 존재 확인
+    test -f "alembic/versions/0046_drop_service_category_tables.py" \
+      || { echo "FAIL: alembic/versions/0046_drop_service_category_tables.py 없음"; exit 1; }
+    grep -q "drop_table.*service_category_items\|drop_table.*\"service_category_items\"" \
+      "alembic/versions/0046_drop_service_category_tables.py" \
+      || { echo "FAIL: 0046에 service_category_items drop 없음"; exit 1; }
+    grep -q "drop_table.*service_categories\|drop_table.*\"service_categories\"" \
+      "alembic/versions/0046_drop_service_category_tables.py" \
+      || { echo "FAIL: 0046에 service_categories drop 없음"; exit 1; }
+    echo "  ✓ alembic 0046 — service_categories/service_category_items drop 확인"
+
+    # 2) models.py에 ServiceCategory/ServiceCategoryItem 클래스 0
+    MODEL_HIT=$(grep -n "class ServiceCategory\b\|class ServiceCategoryItem\b" api/distribution/models.py 2>/dev/null || true)
+    if [ -n "$MODEL_HIT" ]; then
+      echo "FAIL: api/distribution/models.py 에 레거시 ORM 클래스 잔존:"
+      echo "$MODEL_HIT"
+      exit 1
+    fi
+    echo "  ✓ distribution/models.py 레거시 ORM 클래스 0"
+
+    # 3) api/ 전체에서 ServiceCategory ORM import 잔존 0
+    IMPORT_HIT=$(grep -rn "from api.distribution.models import.*ServiceCategory\|from .models import.*ServiceCategory" \
+      api --include="*.py" 2>/dev/null || true)
+    if [ -n "$IMPORT_HIT" ]; then
+      echo "FAIL: api/ 에 ServiceCategory ORM import 잔존:"
+      echo "$IMPORT_HIT"
+      exit 1
+    fi
+    echo "  ✓ api/ ServiceCategory ORM import 0"
+
+    # 4) tests/ 에서 ServiceCategory ORM 직접 사용 0 (스키마 클래스는 허용)
+    TEST_ORM_HIT=$(grep -rn "from api.distribution.models import.*ServiceCategory\|db\.query(ServiceCategory\|db\.add(ServiceCategory\|db\.add(ServiceCategoryItem" \
+      tests --include="*.py" 2>/dev/null || true)
+    if [ -n "$TEST_ORM_HIT" ]; then
+      echo "FAIL: tests/ 에 ServiceCategory ORM 직접 사용 잔존:"
+      echo "$TEST_ORM_HIT"
+      exit 1
+    fi
+    echo "  ✓ tests/ ServiceCategory ORM 직접 사용 0"
+
+    # 5) 회귀 pytest
+    echo "--- legacy-drop 회귀 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest \
+      tests/test_distribution_step3.py \
+      tests/test_curation_node_adapter.py \
+      tests/test_distribution_step0.py \
+      -q
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest \
+      tests/test_distribution_step3.py \
+      tests/test_curation_node_adapter.py \
+      tests/test_distribution_step0.py \
+      -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: legacy-drop 회귀 pytest 실패"; exit 1; }
+    echo "  ✓ legacy-drop 회귀 테스트 통과"
+
+    echo "=== PASS ==="
+    ;;
+
+  migrate-curation-fe-api)
+    echo "=== migrate-curation-fe-api: 큐레이션 어댑터 존치 + 레거시 0 + 회귀 pytest + FE 타입체크 ==="
+    cd "$BACKEND"
+
+    DIST_SVC="api/distribution/service.py"
+
+    # 1) 어댑터 확인: distribution/service.py 가 scheduling.models 를 임포트하는가
+    if ! grep -q "from api.programming.scheduling.models" "$DIST_SVC" 2>/dev/null; then
+      echo "FAIL: $DIST_SVC 에 'from api.programming.scheduling.models' 없음 — 어댑터 미적용"
+      exit 1
+    fi
+    echo "  ✓ distribution 어댑터 → scheduling.models 임포트 확인"
+
+    # 2) 레거시 ORM ServiceCategory/ServiceCategoryItem 생성 호출 0 가드
+    LEGACY_HIT=$(grep -n "ServiceCategory(\|ServiceCategoryItem(" "$DIST_SVC" 2>/dev/null || true)
+    if [ -n "$LEGACY_HIT" ]; then
+      echo "FAIL: $DIST_SVC 에 레거시 ORM 생성 호출 발견:"
+      echo "$LEGACY_HIT"
+      exit 1
+    fi
+    echo "  ✓ distribution/service.py 레거시 ORM 생성 호출 0"
+
+    # 3) 회귀 pytest (어댑터 + step0 레거시 교체 포함)
+    echo "--- 큐레이션 회귀 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py tests/test_distribution_step0.py -q
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py tests/test_distribution_step0.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: 큐레이션 회귀 pytest 실패"; exit 1; }
+    echo "  ✓ 큐레이션 회귀 테스트 통과"
+
+    # 4) FE 타입체크 (distributionApi 스키마 불변 확인)
+    cd /home/ktalpha/Work/mediaX/mediaX-CMS
+    echo "--- FE 타입체크 실행 중 ---"
+    if command -v nvm &>/dev/null; then
+      export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 22 --silent 2>/dev/null || true
+    fi
+    if npm run -w @app/web typecheck 2>&1 | grep -qE "error TS|Type error"; then
+      echo "FAIL: FE 타입체크 오류 발생"
+      npm run -w @app/web typecheck 2>&1 | grep -E "error TS|Type error" | head -20
+      exit 1
+    fi
+    echo "  ✓ FE 타입체크 통과"
+
+    echo "=== PASS ==="
+    ;;
+
   migrate-catalog-fe-api)
     echo "=== migrate-catalog-fe-api: catalog 어댑터 존치 + 레거시 0 + 회귀 pytest ==="
     cd "$BACKEND"

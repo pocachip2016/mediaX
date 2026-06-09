@@ -33,6 +33,8 @@ def compose_theme_text(node: ProgrammingNode) -> str:
     theme_features = getattr(node, "theme_features", None)
     if isinstance(theme_features, dict):
         for k, v in theme_features.items():
+            if k.startswith("_"):  # _curation 등 내부 메타 네임스페이스 제외
+                continue
             if k == "setting" and isinstance(v, dict):
                 for sub in v.values():
                     if isinstance(sub, list):

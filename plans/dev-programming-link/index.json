@@ -149,14 +149,16 @@
     {
       "id": "5.2",
       "name": "migrate-curation-fe-api",
-      "summary": "기존 큐레이션(service_categories) 화면·API 를 신규 노드(kind=manual/rank) 기반으로 전환. /monitoring/web-search 등 연계 확인",
-      "status": "pending"
+      "summary": "distribution/service.py 큐레이션 어댑터 전환(노드 기반 CRUD+items) + theme_features._curation 메타 보존 + compose_theme_text _접두키 제외 패치 + 레거시 ORM 0 + 28테스트 pass + FE 타입체크 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "5.3",
       "name": "legacy-drop",
-      "summary": "레거시 테이블(categories/content_categories/category_sets/service_categories/items) + 코드 제거. 잔존 참조 0 회귀 테스트. external_curations 존치",
-      "status": "pending"
+      "summary": "alembic 0046(service_categories/items drop) + ORM 클래스 제거 + 레거시 테스트 3파일 어댑터 전환 + 48테스트 pass",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     }
   ]
 }

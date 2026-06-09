@@ -1,12 +1,14 @@
 """
-Step 3 검증 — ServiceCategory CRUD + 아이템 관리 API
+Step 3 검증 — ServiceCategory CRUD + 아이템 관리 API (노드 어댑터 기반)
+
+service_categories/service_category_items 테이블 제거 후
+ProgrammingNode/Link 어댑터로 동일 계약 유지 확인.
 """
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from shared.database import get_db
-from api.distribution.models import ServiceCategory, ServiceCategoryItem
 from api.distribution.schemas import (
     ServiceCategoryCreate, ServiceCategoryUpdate,
     ServiceCategoryItemCreate, ReorderRequest, ReorderItem,
@@ -44,26 +46,22 @@ def content2(db):
 
 @pytest.fixture
 def category(db):
-    obj = ServiceCategory(name="TOP10", category_type="ranking", platform="ott_watcha")
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    return obj
+    return service.create_category(db, ServiceCategoryCreate(
+        name="TOP10", category_type="top10", platform="ott_watcha", position=0,
+    ))
 
 
 @pytest.fixture
 def item(db, category, content):
-    obj = ServiceCategoryItem(category_id=category.id, content_id=content.id, rank=1)
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    return obj
+    return service.add_item(db, category.id, ServiceCategoryItemCreate(
+        content_id=content.id, rank=1,
+    ))
 
 
 # ── service 계층 ───────────────────────────────────────────────────────────────
 
 def test_create_category(db):
-    data = ServiceCategoryCreate(name="신작 추천", category_type="recommendation", platform="iptv_genie")
+    data = ServiceCategoryCreate(name="신작 추천", category_type="recommendation", platform="iptv_genie", position=0)
     result = service.create_category(db, data)
     assert result.id is not None
     assert result.name == "신작 추천"
@@ -98,7 +96,7 @@ def test_update_category(db, category):
 def test_delete_category(db, category):
     result = service.delete_category(db, category.id)
     assert result["deleted"] is True
-    assert db.query(ServiceCategory).filter(ServiceCategory.id == category.id).first() is None
+    assert service.get_categories(db) == []
 
 
 def test_add_item(db, category, content):
@@ -118,7 +116,7 @@ def test_add_item_duplicate_409(db, category, content, item):
 def test_remove_item(db, category, item):
     result = service.remove_item(db, category.id, item.id)
     assert result["deleted"] is True
-    assert db.query(ServiceCategoryItem).filter(ServiceCategoryItem.id == item.id).first() is None
+    assert service.get_category_with_items(db, category.id).items == []
 
 
 def test_remove_item_wrong_category(db, category, item):
@@ -128,12 +126,8 @@ def test_remove_item_wrong_category(db, category, item):
 
 
 def test_reorder_items(db, category, content, content2):
-    item1 = ServiceCategoryItem(category_id=category.id, content_id=content.id, rank=1)
-    item2 = ServiceCategoryItem(category_id=category.id, content_id=content2.id, rank=2)
-    db.add_all([item1, item2])
-    db.commit()
-    db.refresh(item1)
-    db.refresh(item2)
+    item1 = service.add_item(db, category.id, ServiceCategoryItemCreate(content_id=content.id, rank=1))
+    item2 = service.add_item(db, category.id, ServiceCategoryItemCreate(content_id=content2.id, rank=2))
 
     data = ReorderRequest(items=[
         ReorderItem(id=item1.id, rank=2),
@@ -142,17 +136,17 @@ def test_reorder_items(db, category, content, content2):
     result = service.reorder_items(db, category.id, data)
     assert result["updated"] == 2
 
-    db.refresh(item1)
-    db.refresh(item2)
-    assert item1.rank == 2
-    assert item2.rank == 1
+    detail = service.get_category_with_items(db, category.id)
+    ranks = {i.content_id: i.rank for i in detail.items}
+    assert ranks[content.id] == 2
+    assert ranks[content2.id] == 1
 
 
 # ── API 계층 ────────────────────────────────────────────────────────────────────
 
 def test_api_create_category_201(client):
     r = client.post("/api/distribution/categories", json={
-        "name": "장르 편성", "category_type": "genre", "platform": "ott_netflix",
+        "name": "장르 편성", "category_type": "genre", "platform": "ott_netflix", "position": 0,
     })
     assert r.status_code == 201
     assert r.json()["name"] == "장르 편성"
