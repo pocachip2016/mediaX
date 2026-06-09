@@ -1,0 +1,65 @@
+{
+  "project": "mediaX",
+  "task": "dev-auto-schedule",
+  "title": "자동편성 파이프라인 — 편성 관리 ▸ 자동편성관리 (조건 충족 시 자동 편성)",
+  "branch": "feature/auto-schedule",
+  "adr": "docs/dev/dev-auto-schedule/adr-012-auto-schedule_index.md",
+  "decision": "콘텐츠 파이프라인 AUTO(ADR-010) 패턴을 ProgrammingNode 컨텍스트로 미러링. P1~P6 stage + ScheduleAutoPolicy. 트리거 3종(Beat+이벤트+온디맨드). 발행=ProgrammingNodeSet 재사용. Tier0/1/2 + suggest_service 재사용.",
+  "steps": [
+    {
+      "id": "1",
+      "name": "adr-012-auto-schedule",
+      "summary": "ADR-012 작성(_index + 01-pipeline-model + 02-triggers). P1~P6 stage/버킷/정책/점수 + 트리거 3종 + 재사용 매핑 확정. plan 스캐폴드 8 step.",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "2",
+      "name": "auto-model-migration",
+      "summary": "AutoStage(P1~P6)/AutoEventType enum + ProgrammingNode AUTO 필드 6개(auto_enabled/auto_stage/auto_hold/auto_claimed_at/auto_skipped_at/schedule_score) + SchedulingStageEvent + ScheduleAutoPolicy(싱글톤) + alembic 0047 + SQLite create_all 스모크 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "3",
+      "name": "auto-core-service",
+      "summary": "scheduling/auto_service.py — claim_bucket(dialect방어/FOR UPDATE SKIP LOCKED) + advance_one(멱등/per-stage P2~P6 실행) + run_to_stable + recompute_schedule_score + 단위 테스트 16건 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "4",
+      "name": "auto-endpoints-policy",
+      "summary": "scheduling/router.py — GET /auto/summary, POST /auto/nodes/{id}/advance|run, GET /auto/nodes/{id}/events, GET|PATCH /auto/policy(threshold 변경 시 auto_skipped_at clear), POST /auto/nodes/{id}/enable + ScheduleAutoPolicy boolean default=False 수정 + TestClient 12건 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "5",
+      "name": "auto-triggers",
+      "summary": "scheduling_auto.py — auto_schedule_tick(Beat 120s) + process_schedule_bucket(batch advance) + rematch_scheduling_nodes(이벤트 훅: p2/p3 auto_enabled 노드 재매칭) + celery_app include/beat 등록 + semantic_profile 훅 1줄 + 테스트 5건 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "6",
+      "name": "fe-nav-console-api",
+      "summary": "docs.ts 자동편성관리 nav 추가 + /programming/schedule/auto/page.tsx 3컬럼 골격(버킷요약/노드목록+액션/정책패널+StageEventLog) + lib/api.ts schedulingAutoApi 7종 + AutoStage/AutoPolicy 등 타입 + typecheck 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "7",
+      "name": "fe-auto-panel-timeline",
+      "summary": "components/scheduling/auto/AutoRunPanel.tsx(AutoPolicyPanel per-stage 토글+tick 스위치+threshold 슬라이더+저장) + StageEventLogCard(폴링) + StageActionBar(advance/run/enable) + ProgrammingNode auto 필드 추가 + page.tsx 컴포넌트 실배선 + typecheck 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "8",
+      "name": "fe-conflict-calendar",
+      "summary": "conflict_service.detect_conflicts 실구현 + GET /auto/sets/{id}/conflicts + 콘솔 충돌 패널(ExposureCalendar 재사용) + P6 발행 가드 + BE 충돌 단위 테스트 + FE typecheck",
+      "status": "pending"
+    }
+  ]
+}

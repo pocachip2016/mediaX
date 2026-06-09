@@ -59,6 +59,7 @@ export const docsNav: NavSection[] = [
           { title: "편성표 작성", href: "/programming/schedule" },
           { title: "AI 큐레이션", href: "/programming/categories", label: "NEW" },
           { title: "새 큐레이션", href: "/programming/categories/new", label: "NEW" },
+          { title: "자동편성관리", href: "/programming/schedule/auto", label: "NEW" },
         ],
       },
     ],

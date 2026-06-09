@@ -6888,10 +6888,171 @@ sys.exit(0 if ok else 1)
     echo "=== PASS ==="
     ;;
 
+  # ── dev-auto-schedule ──────────────────────────────────────────────────────
+  auto-schedule-s7)
+    echo "=== auto-schedule-s7: AutoRunPanel + StageEventLog 컴포넌트 분리 + 실배선 + typecheck ==="
+    ROOT="$SCRIPT_DIR/.."
+    # 컴포넌트 파일 존재 확인
+    [ -f "$ROOT/mediaX-CMS/apps/web/components/scheduling/auto/AutoRunPanel.tsx" ] \
+      && echo "  ✓ AutoRunPanel.tsx 존재" \
+      || { echo "FAIL: AutoRunPanel.tsx 없음"; exit 1; }
+    [ -f "$ROOT/mediaX-CMS/apps/web/components/scheduling/auto/StageEventLog.tsx" ] \
+      && echo "  ✓ StageEventLog.tsx 존재" \
+      || { echo "FAIL: StageEventLog.tsx 없음"; exit 1; }
+    # ProgrammingNode auto 필드 확인
+    grep -q "auto_enabled" "$ROOT/mediaX-CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ ProgrammingNode.auto_enabled 확인" \
+      || { echo "FAIL: auto_enabled 없음"; exit 1; }
+    # 타입체크
+    cd "$ROOT/mediaX-CMS" && npm run typecheck -- --force 2>&1 | tail -5
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck 실패"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  auto-schedule-s6)
+    echo "=== auto-schedule-s6: FE nav + /programming/schedule/auto 골격 + schedulingAutoApi typecheck ==="
+    ROOT="$SCRIPT_DIR/.."
+    # nav 항목 확인
+    grep -q "자동편성관리" "$ROOT/mediaX-CMS/apps/web/config/docs.ts" \
+      && echo "  ✓ nav 항목 확인" \
+      || { echo "FAIL: nav 항목 없음"; exit 1; }
+    # 페이지 파일 존재 확인
+    [ -f "$ROOT/mediaX-CMS/apps/web/app/(main)/programming/schedule/auto/page.tsx" ] \
+      && echo "  ✓ page.tsx 존재" \
+      || { echo "FAIL: page.tsx 없음"; exit 1; }
+    # schedulingAutoApi export 확인
+    grep -q "schedulingAutoApi" "$ROOT/mediaX-CMS/apps/web/lib/api.ts" \
+      && echo "  ✓ schedulingAutoApi export 확인" \
+      || { echo "FAIL: schedulingAutoApi 없음"; exit 1; }
+    # 타입체크
+    cd "$ROOT/mediaX-CMS" && npm run typecheck -- --force 2>&1 | tail -5
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: typecheck 실패"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
+  auto-schedule-s5)
+    echo "=== auto-schedule-s5: scheduling_auto.py Beat tick + 이벤트 훅 단위 테스트 5건 ==="
+    cd "$BACKEND"
+    python3 -c "
+from workers.tasks.scheduling_auto import (
+    auto_schedule_tick, process_schedule_bucket, rematch_scheduling_nodes,
+)
+print('  ✓ scheduling_auto 태스크 import 확인')
+# celery_app include 확인
+from workers.celery_app import celery_app
+assert 'workers.tasks.scheduling_auto' in celery_app.conf.include, 'celery include 누락'
+# beat 등록 확인
+assert 'auto-schedule-tick' in celery_app.conf.beat_schedule, 'beat 등록 누락'
+print('  ✓ celery_app include + beat 등록 확인')
+" || { echo "FAIL: import/등록 확인 실패"; exit 1; }
+    DATABASE_URL=sqlite:///./test_auto_s5.db .venv/bin/pytest tests/test_auto_schedule_triggers.py -q --tb=short 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: pytest 실패"; exit 1; }
+    rm -f ./test_auto_s5.db
+    echo "=== PASS ==="
+    ;;
+
+  auto-schedule-s4)
+    echo "=== auto-schedule-s4: BE 자동편성 엔드포인트 + 정책 + summary TestClient 12건 ==="
+    cd "$BACKEND"
+    python3 -c "
+from api.programming.scheduling.schemas import (
+    AutoSummaryOut, AutoPolicyOut, AutoPolicyIn, AutoNodeAdvanceOut,
+    AutoNodeRunOut, AutoStageEventOut, AutoEnableIn,
+)
+print('  ✓ auto 스키마 import 확인')
+" || { echo "FAIL: schemas import 실패"; exit 1; }
+    DATABASE_URL=sqlite:///./test_auto_s4.db .venv/bin/pytest tests/test_auto_schedule_api.py -q --tb=short 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: pytest 실패"; exit 1; }
+    rm -f ./test_auto_s4.db
+    echo "=== PASS ==="
+    ;;
+
+  auto-schedule-s3)
+    echo "=== auto-schedule-s3: auto_service.py — claim/advance/run_to_stable/score + 단위 테스트 16건 ==="
+    cd "$BACKEND"
+    python3 -c "
+from api.programming.scheduling.auto_service import (
+    claim_bucket, advance_one, run_to_stable, recompute_schedule_score, get_policy,
+    _STAGE_BUCKET, _BUCKET_NEXT_STAGE,
+)
+print('  ✓ auto_service 주요 함수 import 확인')
+"
+    [ $? -eq 0 ] || { echo "FAIL: auto_service import 실패"; exit 1; }
+    DATABASE_URL=sqlite:///./test_auto_s3.db python3 -m pytest tests/test_auto_service.py -q --tb=short 2>&1 | tail -5
+    [ $? -eq 0 ] || { echo "FAIL: pytest 실패"; exit 1; }
+    rm -f ./test_auto_s3.db
+    echo "=== PASS ==="
+    ;;
+
+  auto-schedule-s2)
+    echo "=== auto-schedule-s2: AutoStage enum + ProgrammingNode AUTO 필드 + SchedulingStageEvent + ScheduleAutoPolicy + alembic 0047 ==="
+    # 1. AutoStage enum 존재 확인
+    cd "$BACKEND"
+    python3 -c "
+import api.programming.scheduling.models as m
+assert hasattr(m, 'AutoStage'), 'AutoStage enum 없음'
+assert hasattr(m, 'AutoEventType'), 'AutoEventType enum 없음'
+from api.programming.scheduling.models import AutoStage
+assert AutoStage.P1_DEFINE.value == 'p1_define', 'P1_DEFINE 값 오류'
+assert AutoStage.P6_PUBLISH.value == 'p6_publish', 'P6_PUBLISH 값 오류'
+print('  ✓ AutoStage / AutoEventType enum 확인')
+"
+    [ $? -eq 0 ] || { echo "FAIL: AutoStage enum import 실패"; exit 1; }
+    # 2. ProgrammingNode AUTO 필드 확인
+    python3 -c "
+from api.programming.scheduling.models import ProgrammingNode
+cols = {c.name for c in ProgrammingNode.__table__.columns}
+for f in ('auto_enabled', 'auto_stage', 'auto_hold', 'auto_claimed_at', 'auto_skipped_at', 'schedule_score'):
+    assert f in cols, f'ProgrammingNode.{f} 없음'
+print('  ✓ ProgrammingNode AUTO 필드 6개 확인')
+"
+    [ $? -eq 0 ] || { echo "FAIL: ProgrammingNode AUTO 필드 확인 실패"; exit 1; }
+    # 3. SchedulingStageEvent / ScheduleAutoPolicy 테이블 모델 확인
+    python3 -c "
+from api.programming.scheduling.models import SchedulingStageEvent, ScheduleAutoPolicy
+assert SchedulingStageEvent.__tablename__ == 'scheduling_stage_events'
+assert ScheduleAutoPolicy.__tablename__ == 'schedule_auto_policy'
+print('  ✓ SchedulingStageEvent / ScheduleAutoPolicy 테이블 모델 확인')
+"
+    [ $? -eq 0 ] || { echo "FAIL: 신규 테이블 모델 확인 실패"; exit 1; }
+    # 4. alembic 마이그레이션 파일 존재 + 연결 확인
+    [ -f "$BACKEND/alembic/versions/0047_auto_schedule_models.py" ] \
+      || { echo "FAIL: 0047_auto_schedule_models.py 없음"; exit 1; }
+    python3 -c "
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('m0047', 'alembic/versions/0047_auto_schedule_models.py')
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert mod.revision == '0047', f'revision 오류: {mod.revision}'
+assert mod.down_revision == '0046', f'down_revision 오류: {mod.down_revision}'
+assert hasattr(mod, 'upgrade'), 'upgrade() 없음'
+assert hasattr(mod, 'downgrade'), 'downgrade() 없음'
+print('  ✓ 0047 마이그레이션 파일 구조 확인 (revision/down_revision/upgrade/downgrade)')
+"
+    [ $? -eq 0 ] || { echo "FAIL: 0047 마이그레이션 파일 파싱 실패"; exit 1; }
+    # 5. SQLite create_all 스모크 (모델 전체 import + 테이블 생성 오류 없음)
+    python3 -c "
+from sqlalchemy import create_engine, inspect
+from shared.database import Base
+import api.programming.scheduling.models
+import api.programming.scheduling.profile_models
+import api.programming.metadata.models
+engine = create_engine('sqlite://', connect_args={'check_same_thread': False})
+Base.metadata.create_all(engine)
+names = inspect(engine).get_table_names()
+for t in ('programming_nodes', 'scheduling_stage_events', 'schedule_auto_policy'):
+    assert t in names, f'{t} 테이블 create_all 실패'
+print('  ✓ SQLite create_all 스모크 통과 (3 신규 테이블)')
+"
+    [ $? -eq 0 ] || { echo "FAIL: SQLite create_all 실패"; exit 1; }
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
     echo "  dev-catalog-pricing: 2.1~2.6 또는 pricing-holdback-models, pricing-holdback-migration, pricing-service, holdback-service, catalog-pricing-api, catalog-pricing-fe"
+    echo "  dev-auto-schedule: auto-schedule-s2~s8"
     exit 1
     ;;
 esac
