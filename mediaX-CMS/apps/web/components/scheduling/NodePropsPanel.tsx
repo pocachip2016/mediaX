@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Sparkles } from "lucide-react"
+import { CornerUpLeft, Sparkles } from "lucide-react"
 import type { ProgrammingLink, ProgrammingNode } from "@/lib/api"
 import { cn } from "@workspace/ui/lib/utils"
 import { AiSuggestPanel } from "./AiSuggestPanel"
+import { BackrefList } from "./BackrefList"
 
 type Props = {
   node: ProgrammingNode | null
@@ -12,7 +13,7 @@ type Props = {
   onReload: () => void
 }
 
-type Tab = "props" | "ai"
+type Tab = "props" | "ai" | "backref"
 
 export function NodePropsPanel({ node, links, onReload }: Props) {
   const [tab, setTab] = useState<Tab>("props")
@@ -80,14 +81,28 @@ export function NodePropsPanel({ node, links, onReload }: Props) {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setTab("backref")}
+          className={cn(
+            "flex-1 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1",
+            tab === "backref"
+              ? "text-foreground border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <CornerUpLeft className="h-3.5 w-3.5" />
+          역참조
+        </button>
       </div>
 
       {/* 탭 콘텐츠 */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {tab === "props" ? (
           <NodePropsContent node={node} links={links} />
-        ) : (
+        ) : tab === "ai" ? (
           <AiSuggestPanel node={node} links={links} onReload={onReload} />
+        ) : (
+          <BackrefList node={node} />
         )}
       </div>
     </div>

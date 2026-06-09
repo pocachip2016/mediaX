@@ -180,6 +180,29 @@ class NodeTreeItem(BaseModel):
 NodeTreeItem.model_rebuild()
 
 
+class GraphEdge(BaseModel):
+    """세트 전체 그래프의 평면 엣지 — 부모 노드 → 자식(노드/콘텐츠)."""
+    link_id: int
+    parent_node_id: int
+    child_type: ChildType
+    child_node_id: Optional[int] = None
+    child_content_id: Optional[int] = None
+    sort_order: int
+    is_pinned: bool
+    window_start: Optional[date] = None
+    window_end: Optional[date] = None
+    source: LinkSource
+    status: LinkStatus
+
+    model_config = {"from_attributes": True}
+
+
+class SetGraphOut(BaseModel):
+    """세트 한 개의 전체 노드 + 모든 링크(평면 edge). 캘린더/그래프 가시화용."""
+    nodes: list[NodeOut] = []
+    edges: list[GraphEdge] = []
+
+
 # ── Suggest / Review ───────────────────────────────────────────────────────────
 
 class SuggestRequest(BaseModel):

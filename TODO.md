@@ -4,7 +4,9 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] **dev-programming-link** — Phase 4.3(fe-ai-suggest) 완료. 4.4(fe-backref-calendar-graph) 다음. plan: `plans/dev-programming-link/`
+- [ ] **dev-programming-link Phase 5.2** — migrate-curation-fe-api (service_categories → ProgrammingNode kind=manual/rank). plan: `plans/dev-programming-link/`
+- [x] **dev-programming-link Phase 5.1** — migrate-catalog-fe-api: 어댑터 존치 + 레거시 0 가드 + catalog 회귀 49건 통과 (2026-06-09)
+- [x] **dev-programming-link** — Phase 4.4(fe-backref-calendar-graph) 완료. plan: `plans/dev-programming-link/`
 
 ## Next (이번 마일스톤)
 - [ ] 1.3 큐레이션 모듈 설계 확정

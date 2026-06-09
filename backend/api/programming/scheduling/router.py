@@ -7,6 +7,7 @@ from . import node_service, link_service, suggest_service
 from .intent_service import apply_intent_to_node, interpret_intent
 from .schemas import (
     BackrefOut,
+    GraphEdge,
     InterpretedOut,
     LinkBatchRequest,
     LinkCreate,
@@ -20,6 +21,7 @@ from .schemas import (
     NodeSetOut,
     NodeTreeItem,
     NodeUpdate,
+    SetGraphOut,
     SuggestOut,
     SuggestRequest,
 )
@@ -134,6 +136,56 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
     _node_or_404(db, node_id)
     node_service.delete_node(db, node_id)
     db.commit()
+
+
+# ── Set graph ──────────────────────────────────────────────────────────────────
+
+@router.get("/sets/{set_id}/graph", response_model=SetGraphOut)
+def get_set_graph(
+    set_id: int,
+    include_rejected: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    """세트 한 개의 전체 노드 + 모든 링크(평면 edge) — 캘린더/그래프 가시화용."""
+    from .models import LinkStatus
+
+    if node_service.get_node_set(db, set_id) is None:
+        raise HTTPException(status_code=404, detail=f"set {set_id} not found")
+
+    nodes = (
+        db.query(ProgrammingNode)
+        .filter(ProgrammingNode.set_id == set_id)
+        .order_by(ProgrammingNode.id)
+        .all()
+    )
+    node_ids = [n.id for n in nodes]
+
+    edges = []
+    if node_ids:
+        q = db.query(ProgrammingLink).filter(ProgrammingLink.parent_node_id.in_(node_ids))
+        if not include_rejected:
+            q = q.filter(ProgrammingLink.status != LinkStatus.rejected)
+        edges = q.order_by(ProgrammingLink.parent_node_id, ProgrammingLink.sort_order).all()
+
+    return SetGraphOut(
+        nodes=[NodeOut.model_validate(n) for n in nodes],
+        edges=[
+            GraphEdge(
+                link_id=e.id,
+                parent_node_id=e.parent_node_id,
+                child_type=e.child_type,
+                child_node_id=e.child_node_id,
+                child_content_id=e.child_content_id,
+                sort_order=e.sort_order,
+                is_pinned=e.is_pinned,
+                window_start=e.window_start,
+                window_end=e.window_end,
+                source=e.source,
+                status=e.status,
+            )
+            for e in edges
+        ],
+    )
 
 
 # ── Node tree ──────────────────────────────────────────────────────────────────

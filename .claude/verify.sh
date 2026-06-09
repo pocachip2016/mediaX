@@ -6639,6 +6639,113 @@ sys.exit(0 if ok else 1)
     echo "=== PASS ==="
     ;;
 
+  fe-calendar-graph)
+    echo "=== fe-calendar-graph: 뷰 스위처 + ExposureCalendar + NodeGraph ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # 1. 파일 존재
+    [ -f "$FE_ROOT/components/scheduling/ExposureCalendar.tsx" ] || { echo "FAIL: ExposureCalendar.tsx 없음"; exit 1; }
+    [ -f "$FE_ROOT/components/scheduling/NodeGraph.tsx" ] || { echo "FAIL: NodeGraph.tsx 없음"; exit 1; }
+    echo "  ✓ ExposureCalendar/NodeGraph 존재"
+    # 2. SchedulingBoard 뷰 스위처 배선
+    grep -q 'BoardView\|view.*board.*calendar.*graph\|"board"\|"calendar"\|"graph"' "$FE_ROOT/components/scheduling/SchedulingBoard.tsx" || { echo "FAIL: 뷰 스위처 없음"; exit 1; }
+    grep -q 'ExposureCalendar' "$FE_ROOT/components/scheduling/SchedulingBoard.tsx" || { echo "FAIL: ExposureCalendar 미사용"; exit 1; }
+    grep -q 'NodeGraph' "$FE_ROOT/components/scheduling/SchedulingBoard.tsx" || { echo "FAIL: NodeGraph 미사용"; exit 1; }
+    echo "  ✓ SchedulingBoard 뷰 스위처 배선"
+    # 3. getSetGraph 사용 확인
+    grep -rq 'getSetGraph' "$FE_ROOT/components/scheduling/" || { echo "FAIL: getSetGraph 미사용"; exit 1; }
+    echo "  ✓ getSetGraph 사용"
+    # 4. 타입체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npx tsc --noEmit -p apps/web/tsconfig.json 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  fe-backref)
+    echo "=== fe-backref: NodePropsPanel 역참조 탭 + BackrefList 컴포넌트 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # 1. 파일 존재
+    [ -f "$FE_ROOT/components/scheduling/BackrefList.tsx" ] || { echo "FAIL: BackrefList.tsx 없음"; exit 1; }
+    echo "  ✓ BackrefList.tsx 존재"
+    # 2. NodePropsPanel 배선
+    grep -q '"backref"' "$FE_ROOT/components/scheduling/NodePropsPanel.tsx" || { echo "FAIL: NodePropsPanel backref 탭 없음"; exit 1; }
+    grep -q 'BackrefList' "$FE_ROOT/components/scheduling/NodePropsPanel.tsx" || { echo "FAIL: BackrefList import/사용 없음"; exit 1; }
+    grep -q '역참조' "$FE_ROOT/components/scheduling/NodePropsPanel.tsx" || { echo "FAIL: 역참조 탭 라벨 없음"; exit 1; }
+    echo "  ✓ NodePropsPanel 역참조 탭 배선"
+    # 3. BackrefList API 사용
+    grep -q 'getNodeBackrefs' "$FE_ROOT/components/scheduling/BackrefList.tsx" || { echo "FAIL: BackrefList에 getNodeBackrefs 없음"; exit 1; }
+    echo "  ✓ BackrefList getNodeBackrefs 사용"
+    # 4. 타입체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npx tsc --noEmit -p apps/web/tsconfig.json 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  set-graph-api)
+    echo "=== set-graph-api: 세트 전체 그래프 BE 엔드포인트 + FE 타입 ==="
+    BE_ROOT="$SCRIPT_DIR/../backend"
+    cd "$BE_ROOT"
+    # 1. 라우터/스키마 심볼
+    grep -q '/sets/{set_id}/graph' api/programming/scheduling/router.py || { echo "FAIL: /sets/{set_id}/graph 라우트 없음"; exit 1; }
+    grep -q 'class SetGraphOut' api/programming/scheduling/schemas.py || { echo "FAIL: SetGraphOut 스키마 없음"; exit 1; }
+    grep -q 'class GraphEdge' api/programming/scheduling/schemas.py || { echo "FAIL: GraphEdge 스키마 없음"; exit 1; }
+    echo "  ✓ 라우터/스키마 심볼"
+    # 2. pytest (graph 테스트만 — ollama 비의존)
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    "$PY" -m pytest tests/test_scheduling_api.py -k graph -p no:cacheprovider -q 2>&1 | tail -3
+    if ! "$PY" -m pytest tests/test_scheduling_api.py -k graph -p no:cacheprovider -q >/dev/null 2>&1; then
+      echo "FAIL: set-graph pytest 실패"; exit 1
+    fi
+    echo "  ✓ pytest graph 통과"
+    # 3. FE 타입/함수
+    FE="$SCRIPT_DIR/../mediaX-CMS/apps/web/lib/api.ts"
+    grep -q 'getSetGraph' "$FE" || { echo "FAIL: api.ts getSetGraph 없음"; exit 1; }
+    grep -q 'interface SetGraph' "$FE" || { echo "FAIL: api.ts SetGraph 타입 없음"; exit 1; }
+    echo "  ✓ api.ts getSetGraph/SetGraph"
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | grep "lib/api.ts" | grep "error TS" | head -5 && \
+    { echo "FAIL: api.ts TypeScript 타입에러"; exit 1; } || true
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  migrate-catalog-fe-api)
+    echo "=== migrate-catalog-fe-api: catalog 어댑터 존치 + 레거시 0 + 회귀 pytest ==="
+    cd "$BACKEND"
+
+    CATALOG_SVC="api/programming/catalog/service.py"
+
+    # 1) 어댑터 확인: catalog/service.py 가 scheduling.models 를 임포트하는가
+    if ! grep -q "from api.programming.scheduling.models" "$CATALOG_SVC" 2>/dev/null; then
+      echo "FAIL: $CATALOG_SVC 에 'from api.programming.scheduling.models' 없음 — 어댑터 미적용"
+      exit 1
+    fi
+    echo "  ✓ catalog 어댑터 → scheduling.models 임포트 확인"
+
+    # 2) 레거시 ORM 클래스 정의 부재 확인
+    LEGACY_HIT=$(grep -rn "class Category(\|class CategorySet(\|class ContentCategory(" api/programming/catalog/ 2>/dev/null || true)
+    if [ -n "$LEGACY_HIT" ]; then
+      echo "FAIL: catalog 패키지에 레거시 ORM 클래스 정의 발견:"
+      echo "$LEGACY_HIT"
+      exit 1
+    fi
+    echo "  ✓ catalog 패키지 레거시 ORM 클래스 0"
+
+    # 3) catalog 회귀 pytest
+    echo "--- catalog 회귀 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    "$PY" -m pytest tests/test_catalog_api.py tests/test_catalog_node_adapter.py tests/test_catalog_tree.py -q
+    echo "  ✓ catalog 회귀 테스트 통과"
+
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"

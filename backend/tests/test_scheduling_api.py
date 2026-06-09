@@ -113,6 +113,47 @@ def test_get_node_tree_nested_node(client):
     assert r.json()["children"][0]["node"]["id"] == child_id
 
 
+# ── Set Graph ──────────────────────────────────────────────────────────────────
+
+def test_get_set_graph_404(client):
+    assert client.get(f"{BASE}/sets/9999/graph").status_code == 404
+
+
+def test_get_set_graph_nodes_and_edges(client):
+    set_id = client.post(f"{BASE}/sets", json={"name": "그래프"}).json()["id"]
+    root = client.post(f"{BASE}/nodes", json={"kind": "container", "name": "Root", "set_id": set_id}).json()["id"]
+    child = client.post(f"{BASE}/nodes", json={"kind": "manual", "name": "Child", "set_id": set_id}).json()["id"]
+    orphan = client.post(f"{BASE}/nodes", json={"kind": "manual", "name": "Orphan", "set_id": set_id}).json()["id"]
+    client.post(f"{BASE}/nodes/{root}/links", json={"child_node_id": child})
+    client.post(f"{BASE}/nodes/{child}/links", json={"child_content_id": 7})
+
+    r = client.get(f"{BASE}/sets/{set_id}/graph")
+    assert r.status_code == 200
+    data = r.json()
+    assert {n["id"] for n in data["nodes"]} == {root, child, orphan}
+    edges = data["edges"]
+    assert len(edges) == 2
+    node_edge = next(e for e in edges if e["child_type"] == "node")
+    assert node_edge["parent_node_id"] == root and node_edge["child_node_id"] == child
+    content_edge = next(e for e in edges if e["child_type"] == "content")
+    assert content_edge["child_content_id"] == 7
+    # orphan 은 어떤 엣지에도 등장하지 않음
+    touched = {e["parent_node_id"] for e in edges} | {e["child_node_id"] for e in edges if e["child_node_id"]}
+    assert orphan not in touched
+
+
+def test_get_set_graph_excludes_rejected(client):
+    set_id = client.post(f"{BASE}/sets", json={"name": "거절"}).json()["id"]
+    node = client.post(f"{BASE}/nodes", json={"kind": "manual", "name": "N", "set_id": set_id}).json()["id"]
+    link_id = client.post(
+        f"{BASE}/nodes/{node}/links", json={"child_content_id": 1, "status": "suggested"}
+    ).json()["id"]
+    assert client.post(f"{BASE}/links/{link_id}/reject").status_code == 200
+
+    assert client.get(f"{BASE}/sets/{set_id}/graph").json()["edges"] == []
+    assert len(client.get(f"{BASE}/sets/{set_id}/graph?include_rejected=true").json()["edges"]) == 1
+
+
 # ── Link CRUD ──────────────────────────────────────────────────────────────────
 
 def test_add_and_list_links(client):

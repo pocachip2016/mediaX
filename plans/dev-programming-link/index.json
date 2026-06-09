@@ -136,13 +136,15 @@
       "id": "4.4",
       "name": "fe-backref-calendar-graph",
       "summary": "BackrefList(등장 위치 역참조) + ExposureCalendar(window 타임라인+충돌) + NodeGraph(DAG 시각화, 고아/사이클)",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "5.1",
       "name": "migrate-catalog-fe-api",
-      "summary": "기존 catalog/카테고리 화면·API를 신규 모델로 전환 — /programming/catalog·categories 페이지, catalog router/service 를 scheduling 모델 기반으로 교체(또는 리다이렉트)",
-      "status": "pending"
+      "summary": "verify.sh migrate-catalog-fe-api 케이스 추가 — 어댑터 존치 확인 + 레거시 ORM 0 가드 + catalog 회귀 49건 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
     },
     {
       "id": "5.2",

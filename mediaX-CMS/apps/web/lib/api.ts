@@ -2135,6 +2135,25 @@ export interface BackrefOut {
   window_end: string | null
 }
 
+export interface GraphEdge {
+  link_id: number
+  parent_node_id: number
+  child_type: ChildType
+  child_node_id: number | null
+  child_content_id: number | null
+  sort_order: number
+  is_pinned: boolean
+  window_start: string | null
+  window_end: string | null
+  source: LinkSource
+  status: LinkStatus
+}
+
+export interface SetGraph {
+  nodes: ProgrammingNode[]
+  edges: GraphEdge[]
+}
+
 export interface InterpretedOut {
   rule_query: Record<string, unknown>
   facets: Record<string, unknown>
@@ -2200,6 +2219,11 @@ export const schedulingApi = {
 
   getNodeTree: (nodeId: number) =>
     request<NodeTreeItem>(`${SCHED}/nodes/${nodeId}/tree`),
+
+  getSetGraph: (setId: number, includeRejected = false) =>
+    request<SetGraph>(
+      `${SCHED}/sets/${setId}/graph?include_rejected=${includeRejected}`
+    ),
 
   // ── Link ─────────────────────────────────────────────────────────────────────
   listLinks: (nodeId: number) =>
