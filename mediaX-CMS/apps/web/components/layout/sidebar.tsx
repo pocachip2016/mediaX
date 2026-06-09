@@ -30,7 +30,7 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
 } from "@workspace/ui/components/sidebar"
-import { Collapsible, CollapsibleContent } from "@workspace/ui/components/collapsible"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@workspace/ui/components/collapsible"
 import { Badge } from "@workspace/ui/components/badge"
 import { cn } from "@workspace/ui/lib/utils"
 import { docsNav, type NavSection, type NavItem } from "@/config/docs"
@@ -44,6 +44,66 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   "/analytics": BarChart2,
   "/marketing": Megaphone,
   "/monitoring": Activity,
+}
+
+function NestedSubGroup({ item, pathname, isActive }: { item: NavItem; pathname: string; isActive: boolean }) {
+  const [open, setOpen] = useState(isActive)
+  return (
+    <SidebarMenuSubItem>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuSubButton
+            asChild={!!item.href}
+            isActive={isActive}
+            className={cn(
+              "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground justify-between",
+              isActive && "text-sidebar-accent-foreground font-medium"
+            )}
+          >
+            {item.href ? (
+              <Link href={item.href} className="flex w-full items-center justify-between" onClick={() => setOpen(v => !v)}>
+                <span className="truncate">{item.title}</span>
+                <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform", open && "rotate-90")} />
+              </Link>
+            ) : (
+              <button type="button" className="flex w-full items-center justify-between" onClick={() => setOpen(v => !v)}>
+                <span className="truncate">{item.title}</span>
+                <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform", open && "rotate-90")} />
+              </button>
+            )}
+          </SidebarMenuSubButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub className="mr-0 pr-0 border-l-0 pl-3">
+            {(item.items ?? []).filter(s => !s.disabled).map(s => {
+              const isLeafActive = pathname === s.href
+              return (
+                <SidebarMenuSubItem key={s.href ?? s.title}>
+                  <SidebarMenuSubButton
+                    asChild={!!s.href}
+                    isActive={isLeafActive}
+                    className={cn(
+                      "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      isLeafActive && "text-sidebar-accent-foreground font-medium"
+                    )}
+                  >
+                    {s.href ? (
+                      <Link href={s.href} className="flex w-full items-center justify-between">
+                        <span className="truncate">{s.title}</span>
+                        {s.label && <Badge variant="secondary" className="h-4 px-1 text-[10px] shrink-0">{s.label}</Badge>}
+                      </Link>
+                    ) : (
+                      <span>{s.title}</span>
+                    )}
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              )
+            })}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </Collapsible>
+    </SidebarMenuSubItem>
+  )
 }
 
 function SubGroup({
@@ -84,6 +144,13 @@ function SubGroup({
           <SidebarMenuSub className="mr-0 pr-0 border-l-0">
             {(item.items ?? []).filter((sub) => !sub.disabled).map((sub) => {
               const isSubActive = pathname === sub.href
+              const hasSubChildren = sub.items && sub.items.length > 0
+              const isSubGroupActive = !!(hasSubChildren && pathname.startsWith(sub.href ?? "__never__"))
+              if (hasSubChildren) {
+                return (
+                  <NestedSubGroup key={sub.href ?? sub.title} item={sub} pathname={pathname} isActive={isSubGroupActive} />
+                )
+              }
               return (
                 <SidebarMenuSubItem key={sub.href ?? sub.title}>
                   <SidebarMenuSubButton

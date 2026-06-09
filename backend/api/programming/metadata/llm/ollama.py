@@ -31,6 +31,28 @@ class OllamaProvider(AbstractLLMProvider):
             return resp.json().get("response", "")
 
 
+class OllamaEmbeddingsProvider:
+    """Ollama /api/embeddings 호출 — bge-m3 1024-dim 벡터 반환."""
+
+    EMBED_MODEL = "bge-m3"
+
+    def __init__(self):
+        self._url = getattr(settings, "OLLAMA_URL", "http://localhost:11434")
+
+    async def embed(self, text: str) -> list[float]:
+        """텍스트를 1024-dim float 벡터로 반환. Ollama 미응답 시 빈 리스트."""
+        if not text or not text.strip():
+            return []
+        payload = {"model": self.EMBED_MODEL, "prompt": text}
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(f"{self._url}/api/embeddings", json=payload)
+                resp.raise_for_status()
+                return resp.json().get("embedding", [])
+        except Exception:
+            return []
+
+
 class OllamaTaskProvider(OllamaProvider):
     """
     AI Task(번역/요약/분류) 전용 Ollama 프로바이더.

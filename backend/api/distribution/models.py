@@ -5,6 +5,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
+
 from shared.database import Base
 
 
@@ -46,46 +47,6 @@ class ContentDistribution(Base):
         UniqueConstraint("content_id", "channel", name="uq_distribution_content_channel"),
         Index("ix_dist_channel_type", "channel", "channel_type"),
         Index("ix_dist_content_id", "content_id"),
-    )
-
-
-class ServiceCategory(Base):
-    __tablename__ = "service_categories"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), nullable=False)
-    category_type = Column(String(50), nullable=False)
-    platform = Column(String(50), nullable=False)
-    position = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    # 큐레이션 워크벤치 확장 (alembic 0025)
-    headline_copy = Column(String(200), nullable=True)
-    sub_copy = Column(String(300), nullable=True)
-    theme_features = Column(JSON, nullable=True)
-    source_mode = Column(String(20), default="manual", nullable=False)
-    reference_external_id = Column(String(200), nullable=True)
-    is_draft = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    items = relationship("ServiceCategoryItem", back_populates="category", cascade="all, delete-orphan")
-
-
-class ServiceCategoryItem(Base):
-    __tablename__ = "service_category_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    category_id = Column(Integer, ForeignKey("service_categories.id"), nullable=False)
-    content_id = Column(Integer, ForeignKey("contents.id"), nullable=False)
-    rank = Column(Integer, nullable=False)
-    score = Column(Float)
-    added_at = Column(DateTime, server_default=func.now())
-
-    category = relationship("ServiceCategory", back_populates="items")
-
-    __table_args__ = (
-        UniqueConstraint("category_id", "content_id", name="uq_cat_item_content"),
-        Index("ix_cat_item_rank", "category_id", "rank"),
     )
 
 

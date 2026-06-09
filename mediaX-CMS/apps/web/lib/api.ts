@@ -1796,6 +1796,15 @@ export const distributionApi = {
 
 // ── 카탈로그 카테고리 트리 (1.2.1) ───────────────────────────────────────────
 
+export interface CategorySet {
+  id: number
+  name: string
+  description: string | null
+  category_count: number
+  created_at: string | null
+  updated_at: string | null
+}
+
 export interface CategoryNode {
   id: number
   name: string
@@ -1815,6 +1824,27 @@ export interface CategoryCreateRequest {
   parent_id?: number | null
   sort_order?: number | null
   slug?: string | null
+}
+
+export interface CategoryUpdateRequest {
+  name?: string
+  slug?: string | null
+  is_active?: boolean
+  sort_order?: number
+}
+
+export interface BulkCategoryNode {
+  name: string
+  children?: BulkCategoryNode[]
+}
+
+export type DupPolicy = "merge" | "overwrite" | "reject"
+
+export interface BulkCategoryResult {
+  created: number
+  skipped: number
+  overwritten: number
+  tree: CategoryNode[]
 }
 
 export type Quality = "SD" | "HD" | "FHD" | "UHD_4K"
@@ -1890,10 +1920,66 @@ export const catalogApi = {
       body: JSON.stringify(data),
     }),
 
-  deleteCategory: (id: number) =>
-    request<void>(`/api/programming/catalog/categories/${id}`, {
-      method: "DELETE",
+  updateCategory: (id: number, data: CategoryUpdateRequest) =>
+    request<CategoryNode>(`/api/programming/catalog/categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
     }),
+
+  moveCategory: (id: number, data: { new_parent_id: number | null; new_sort_order?: number | null }) =>
+    request<CategoryNode>(`/api/programming/catalog/categories/${id}/move`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  bulkCreate: (data: { nodes: BulkCategoryNode[]; parent_id?: number | null; dup_policy?: DupPolicy }) =>
+    request<BulkCategoryResult>("/api/programming/catalog/categories/bulk", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number, cascade = false) =>
+    request<void>(
+      `/api/programming/catalog/categories/${id}${cascade ? "?cascade=true" : ""}`,
+      { method: "DELETE" }
+    ),
+
+  // ── 카테고리 세트 ────────────────────────────────────────────────────────────
+
+  listSets: () =>
+    request<CategorySet[]>("/api/programming/catalog/sets"),
+
+  commitSet: (data: { name: string; description?: string }) =>
+    request<CategorySet>("/api/programming/catalog/sets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSet: (id: number, data: { name?: string; description?: string }) =>
+    request<CategorySet>(`/api/programming/catalog/sets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSet: (id: number) =>
+    request<void>(`/api/programming/catalog/sets/${id}`, { method: "DELETE" }),
+
+  previewLoadSet: (id: number) =>
+    request<{ new_count: number; dup_count: number }>(`/api/programming/catalog/sets/${id}/load-preview`),
+
+  loadSet: (id: number, opts?: { mode?: "replace" | "merge"; dup_policy?: DupPolicy }) =>
+    request<{ cleared: number; loaded: number }>(`/api/programming/catalog/sets/${id}/load`, {
+      ...(opts ? { body: JSON.stringify(opts) } : {}),
+      method: "POST",
+    }),
+
+  clearDraft: () =>
+    request<{ cleared: number }>("/api/programming/catalog/sets/clear-draft", {
+      method: "POST",
+    }),
+
+  getSetTree: (setId: number) =>
+    request<CategoryNode[]>(`/api/programming/catalog/sets/${setId}/tree`),
 
   // ── 가격 정책 ──────────────────────────────────────────────────────────────
 
@@ -1973,5 +2059,270 @@ export const catalogApi = {
   holdbackCalendar: (start: string, end: string) =>
     request<HoldbackSchedule[]>(
       `/api/programming/catalog/holdback/calendar?start=${start}&end=${end}`
+    ),
+}
+
+// ── 편성 DAG (scheduling) ─────────────────────────────────────────────────────
+
+export type NodeKind = "container" | "rule" | "rank" | "manual"
+export type ChildType = "node" | "content"
+export type LinkSource = "manual" | "ai" | "rule"
+export type LinkStatus = "active" | "suggested" | "rejected"
+
+export interface ProgrammingNodeSet {
+  id: number
+  name: string
+  description: string | null
+  status: string
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProgrammingNode {
+  id: number
+  set_id: number | null
+  kind: NodeKind
+  name: string
+  slug: string | null
+  headline_copy: string | null
+  sub_copy: string | null
+  theme_features: Record<string, unknown> | null
+  rule_query: Record<string, unknown> | null
+  rank_source: string | null
+  rank_limit: number | null
+  window_start: string | null
+  window_end: string | null
+  is_active: boolean
+  is_draft: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ProgrammingLink {
+  id: number
+  parent_node_id: number
+  child_type: ChildType
+  child_node_id: number | null
+  child_content_id: number | null
+  sort_order: number
+  is_pinned: boolean
+  window_start: string | null
+  window_end: string | null
+  copy_override: Record<string, unknown> | null
+  source: LinkSource
+  confidence: number | null
+  status: LinkStatus
+  created_at: string
+}
+
+export interface NodeTreeItem {
+  node: ProgrammingNode
+  children: NodeTreeItem[]
+  content_ids: number[]
+}
+
+export interface BackrefOut {
+  parent_node_id: number
+  parent_node_name: string
+  link_id: number
+  child_type: string
+  sort_order: number
+  is_pinned: boolean
+  status: string
+  source: string
+  window_start: string | null
+  window_end: string | null
+}
+
+export interface GraphEdge {
+  link_id: number
+  parent_node_id: number
+  child_type: ChildType
+  child_node_id: number | null
+  child_content_id: number | null
+  sort_order: number
+  is_pinned: boolean
+  window_start: string | null
+  window_end: string | null
+  source: LinkSource
+  status: LinkStatus
+}
+
+export interface SetGraph {
+  nodes: ProgrammingNode[]
+  edges: GraphEdge[]
+}
+
+export interface InterpretedOut {
+  rule_query: Record<string, unknown>
+  facets: Record<string, unknown>
+  provider_used: string
+}
+
+export interface SuggestOut {
+  saved: ProgrammingLink[]
+  skipped_count: number
+  interpreted?: InterpretedOut | null
+}
+
+const SCHED = "/api/programming/scheduling"
+
+export const schedulingApi = {
+  // ── NodeSet ──────────────────────────────────────────────────────────────────
+  listSets: (status?: string) =>
+    request<ProgrammingNodeSet[]>(
+      `${SCHED}/sets${status ? `?status=${status}` : ""}`
+    ),
+
+  createSet: (data: { name: string; description?: string }) =>
+    request<ProgrammingNodeSet>(`${SCHED}/sets`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  publishSet: (setId: number) =>
+    request<ProgrammingNodeSet>(`${SCHED}/sets/${setId}/publish`, {
+      method: "POST",
+    }),
+
+  deleteSet: (setId: number) =>
+    request<void>(`${SCHED}/sets/${setId}`, { method: "DELETE" }),
+
+  // ── Node ─────────────────────────────────────────────────────────────────────
+  listNodes: (params?: { set_id?: number; kind?: NodeKind; is_draft?: boolean }) => {
+    const q = new URLSearchParams()
+    if (params?.set_id != null) q.set("set_id", String(params.set_id))
+    if (params?.kind) q.set("kind", params.kind)
+    if (params?.is_draft != null) q.set("is_draft", String(params.is_draft))
+    const qs = q.toString()
+    return request<ProgrammingNode[]>(`${SCHED}/nodes${qs ? `?${qs}` : ""}`)
+  },
+
+  createNode: (data: Partial<ProgrammingNode> & { kind: NodeKind; name: string }) =>
+    request<ProgrammingNode>(`${SCHED}/nodes`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getNode: (nodeId: number) =>
+    request<ProgrammingNode>(`${SCHED}/nodes/${nodeId}`),
+
+  updateNode: (nodeId: number, data: Partial<ProgrammingNode>) =>
+    request<ProgrammingNode>(`${SCHED}/nodes/${nodeId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteNode: (nodeId: number) =>
+    request<void>(`${SCHED}/nodes/${nodeId}`, { method: "DELETE" }),
+
+  getNodeTree: (nodeId: number) =>
+    request<NodeTreeItem>(`${SCHED}/nodes/${nodeId}/tree`),
+
+  getSetGraph: (setId: number, includeRejected = false) =>
+    request<SetGraph>(
+      `${SCHED}/sets/${setId}/graph?include_rejected=${includeRejected}`
+    ),
+
+  // ── Link ─────────────────────────────────────────────────────────────────────
+  listLinks: (nodeId: number) =>
+    request<ProgrammingLink[]>(`${SCHED}/nodes/${nodeId}/links`),
+
+  addLink: (
+    nodeId: number,
+    data: {
+      child_node_id?: number
+      child_content_id?: number
+      sort_order?: number
+      is_pinned?: boolean
+      window_start?: string
+      window_end?: string
+      copy_override?: Record<string, unknown>
+      source?: LinkSource
+      confidence?: number
+      status?: LinkStatus
+    }
+  ) =>
+    request<ProgrammingLink>(`${SCHED}/nodes/${nodeId}/links`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  addLinksBatch: (
+    nodeId: number,
+    children: Array<{
+      child_node_id?: number
+      child_content_id?: number
+      sort_order?: number
+      is_pinned?: boolean
+      source?: LinkSource
+      confidence?: number
+      status?: LinkStatus
+    }>
+  ) =>
+    request<ProgrammingLink[]>(`${SCHED}/nodes/${nodeId}/links/batch`, {
+      method: "POST",
+      body: JSON.stringify({ children }),
+    }),
+
+  reorderLinks: (nodeId: number, orderedLinkIds: number[]) =>
+    request<void>(`${SCHED}/nodes/${nodeId}/links/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ ordered_link_ids: orderedLinkIds }),
+    }),
+
+  updateLink: (
+    linkId: number,
+    data: {
+      sort_order?: number
+      is_pinned?: boolean
+      window_start?: string | null
+      window_end?: string | null
+      copy_override?: Record<string, unknown> | null
+      status?: LinkStatus
+      confidence?: number | null
+    }
+  ) =>
+    request<ProgrammingLink>(`${SCHED}/links/${linkId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  moveLink: (linkId: number, newParentNodeId: number) =>
+    request<ProgrammingLink>(`${SCHED}/links/${linkId}/move`, {
+      method: "POST",
+      body: JSON.stringify({ new_parent_node_id: newParentNodeId }),
+    }),
+
+  deleteLink: (linkId: number) =>
+    request<void>(`${SCHED}/links/${linkId}`, { method: "DELETE" }),
+
+  // ── Suggest / Review ─────────────────────────────────────────────────────────
+  suggestLinks: (nodeId: number, opts?: { threshold?: number; limit?: number; intent?: string }) =>
+    request<SuggestOut>(`${SCHED}/nodes/${nodeId}/suggest`, {
+      method: "POST",
+      body: JSON.stringify({
+        threshold: opts?.threshold ?? 0.3,
+        limit: opts?.limit ?? 50,
+        ...(opts?.intent ? { intent: opts.intent } : {}),
+      }),
+    }),
+
+  confirmLink: (linkId: number) =>
+    request<ProgrammingLink>(`${SCHED}/links/${linkId}/confirm`, { method: "POST" }),
+
+  rejectLink: (linkId: number) =>
+    request<ProgrammingLink>(`${SCHED}/links/${linkId}/reject`, { method: "POST" }),
+
+  // ── Backref ──────────────────────────────────────────────────────────────────
+  getContentBackrefs: (contentId: number, includeRejected = false) =>
+    request<BackrefOut[]>(
+      `${SCHED}/backref/content/${contentId}?include_rejected=${includeRejected}`
+    ),
+
+  getNodeBackrefs: (nodeId: number, includeRejected = false) =>
+    request<BackrefOut[]>(
+      `${SCHED}/backref/node/${nodeId}?include_rejected=${includeRejected}`
     ),
 }

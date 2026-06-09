@@ -1,11 +1,35 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
 from api.programming.catalog.models import Quality, PurchaseType
+
+
+DupPolicy = Literal["merge", "overwrite", "reject"]
+
+
+class CategorySetOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    category_count: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CategorySetCommit(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class CategorySetUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 
 class CategoryBase(BaseModel):
@@ -60,6 +84,36 @@ class CategoryTreeNode(CategoryOut):
 
 
 CategoryTreeNode.model_rebuild()
+
+
+# ── 일괄(Bulk) 입력 ───────────────────────────────────────────────────────────
+
+class BulkCategoryNode(BaseModel):
+    """일괄 입력용 정규화된 트리 노드 (파싱은 FE에서 수행)."""
+    name: str
+    children: list["BulkCategoryNode"] = []
+
+
+class BulkCategoryCreate(BaseModel):
+    nodes: list[BulkCategoryNode] = []
+    parent_id: Optional[int] = None
+    dup_policy: DupPolicy = "merge"
+
+
+class BulkCategoryResult(BaseModel):
+    created: int
+    skipped: int
+    overwritten: int = 0
+    tree: list[CategoryTreeNode] = []
+
+
+class LoadSetRequest(BaseModel):
+    mode: Literal["replace", "merge"] = "replace"
+    dup_policy: DupPolicy = "merge"
+
+
+BulkCategoryNode.model_rebuild()
+BulkCategoryResult.model_rebuild()
 
 
 class ContentCategoryOut(BaseModel):

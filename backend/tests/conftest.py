@@ -7,6 +7,7 @@ StaticPool 사용 이유:
   Base.metadata.create_all()로 만든 테이블이 TestClient 스레드에서 보이지 않는다.
 """
 import pytest
+from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -17,6 +18,7 @@ import api.meta_core.models  # noqa: F401
 import api.meta_core.public_api.models  # noqa: F401
 import api.distribution.models  # noqa: F401
 import api.programming.catalog.models  # noqa: F401
+import api.programming.scheduling.models  # noqa: F401
 from shared.database import Base
 
 

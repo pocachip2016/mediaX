@@ -1,0 +1,164 @@
+{
+  "project": "mediaX",
+  "task": "dev-programming-link",
+  "title": "편성 통합 모델 — ProgrammingNode + Link DAG + AI 자동링크 + 기존 catalog/큐레이션 전환",
+  "branch": "feature/programming-link",
+  "adr": "docs/dev/dev-programming-link/adr-011-programming-link_index.md",
+  "decision": "통합(A) — 구 categories/content_categories/service_categories 를 신규 모델로 이관 후 레거시 제거. 작품계층(contents.parent_id) 유지. AI 자동링크 1차 Tier 0+1+2.",
+  "steps": [
+    {
+      "id": "0.1",
+      "name": "adr-011-programming-link",
+      "summary": "ADR-011 작성(분할: _index + 도메인모델/마이그레이션/AI자동링크/GUI 4섹션). 3축 분리·Node/Link DAG·통합 이관 전략·Tier0~6·3컬럼 보드 확정",
+      "status": "completed",
+      "completed_at": "2026-06-08T00:00:00+09:00"
+    },
+    {
+      "id": "1.1",
+      "name": "scheduling-models",
+      "summary": "scheduling 모듈 신규 생성 — NodeKind/ChildType/LinkSource/LinkStatus 4 enum + ProgrammingNodeSet/Node/Link 3모델 + CHECK(child XOR)/UNIQUE 제약 + alembic env 배선",
+      "status": "completed",
+      "completed_at": "2026-06-08T17:30:00+09:00"
+    },
+    {
+      "id": "1.2",
+      "name": "scheduling-migration",
+      "summary": "alembic 0041 — node_kind/child_type/link_source/link_status ENUM 4종 + programming_node_sets/nodes/links 테이블 + CHECK(child XOR)/UNIQUE 제약 + downgrade 왕복 확인",
+      "status": "completed",
+      "completed_at": "2026-06-08T17:50:00+09:00"
+    },
+    {
+      "id": "1.3",
+      "name": "data-migration",
+      "summary": "migrate_programming_links.py — category_sets/categories/service_categories→programming_nodes 2-pass 멱등 이관 + 검증 게이트 8항목 통과 (187노드/170링크)",
+      "status": "completed",
+      "completed_at": "2026-06-08T18:15:00+09:00"
+    },
+    {
+      "id": "2.1",
+      "name": "node-service",
+      "summary": "node_service — NodeSet/Node CRUD + BFS 사이클 가드 + read-time 멤버 산출(active∪rule, pinned 우선, suggested 제외) + 19 단위 테스트",
+      "status": "completed",
+      "completed_at": "2026-06-08T18:40:00+09:00"
+    },
+    {
+      "id": "2.2",
+      "name": "link-service",
+      "summary": "link_service — add/batch/reorder/move/update/remove/backref + window soft-check + 32 단위 테스트 pass",
+      "status": "completed",
+      "completed_at": "2026-06-08T14:45:42+09:00"
+    },
+    {
+      "id": "2.3",
+      "name": "scheduling-router",
+      "summary": "schemas + router 15 엔드포인트(NodeSet/Node/Link/Backref/Tree) + 21 API 테스트 pass, /api/programming/scheduling 마운트",
+      "status": "completed",
+      "completed_at": "2026-06-08T15:45:26+09:00"
+    },
+    {
+      "id": "3.1",
+      "name": "tier0-rule-engine",
+      "summary": "rule_engine — genre/year/country/type/tags/approved_only 필터 + RuleResult(reason) + compute_members 결합 + 19 테스트",
+      "status": "completed",
+      "completed_at": "2026-06-08T15:51:36+09:00"
+    },
+    {
+      "id": "3.0",
+      "name": "content-semantic-profile",
+      "summary": "ContentSemanticProfile 모델(11컬럼) + facets.py 통제어휘 + alembic 0042 마이그레이션(왕복 검증 완료)",
+      "status": "completed",
+      "completed_at": "2026-06-08T17:03:00.554358+09:00"
+    },
+    {
+      "id": "3.1b",
+      "name": "ingest-profile-pipeline",
+      "summary": "OllamaEmbeddingsProvider(bge-m3 1024d) + profile_service.build_profile(임베딩+LLM facet+WebSearch파생, 멱등) + Beat build_semantic_profiles(03:20 KST) — E2E 검증 완료",
+      "status": "completed",
+      "completed_at": "2026-06-08T17:20:18.645595+09:00"
+    },
+    {
+      "id": "3.2",
+      "name": "tier1-intent-llm",
+      "summary": "interpret_intent(OllamaTaskProvider/qwen2.5:3b) + 통제어휘 강제 + Tier0 폴백 — 3케이스 E2E 검증 완료",
+      "status": "completed",
+      "completed_at": "2026-06-08T17:42:57.793181+09:00"
+    },
+    {
+      "id": "3.2b",
+      "name": "facet-intensity",
+      "summary": "VOCAB intensity 축([폭력,잔인,선정,공포,복잡]) + profile_service 프롬프트 반영 + ADR-011-05 갱신 + 단위 테스트 9건 pass",
+      "status": "completed",
+      "completed_at": "2026-06-08T00:00:00+09:00"
+    },
+    {
+      "id": "3.2c",
+      "name": "node-embed-theme",
+      "summary": "ProgrammingNode.embed_theme JSON 컬럼 + alembic 0045 + node_theme_service(compose_theme_text/build_node_theme_embedding 멱등 헬퍼) + 10 테스트 pass",
+      "status": "completed",
+      "completed_at": "2026-06-08T00:00:00+09:00"
+    },
+    {
+      "id": "3.3",
+      "name": "tier2-semantic-match",
+      "summary": "match_service — Tier0 후보축소 + pure-python cosine + facet overlap 가중합 → MatchResult(confidence/reason) + 13 테스트 pass",
+      "status": "completed",
+      "completed_at": "2026-06-08T00:00:00+09:00"
+    },
+    {
+      "id": "3.4",
+      "name": "suggest-review-flow",
+      "summary": "suggest_service(suggest_links/confirm_link/reject_link) + SuggestRequest/SuggestOut 스키마 + POST /nodes/{id}/suggest · /links/{id}/confirm · /links/{id}/reject 엔드포인트 + 11 테스트 pass. threshold 미달 자동제외 + copy_override['_ai_reason'] 저장 + active/rejected 링크 불변 보장",
+      "status": "completed",
+      "completed_at": "2026-06-08T00:00:00+09:00"
+    },
+    {
+      "id": "4.1",
+      "name": "fe-api-types",
+      "summary": "lib/api.ts — NodeKind/ChildType/LinkSource/LinkStatus + ProgrammingNodeSet/Node/Link/NodeTreeItem/BackrefOut/SuggestOut 타입 + schedulingApi 21함수(NodeSet/Node/Link CRUD + suggestLinks/confirmLink/rejectLink + backref) + typecheck 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "4.2",
+      "name": "fe-board",
+      "summary": "편성 보드 3컬럼(팔레트/LinkCanvas/NodePropsPanel) + dnd-kit 드래그+pin+confirm/reject + AI 추천 실행 UI",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "4.3",
+      "name": "fe-ai-suggest",
+      "summary": "SuggestRequest.intent + InterpretedOut BE 배선(13테스트) + AiSuggestPanel(자연어의도/해석칩/체크박스확정) + NodePropsPanel 2탭 전환",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "4.4",
+      "name": "fe-backref-calendar-graph",
+      "summary": "BackrefList(등장 위치 역참조) + ExposureCalendar(window 타임라인+충돌) + NodeGraph(DAG 시각화, 고아/사이클)",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "5.1",
+      "name": "migrate-catalog-fe-api",
+      "summary": "verify.sh migrate-catalog-fe-api 케이스 추가 — 어댑터 존치 확인 + 레거시 ORM 0 가드 + catalog 회귀 49건 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "5.2",
+      "name": "migrate-curation-fe-api",
+      "summary": "distribution/service.py 큐레이션 어댑터 전환(노드 기반 CRUD+items) + theme_features._curation 메타 보존 + compose_theme_text _접두키 제외 패치 + 레거시 ORM 0 + 28테스트 pass + FE 타입체크 통과",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    },
+    {
+      "id": "5.3",
+      "name": "legacy-drop",
+      "summary": "alembic 0046(service_categories/items drop) + ORM 클래스 제거 + 레거시 테스트 3파일 어댑터 전환 + 48테스트 pass",
+      "status": "completed",
+      "completed_at": "2026-06-09T00:00:00+09:00"
+    }
+  ]
+}

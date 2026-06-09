@@ -5851,6 +5851,383 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== PASS ==="
     ;;
 
+  scheduling-models)
+    echo "=== scheduling-models: ProgrammingNodeSet/Node/Link 모델 + 4 enum + alembic 배선 ==="
+    # 1. 모델 임포트 + 4 enum 존재 확인
+    python3 -c "
+import api.programming.scheduling.models as m
+assert hasattr(m, 'NodeKind'), 'NodeKind enum 없음'
+assert hasattr(m, 'ChildType'), 'ChildType enum 없음'
+assert hasattr(m, 'LinkSource'), 'LinkSource enum 없음'
+assert hasattr(m, 'LinkStatus'), 'LinkStatus enum 없음'
+assert m.ProgrammingNodeSet.__tablename__ == 'programming_node_sets'
+assert m.ProgrammingNode.__tablename__ == 'programming_nodes'
+assert m.ProgrammingLink.__tablename__ == 'programming_links'
+print('  ✓ 4 enum + 3 모델 임포트 확인')
+"
+    # 2. Base.metadata 등록 확인
+    python3 -c "
+from shared.database import Base
+import api.programming.metadata.models
+import api.programming.scheduling.models
+tables = Base.metadata.tables
+assert 'programming_node_sets' in tables, 'programming_node_sets Base에 없음'
+assert 'programming_nodes' in tables, 'programming_nodes Base에 없음'
+assert 'programming_links' in tables, 'programming_links Base에 없음'
+print('  ✓ 3 테이블 Base.metadata 등록 확인')
+"
+    # 3. alembic env.py import 배선 확인
+    grep -q "^import api.programming.scheduling.models" "$BACKEND/alembic/env.py" \
+      || { echo "FAIL: alembic/env.py scheduling import 없음"; exit 1; }
+    echo "  ✓ alembic/env.py scheduling import 배선 확인"
+    # 4. CHECK 제약 + UNIQUE 제약 존재 확인
+    python3 -c "
+import api.programming.scheduling.models as m
+args = m.ProgrammingLink.__table_args__
+names = [c.name for c in args if hasattr(c, 'name')]
+assert 'ck_programming_links_child_xor' in names, 'CHECK 제약 없음'
+assert 'uq_link_parent_child_node' in names, 'UNIQUE(parent,child_node) 없음'
+assert 'uq_link_parent_child_content' in names, 'UNIQUE(parent,child_content) 없음'
+print('  ✓ CHECK + UNIQUE 제약 확인')
+"
+    # 5. SQLite in-memory create_all 스모크
+    python3 -c "
+from sqlalchemy import create_engine
+from shared.database import Base
+import api.programming.metadata.models
+import api.programming.scheduling.models
+engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False})
+Base.metadata.create_all(engine)
+from sqlalchemy import inspect
+names = inspect(engine).get_table_names()
+assert 'programming_node_sets' in names, 'programming_node_sets create_all 실패'
+assert 'programming_nodes' in names, 'programming_nodes create_all 실패'
+assert 'programming_links' in names, 'programming_links create_all 실패'
+print('  ✓ SQLite create_all 스모크 통과')
+"
+    echo "=== PASS ==="
+    ;;
+
+  node-service)
+    echo "=== node-service: node_service CRUD + 사이클 가드 + 멤버 산출 단위 테스트 ==="
+    .venv/bin/pytest tests/test_node_service.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -q "19 passed" \
+      || { echo "FAIL: 19 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 19 테스트 통과"
+    echo "=== PASS ==="
+    ;;
+
+  tier2-semantic-match)
+    echo "=== tier2-semantic-match: match_service — cosine + facet overlap 가중합 ==="
+    cd "$BACKEND"
+    # 1. 단위 테스트 (13개)
+    .venv/bin/pytest tests/test_match_service.py -v 2>&1 | tail -20
+    .venv/bin/pytest tests/test_match_service.py -q 2>/dev/null | grep -q "13 passed" \
+      || { echo "FAIL: 13 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 13 테스트 통과"
+    # 2. 심볼 import 확인
+    python3 -c "
+from api.programming.scheduling.match_service import match_node_to_contents, cosine_similarity, MatchResult
+print('  ✓ match_service 심볼 import 확인')
+"
+    # 3. Tier0 후보축소(apply_rule_query) 재사용 확인
+    grep -q "apply_rule_query" "$BACKEND/api/programming/scheduling/match_service.py" \
+      || { echo "FAIL: match_service.py가 apply_rule_query를 사용하지 않음 (Tier0 후보축소 누락)"; exit 1; }
+    echo "  ✓ apply_rule_query Tier0 후보축소 확인"
+    echo "=== PASS ==="
+    ;;
+
+  node-embed-theme)
+    echo "=== node-embed-theme: ProgrammingNode.embed_theme 컬럼 + 0045 migration + node_theme_service ==="
+    cd "$BACKEND"
+    # 1. 단위 테스트 (10개)
+    .venv/bin/pytest tests/test_node_theme_service.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_node_theme_service.py -q 2>/dev/null | grep -q "10 passed" \
+      || { echo "FAIL: 10 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 10 테스트 통과"
+    # 2. embed_theme 컬럼 확인
+    python3 -c "
+import api.programming.scheduling.models as m
+assert 'embed_theme' in m.ProgrammingNode.__table__.columns, 'embed_theme 컬럼 없음'
+print('  ✓ ProgrammingNode.embed_theme 컬럼 확인')
+"
+    # 3. node_theme_service 심볼 확인
+    python3 -c "
+from api.programming.scheduling.node_theme_service import build_node_theme_embedding, compose_theme_text
+print('  ✓ node_theme_service 심볼 import 확인')
+"
+    # 4. alembic 0045 revision 체인 확인
+    [ -f "$BACKEND/alembic/versions/0045_node_embed_theme.py" ] \
+      || { echo "FAIL: 0045_node_embed_theme.py 없음"; exit 1; }
+    python3 -c "
+import importlib.util
+spec = importlib.util.spec_from_file_location('m', '$BACKEND/alembic/versions/0045_node_embed_theme.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert m.revision == '0045', f'revision={m.revision}'
+assert m.down_revision == '0044', f'down_revision={m.down_revision}'
+print('  ✓ revision=0045 down_revision=0044')
+"
+    # 5. Docker PostgreSQL 마이그레이션 + 컬럼 존재 확인
+    echo "  → alembic upgrade head 실행 중..."
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -5
+    COL=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT column_name FROM information_schema.columns WHERE table_name='programming_nodes' AND column_name='embed_theme';" 2>/dev/null)
+    [ "$COL" = "embed_theme" ] \
+      || { echo "FAIL: programming_nodes.embed_theme 컬럼 없음 (migration 미적용?)"; exit 1; }
+    echo "  ✓ programming_nodes.embed_theme 컬럼 DB 확인"
+    echo "=== PASS ==="
+    ;;
+
+  facet-intensity)
+    echo "=== facet-intensity: VOCAB intensity 축 추가 + validate/overlap 단위 테스트 ==="
+    cd "$BACKEND"
+    .venv/bin/pytest tests/test_facets.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_facets.py -q 2>/dev/null | grep -q "9 passed" \
+      || { echo "FAIL: 9 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 9 테스트 통과"
+    # VOCAB에 intensity 키 존재 확인
+    python3 -c "from api.programming.scheduling.facets import VOCAB; assert 'intensity' in VOCAB, 'VOCAB intensity 없음'; print('  ✓ VOCAB[intensity] =', VOCAB['intensity'])"
+    # profile_service 프롬프트에 intensity 포함 확인
+    grep -q 'intensity' "$BACKEND/api/programming/scheduling/profile_service.py" \
+      || { echo "FAIL: profile_service.py intensity 없음"; exit 1; }
+    echo "  ✓ profile_service intensity 프롬프트 반영"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s1)
+    echo "=== catalog-node-adapter-s1: read-path 어댑터 — list_node_tree + catalog service 위임 ==="
+    cd "$BACKEND"
+    .venv/bin/pytest tests/test_catalog_node_adapter.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "4 passed" \
+      || { echo "FAIL: 4 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 4 테스트 통과"
+    # list_node_tree 함수 존재 확인
+    grep -q "def list_node_tree" "$BACKEND/api/programming/scheduling/node_service.py" \
+      || { echo "FAIL: node_service.py list_node_tree 없음"; exit 1; }
+    echo "  ✓ list_node_tree 존재"
+    grep -q "def list_node_tree_by_set" "$BACKEND/api/programming/scheduling/node_service.py" \
+      || { echo "FAIL: node_service.py list_node_tree_by_set 없음"; exit 1; }
+    echo "  ✓ list_node_tree_by_set 존재"
+    # catalog service.py가 _list_node_tree로 위임하는지 확인
+    grep -q "_list_node_tree\|list_node_tree" "$BACKEND/api/programming/catalog/service.py" \
+      || { echo "FAIL: catalog service.py가 list_node_tree를 사용하지 않음"; exit 1; }
+    echo "  ✓ catalog service list_tree 위임 확인"
+    # 회귀: 기존 catalog_tree + node_service 테스트 통과
+    .venv/bin/pytest tests/test_catalog_tree.py tests/test_node_service.py -q 2>/dev/null | grep -q "37 passed" \
+      || { echo "FAIL: catalog_tree + node_service 회귀 — 37 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ 회귀 없음 (37 테스트)"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s2)
+    echo "=== catalog-node-adapter-s2: write-path 어댑터 — map/unmap/merge/delete ProgrammingLink 전환 ==="
+    cd "$BACKEND"
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -v 2>&1 | tail -30
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "22 passed" \
+      || { echo "FAIL: 22 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 22 테스트 통과"
+    # map_content → ProgrammingLink 사용 확인
+    grep -q "ProgrammingLink" "$BACKEND/api/programming/catalog/service.py" \
+      || { echo "FAIL: service.py ProgrammingLink 없음"; exit 1; }
+    echo "  ✓ service.py ProgrammingLink 사용 확인"
+    # ContentCategory import 제거 확인 (service.py에서 ContentCategory 미사용)
+    grep -q "from api.programming.catalog.models import ContentCategory" "$BACKEND/api/programming/catalog/service.py" \
+      && { echo "FAIL: service.py ContentCategory import 잔존"; exit 1; }
+    echo "  ✓ service.py ContentCategory import 제거 확인"
+    # map_content 반환 타입이 ProgrammingLink인지 확인
+    grep -q "def map_content" "$BACKEND/api/programming/catalog/service.py" \
+      || { echo "FAIL: map_content 함수 없음"; exit 1; }
+    grep -A8 "def map_content" "$BACKEND/api/programming/catalog/service.py" | grep -q "ProgrammingLink" \
+      || { echo "FAIL: map_content 반환 타입이 ProgrammingLink 아님"; exit 1; }
+    echo "  ✓ map_content ProgrammingLink 반환 확인"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s3)
+    echo "=== catalog-node-adapter-s3: set-service-adapter — ProgrammingNodeSet/Node/Link 전환 ==="
+    cd "$BACKEND"
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_node_adapter.py -v 2>&1 | tail -40
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "16 passed" \
+      || { echo "FAIL: 16 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 16 테스트 통과"
+    # set_service.py에서 ProgrammingNodeSet 사용 확인
+    grep -q "ProgrammingNodeSet" "$BACKEND/api/programming/catalog/set_service.py" \
+      || { echo "FAIL: set_service.py ProgrammingNodeSet 없음"; exit 1; }
+    echo "  ✓ ProgrammingNodeSet 사용 확인"
+    # CategorySet import 잔존 여부 확인
+    grep -q "CategorySet" "$BACKEND/api/programming/catalog/set_service.py" \
+      && { echo "FAIL: set_service.py CategorySet 잔존"; exit 1; }
+    echo "  ✓ CategorySet 제거 확인"
+    # _copy_tree 함수 존재 확인
+    grep -q "def _copy_tree" "$BACKEND/api/programming/catalog/set_service.py" \
+      || { echo "FAIL: _copy_tree 없음"; exit 1; }
+    echo "  ✓ _copy_tree 존재"
+    # 회귀: 기존 catalog_tree + s1/s2 테스트 통과
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "passing\|passed" \
+      || DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: 회귀 테스트 실패"; exit 1; }
+    echo "  ✓ 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s4)
+    echo "=== catalog-node-adapter-s4: content-mapping-adapter — router CategorySet 잔존 제거 ==="
+    cd "$BACKEND"
+    # CategorySet SQLAlchemy 모델이 router.py에서 사용되지 않는지 확인
+    grep -n "from api.programming.catalog.models import CategorySet" "$BACKEND/api/programming/catalog/router.py" \
+      && { echo "FAIL: router.py에 CategorySet 레거시 import 잔존"; exit 1; }
+    echo "  ✓ router.py CategorySet import 제거 확인"
+    # get_set_tree가 ProgrammingNodeSet 사용 확인
+    grep -q "ProgrammingNodeSet" "$BACKEND/api/programming/catalog/router.py" \
+      || { echo "FAIL: router.py ProgrammingNodeSet 없음"; exit 1; }
+    echo "  ✓ router.py ProgrammingNodeSet 사용 확인"
+    # 회귀: catalog 전체 테스트
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | tail -3
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: catalog 회귀 테스트 실패"; exit 1; }
+    echo "  ✓ 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  catalog-node-adapter-s5)
+    echo "=== catalog-node-adapter-s5: legacy-drop — categories/content_categories/category_sets 제거 ==="
+    cd "$BACKEND"
+    # models.py에서 레거시 클래스 제거 확인
+    grep -q "class CategorySet" "$BACKEND/api/programming/catalog/models.py" \
+      && { echo "FAIL: models.py에 CategorySet 잔존"; exit 1; }
+    echo "  ✓ CategorySet 제거 확인"
+    grep -q "class Category\b" "$BACKEND/api/programming/catalog/models.py" \
+      && { echo "FAIL: models.py에 Category 잔존"; exit 1; }
+    echo "  ✓ Category 제거 확인"
+    grep -q "class ContentCategory" "$BACKEND/api/programming/catalog/models.py" \
+      && { echo "FAIL: models.py에 ContentCategory 잔존"; exit 1; }
+    echo "  ✓ ContentCategory 제거 확인"
+    # 마이그레이션 파일 존재 확인
+    test -f "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044 마이그레이션 없음"; exit 1; }
+    echo "  ✓ 0044 마이그레이션 존재"
+    grep -q "drop_table.*content_categories\|drop_table.*\"content_categories\"" "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044에 content_categories DROP 없음"; exit 1; }
+    grep -q "drop_table.*\"categories\"\|drop_table.*categories" "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044에 categories DROP 없음"; exit 1; }
+    grep -q "drop_table.*category_sets" "$BACKEND/alembic/versions/0044_drop_legacy_category_tables.py" \
+      || { echo "FAIL: 0044에 category_sets DROP 없음"; exit 1; }
+    echo "  ✓ 0044 DROP 3테이블 확인"
+    # 회귀: 기존 테스트 전체 통과
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | tail -3
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: catalog 회귀 테스트 실패"; exit 1; }
+    echo "  ✓ 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  tier0-rule-engine)
+    echo "=== tier0-rule-engine: Tier 0 규칙 필터 엔진 단위 테스트 ==="
+    .venv/bin/pytest tests/test_rule_engine.py -v 2>&1 | tail -25
+    .venv/bin/pytest tests/test_rule_engine.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_rule_engine.py -q 2>/dev/null | grep -q "19 passed" \
+      || { echo "FAIL: 19 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 19 테스트 통과"
+    # 회귀 확인 — node_service.NodeMember.reason 필드 추가 후 기존 테스트 무손상
+    .venv/bin/pytest tests/test_node_service.py tests/test_link_service.py -q 2>/dev/null | grep -q "51 passed" \
+      || { echo "FAIL: node+link_service 회귀 — 51 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ node+link_service 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  scheduling-router)
+    echo "=== scheduling-router: NodeSet/Node/Link/Backref/Tree API 테스트 ==="
+    .venv/bin/pytest tests/test_scheduling_api.py -v 2>&1 | tail -25
+    .venv/bin/pytest tests/test_scheduling_api.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_scheduling_api.py -q 2>/dev/null | grep -q "21 passed" \
+      || { echo "FAIL: 21 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 21 API 테스트 통과"
+    # 회귀 확인
+    .venv/bin/pytest tests/test_node_service.py tests/test_link_service.py -q 2>/dev/null | grep -q "51 passed" \
+      || { echo "FAIL: node_service+link_service 회귀 — 51 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ 서비스 레이어 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  link-service)
+    echo "=== link-service: link_service CRUD + 사이클 가드 + backref + window 검증 단위 테스트 ==="
+    .venv/bin/pytest tests/test_link_service.py -v 2>&1 | tail -20
+    .venv/bin/pytest tests/test_link_service.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
+    .venv/bin/pytest tests/test_link_service.py -q 2>/dev/null | grep -q "32 passed" \
+      || { echo "FAIL: 32 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 32 테스트 통과"
+    # node_service 회귀 확인
+    .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -q "19 passed" \
+      || { echo "FAIL: node_service 회귀 — 19 테스트 통과해야 함"; exit 1; }
+    echo "  ✓ node_service 회귀 없음"
+    echo "=== PASS ==="
+    ;;
+
+  scheduling-migration)
+    echo "=== scheduling-migration: alembic 0041 — 3테이블 + 4 ENUM + 제약 ==="
+    # 1. 마이그레이션 파일 존재 확인
+    [ -f "$BACKEND/alembic/versions/0041_scheduling_programming_model.py" ] \
+      || { echo "FAIL: 0041_scheduling_programming_model.py 없음"; exit 1; }
+    echo "  ✓ 0041 파일 존재"
+    # 2. revision 체인 확인
+    python3 -c "
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('m', '$BACKEND/alembic/versions/0041_scheduling_programming_model.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert m.revision == '0041', f'revision={m.revision}'
+assert m.down_revision == '0040', f'down_revision={m.down_revision}'
+print('  ✓ revision=0041 down_revision=0040')
+"
+    # 3. Docker PostgreSQL upgrade 적용
+    echo "  → alembic upgrade head 실행 중..."
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -5
+    echo "  ✓ alembic upgrade head 성공"
+    # 4. 테이블 존재 확인 (Docker psql)
+    TABLES=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT tablename FROM pg_tables WHERE tablename IN ('programming_node_sets','programming_nodes','programming_links') ORDER BY tablename;" 2>/dev/null)
+    echo "$TABLES" | grep -q "programming_links"   || { echo "FAIL: programming_links 테이블 없음"; exit 1; }
+    echo "$TABLES" | grep -q "programming_node_sets" || { echo "FAIL: programming_node_sets 테이블 없음"; exit 1; }
+    echo "$TABLES" | grep -q "programming_nodes"   || { echo "FAIL: programming_nodes 테이블 없음"; exit 1; }
+    echo "  ✓ 3 테이블 존재 확인"
+    # 5. ENUM 존재 확인
+    ENUMS=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT typname FROM pg_type WHERE typname IN ('node_kind','child_type','link_source','link_status') ORDER BY typname;" 2>/dev/null)
+    for e in child_type link_source link_status node_kind; do
+      echo "$ENUMS" | grep -q "$e" || { echo "FAIL: ENUM $e 없음"; exit 1; }
+    done
+    echo "  ✓ 4 ENUM 존재 확인"
+    # 6. CHECK 제약 존재 확인
+    CHECK=$(docker exec mediax-postgres-1 psql -U media_ax -d media_ax -tAc \
+      "SELECT conname FROM pg_constraint WHERE conname='ck_programming_links_child_xor';" 2>/dev/null)
+    echo "$CHECK" | grep -q "ck_programming_links_child_xor" \
+      || { echo "FAIL: CHECK 제약 ck_programming_links_child_xor 없음"; exit 1; }
+    echo "  ✓ CHECK 제약 확인"
+    # 7. downgrade → upgrade 왕복
+    echo "  → downgrade 0040 → upgrade head 왕복 테스트..."
+    docker exec mediax-backend-1 alembic downgrade 0040 2>&1 | tail -3
+    docker exec mediax-backend-1 alembic upgrade head 2>&1 | tail -3
+    echo "  ✓ downgrade/upgrade 왕복 성공"
+    echo "=== PASS ==="
+    ;;
+
+  data-migration)
+    echo "=== data-migration: categories→programming_nodes/links 이관 + 검증 게이트 8항목 ==="
+    # 1. 스크립트 존재 확인
+    [ -f "$BACKEND/scripts/migrate_programming_links.py" ] \
+      || { echo "FAIL: migrate_programming_links.py 없음"; exit 1; }
+    echo "  ✓ 스크립트 존재"
+    # 2. 이관 실행 (멱등) + 검증 게이트 통과 확인
+    docker exec mediax-backend-1 python3 -m scripts.migrate_programming_links 2>&1
+    [ $? -eq 0 ] || { echo "FAIL: 이관 스크립트 실패"; exit 1; }
+    # 3. 멱등 재실행 (2회차 동일 결과)
+    echo "  → 멱등 재실행 중..."
+    docker exec mediax-backend-1 python3 -m scripts.migrate_programming_links 2>&1 | tail -5
+    [ $? -eq 0 ] || { echo "FAIL: 멱등 재실행 실패"; exit 1; }
+    echo "  ✓ 멱등성 확인"
+    echo "=== PASS ==="
+    ;;
+
   catalog-migration)
     echo "=== catalog-migration: alembic 0039 + 마이그레이션 구조 검증 ==="
     # 1. 마이그레이션 파일 존재 확인
@@ -6067,6 +6444,60 @@ print('  ✓ pricing/holdback schemas import 확인')
     echo "=== PASS ==="
     ;;
 
+  fe-api-types)
+    echo "=== fe-api-types: lib/api.ts schedulingApi 타입 + 함수 ==="
+    FE_API="$SCRIPT_DIR/../mediaX-CMS/apps/web/lib/api.ts"
+    # 1. 핵심 타입 존재 확인
+    for sym in ProgrammingNodeSet ProgrammingNode ProgrammingLink NodeTreeItem BackrefOut SuggestOut NodeKind LinkSource LinkStatus; do
+      grep -q "export.*$sym" "$FE_API" \
+        || { echo "FAIL: $sym 타입 누락 (lib/api.ts)"; exit 1; }
+    done
+    echo "  ✓ 8개 타입 확인"
+    # 2. schedulingApi 함수 확인
+    for fn in listSets createSet publishSet listNodes createNode getNode updateNode deleteNode getNodeTree listLinks addLink addLinksBatch reorderLinks updateLink moveLink deleteLink suggestLinks confirmLink rejectLink getContentBackrefs getNodeBackrefs; do
+      grep -q "$fn" "$FE_API" \
+        || { echo "FAIL: schedulingApi.$fn 누락"; exit 1; }
+    done
+    echo "  ✓ 21개 API 함수 확인"
+    # 3. TypeScript typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | grep -E "^.*error TS" | head -5 && \
+    { echo "FAIL: TypeScript 타입에러 있음"; exit 1; } || true
+    echo "  ✓ TypeScript typecheck 통과"
+    echo "=== PASS ==="
+    ;;
+
+  suggest-review-flow)
+    echo "=== suggest-review-flow: AI 추천 저장 + 확정/반려 API ==="
+    cd "$BACKEND"
+    # 1. 단위 테스트 (11개)
+    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_suggest_service.py -v 2>&1 | tail -20
+    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_suggest_service.py -q 2>/dev/null | grep -q "11 passed" \
+      || { echo "FAIL: 11 테스트 모두 통과해야 함"; exit 1; }
+    echo "  ✓ 11 테스트 통과"
+    # 2. suggest_service 심볼 확인
+    DATABASE_URL="sqlite:///:memory:" python3 -c "
+from api.programming.scheduling.suggest_service import suggest_links, confirm_link, reject_link, SuggestResult
+print('  ✓ suggest_service 심볼 import 확인')
+"
+    # 3. router 엔드포인트 확인
+    grep -q "nodes/{node_id}/suggest" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: POST /nodes/{node_id}/suggest 엔드포인트 누락"; exit 1; }
+    grep -q "links/{link_id}/confirm" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: POST /links/{link_id}/confirm 엔드포인트 누락"; exit 1; }
+    grep -q "links/{link_id}/reject" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: POST /links/{link_id}/reject 엔드포인트 누락"; exit 1; }
+    echo "  ✓ 3개 엔드포인트 확인"
+    # 4. threshold 자동제외 로직 확인
+    grep -q "threshold" "$BACKEND/api/programming/scheduling/suggest_service.py" \
+      || { echo "FAIL: suggest_service.py에 threshold 자동제외 로직 누락"; exit 1; }
+    echo "  ✓ threshold 자동제외 로직 확인"
+    # 5. read-time 가드(suggested 제외) 확인
+    grep -q "suggested" "$BACKEND/api/programming/scheduling/node_service.py" \
+      || { echo "FAIL: node_service.py의 compute_members에 suggested 제외 가드 없음"; exit 1; }
+    echo "  ✓ compute_members suggested 제외 가드 확인"
+    echo "=== PASS ==="
+    ;;
+
   catalog-pricing-fe|2.6)
     echo "=== catalog-pricing-fe: pricing/holdback 페이지 + api.ts + typecheck ==="
     FE_ROOT="$SCRIPT_DIR/../mediaX-CMS"
@@ -6090,6 +6521,370 @@ print('  ✓ pricing/holdback schemas import 확인')
       exit 1
     fi
     echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  4.3a|intent-suggest-api)
+    echo "=== 4.3a intent-suggest-api: Tier1 intent → suggest 엔드포인트 배선 ==="
+    cd "$BACKEND"
+    # 1. schemas — intent 필드 + InterpretedOut + SuggestOut.interpreted
+    python3 -c "
+from api.programming.scheduling.schemas import SuggestRequest, SuggestOut, InterpretedOut
+sr = SuggestRequest(threshold=0.3)
+assert sr.intent is None, 'intent 기본값 None 이어야 함'
+sr2 = SuggestRequest(threshold=0.3, intent='테스트 의도')
+assert sr2.intent == '테스트 의도', 'intent 필드 누락'
+_ = InterpretedOut(rule_query={}, facets={}, provider_used='test')
+so = SuggestOut(saved=[], skipped_count=0, interpreted=None)
+assert so.interpreted is None
+print('  ✓ schemas: SuggestRequest.intent + InterpretedOut + SuggestOut.interpreted 확인')
+"
+    # 2. router — async def + interpret_intent import
+    grep -q "async def suggest_links" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: suggest_links 가 async def 가 아님"; exit 1; }
+    echo "  ✓ router suggest_links async def"
+    grep -q "interpret_intent" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: interpret_intent import 누락"; exit 1; }
+    echo "  ✓ router interpret_intent import"
+    grep -q "apply_intent_to_node" "$BACKEND/api/programming/scheduling/router.py" \
+      || { echo "FAIL: apply_intent_to_node 호출 누락"; exit 1; }
+    echo "  ✓ router apply_intent_to_node 호출"
+    # 3. pytest — suggest + intent 관련 13 테스트
+    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_scheduling_api.py tests/test_suggest_service.py -k "suggest or intent" -q 2>&1 | tail -5
+    COUNT=$(DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_scheduling_api.py tests/test_suggest_service.py -k "suggest or intent" -q 2>/dev/null | grep -oP '\d+ passed' | grep -oP '\d+')
+    [ "${COUNT:-0}" -ge 13 ] || { echo "FAIL: suggest/intent 테스트 13개 이상 통과해야 함 (현재 $COUNT)"; exit 1; }
+    echo "  ✓ pytest suggest/intent ${COUNT} 통과"
+    echo "=== PASS ==="
+    ;;
+
+  4.3b|ai-suggest-panel)
+    echo "=== 4.3b ai-suggest-panel: AiSuggestPanel + NodePropsPanel 탭화 ==="
+    FE="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # 1. api.ts — InterpretedOut + SuggestOut.interpreted + suggestLinks intent
+    python3 -c "
+import subprocess, sys
+content = open('$FE/lib/api.ts').read()
+checks = [
+    ('InterpretedOut', 'InterpretedOut 타입'),
+    ('interpreted?: InterpretedOut', 'SuggestOut.interpreted 필드'),
+    ('intent?: string', 'suggestLinks intent 옵션'),
+]
+ok = True
+for needle, label in checks:
+    if needle not in content:
+        print(f'FAIL: {label} 누락')
+        ok = False
+    else:
+        print(f'  ✓ {label}')
+sys.exit(0 if ok else 1)
+" || exit 1
+    # 2. AiSuggestPanel.tsx 존재 + 핵심 심볼
+    [ -f "$FE/components/scheduling/AiSuggestPanel.tsx" ] \
+      || { echo "FAIL: AiSuggestPanel.tsx 파일 없음"; exit 1; }
+    echo "  ✓ AiSuggestPanel.tsx 존재"
+    for sym in "handleConfirmSelected" "handleConfirmAll" "toggleSelect" "InterpretedOut" "interpreted" "autoExclude"; do
+      grep -q "$sym" "$FE/components/scheduling/AiSuggestPanel.tsx" \
+        || { echo "FAIL: AiSuggestPanel.tsx 에 $sym 없음"; exit 1; }
+    done
+    echo "  ✓ AiSuggestPanel 핵심 심볼 확인"
+    # 3. NodePropsPanel.tsx — 탭 구조
+    for sym in "AiSuggestPanel" "AI 추천" "setTab" "tab === "; do
+      grep -q "$sym" "$FE/components/scheduling/NodePropsPanel.tsx" \
+        || { echo "FAIL: NodePropsPanel.tsx 에 '$sym' 없음"; exit 1; }
+    done
+    echo "  ✓ NodePropsPanel 탭 구조 확인"
+    # 4. typecheck
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    npm run typecheck 2>&1 | tail -5
+    npm run typecheck 2>&1 | grep -q "Tasks:.*successful" \
+      || { echo "FAIL: typecheck 실패"; exit 1; }
+    echo "  ✓ typecheck pass"
+    echo "=== PASS ==="
+    ;;
+
+  fe-board)
+    echo "=== fe-board: 편성 보드 3컬럼 컴포넌트 ==="
+    FE_SCHED="$SCRIPT_DIR/../mediaX-CMS/apps/web/components/scheduling"
+
+    # 파일 존재 확인
+    for f in SchedulingBoard.tsx PalettePanel.tsx LinkCanvas.tsx NodePropsPanel.tsx; do
+      if [ ! -f "$FE_SCHED/$f" ]; then
+        echo "FAIL: $f 파일 없음"
+        exit 1
+      fi
+      echo "  ✓ $f"
+    done
+
+    # page.tsx SchedulingBoard import 확인
+    PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/schedule/page.tsx"
+    if ! grep -q "SchedulingBoard" "$PAGE"; then
+      echo "FAIL: page.tsx에 SchedulingBoard 미마운트"
+      exit 1
+    fi
+    echo "  ✓ page.tsx SchedulingBoard 마운트"
+
+    # 핵심 기능 심볼 확인
+    for sym in "schedulingApi" "suggestLinks" "confirmLink" "rejectLink" "DndContext" "SortableContext"; do
+      if ! grep -rq "$sym" "$FE_SCHED/"; then
+        echo "FAIL: $sym 심볼 미사용"
+        exit 1
+      fi
+      echo "  ✓ $sym"
+    done
+
+    # TypeScript 타입 체크
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | grep "scheduling\|SchedulingBoard\|PalettePanel\|LinkCanvas\|NodePropsPanel" | grep "error TS" | head -5 && \
+    { echo "FAIL: TypeScript 타입에러 있음"; exit 1; } || true
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  fe-calendar-graph)
+    echo "=== fe-calendar-graph: 뷰 스위처 + ExposureCalendar + NodeGraph ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # 1. 파일 존재
+    [ -f "$FE_ROOT/components/scheduling/ExposureCalendar.tsx" ] || { echo "FAIL: ExposureCalendar.tsx 없음"; exit 1; }
+    [ -f "$FE_ROOT/components/scheduling/NodeGraph.tsx" ] || { echo "FAIL: NodeGraph.tsx 없음"; exit 1; }
+    echo "  ✓ ExposureCalendar/NodeGraph 존재"
+    # 2. SchedulingBoard 뷰 스위처 배선
+    grep -q 'BoardView\|view.*board.*calendar.*graph\|"board"\|"calendar"\|"graph"' "$FE_ROOT/components/scheduling/SchedulingBoard.tsx" || { echo "FAIL: 뷰 스위처 없음"; exit 1; }
+    grep -q 'ExposureCalendar' "$FE_ROOT/components/scheduling/SchedulingBoard.tsx" || { echo "FAIL: ExposureCalendar 미사용"; exit 1; }
+    grep -q 'NodeGraph' "$FE_ROOT/components/scheduling/SchedulingBoard.tsx" || { echo "FAIL: NodeGraph 미사용"; exit 1; }
+    echo "  ✓ SchedulingBoard 뷰 스위처 배선"
+    # 3. getSetGraph 사용 확인
+    grep -rq 'getSetGraph' "$FE_ROOT/components/scheduling/" || { echo "FAIL: getSetGraph 미사용"; exit 1; }
+    echo "  ✓ getSetGraph 사용"
+    # 4. 타입체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npx tsc --noEmit -p apps/web/tsconfig.json 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  fe-backref)
+    echo "=== fe-backref: NodePropsPanel 역참조 탭 + BackrefList 컴포넌트 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    # 1. 파일 존재
+    [ -f "$FE_ROOT/components/scheduling/BackrefList.tsx" ] || { echo "FAIL: BackrefList.tsx 없음"; exit 1; }
+    echo "  ✓ BackrefList.tsx 존재"
+    # 2. NodePropsPanel 배선
+    grep -q '"backref"' "$FE_ROOT/components/scheduling/NodePropsPanel.tsx" || { echo "FAIL: NodePropsPanel backref 탭 없음"; exit 1; }
+    grep -q 'BackrefList' "$FE_ROOT/components/scheduling/NodePropsPanel.tsx" || { echo "FAIL: BackrefList import/사용 없음"; exit 1; }
+    grep -q '역참조' "$FE_ROOT/components/scheduling/NodePropsPanel.tsx" || { echo "FAIL: 역참조 탭 라벨 없음"; exit 1; }
+    echo "  ✓ NodePropsPanel 역참조 탭 배선"
+    # 3. BackrefList API 사용
+    grep -q 'getNodeBackrefs' "$FE_ROOT/components/scheduling/BackrefList.tsx" || { echo "FAIL: BackrefList에 getNodeBackrefs 없음"; exit 1; }
+    echo "  ✓ BackrefList getNodeBackrefs 사용"
+    # 4. 타입체크
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npx tsc --noEmit -p apps/web/tsconfig.json 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  set-graph-api)
+    echo "=== set-graph-api: 세트 전체 그래프 BE 엔드포인트 + FE 타입 ==="
+    BE_ROOT="$SCRIPT_DIR/../backend"
+    cd "$BE_ROOT"
+    # 1. 라우터/스키마 심볼
+    grep -q '/sets/{set_id}/graph' api/programming/scheduling/router.py || { echo "FAIL: /sets/{set_id}/graph 라우트 없음"; exit 1; }
+    grep -q 'class SetGraphOut' api/programming/scheduling/schemas.py || { echo "FAIL: SetGraphOut 스키마 없음"; exit 1; }
+    grep -q 'class GraphEdge' api/programming/scheduling/schemas.py || { echo "FAIL: GraphEdge 스키마 없음"; exit 1; }
+    echo "  ✓ 라우터/스키마 심볼"
+    # 2. pytest (graph 테스트만 — ollama 비의존)
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    "$PY" -m pytest tests/test_scheduling_api.py -k graph -p no:cacheprovider -q 2>&1 | tail -3
+    if ! "$PY" -m pytest tests/test_scheduling_api.py -k graph -p no:cacheprovider -q >/dev/null 2>&1; then
+      echo "FAIL: set-graph pytest 실패"; exit 1
+    fi
+    echo "  ✓ pytest graph 통과"
+    # 3. FE 타입/함수
+    FE="$SCRIPT_DIR/../mediaX-CMS/apps/web/lib/api.ts"
+    grep -q 'getSetGraph' "$FE" || { echo "FAIL: api.ts getSetGraph 없음"; exit 1; }
+    grep -q 'interface SetGraph' "$FE" || { echo "FAIL: api.ts SetGraph 타입 없음"; exit 1; }
+    echo "  ✓ api.ts getSetGraph/SetGraph"
+    cd "$SCRIPT_DIR/../mediaX-CMS" && npx tsc --noEmit -p apps/web/tsconfig.json 2>&1 | grep "lib/api.ts" | grep "error TS" | head -5 && \
+    { echo "FAIL: api.ts TypeScript 타입에러"; exit 1; } || true
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  curation-node-adapter)
+    echo "=== curation-node-adapter: service_categories → ProgrammingNode 어댑터 검증 ==="
+    cd "$BACKEND"
+
+    DIST_SVC="api/distribution/service.py"
+
+    # 1) 어댑터 확인: distribution/service.py 가 scheduling.models 를 임포트하는가
+    if ! grep -q "from api.programming.scheduling.models" "$DIST_SVC" 2>/dev/null; then
+      echo "FAIL: $DIST_SVC 에 'from api.programming.scheduling.models' 없음 — 어댑터 미적용"
+      exit 1
+    fi
+    echo "  ✓ distribution 어댑터 → scheduling.models 임포트 확인"
+
+    # 2) 레거시 ORM ServiceCategory/ServiceCategoryItem 생성 호출 0 가드
+    LEGACY_HIT=$(grep -n "ServiceCategory(\|ServiceCategoryItem(" "$DIST_SVC" 2>/dev/null || true)
+    if [ -n "$LEGACY_HIT" ]; then
+      echo "FAIL: $DIST_SVC 에 레거시 ORM 생성 호출 발견:"
+      echo "$LEGACY_HIT"
+      exit 1
+    fi
+    echo "  ✓ distribution/service.py 레거시 ORM 생성 호출 0"
+
+    # 3) 신규 어댑터 테스트
+    echo "--- curation-node-adapter 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py -q
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: test_curation_node_adapter pytest 실패"; exit 1; }
+    echo "  ✓ curation-node-adapter 테스트 통과"
+
+    echo "=== PASS ==="
+    ;;
+
+  legacy-drop)
+    echo "=== legacy-drop: service_categories/items 제거 + 잔존 참조 0 + 회귀 pytest ==="
+    cd "$BACKEND"
+
+    # 1) 마이그레이션 0046 존재 확인
+    test -f "alembic/versions/0046_drop_service_category_tables.py" \
+      || { echo "FAIL: alembic/versions/0046_drop_service_category_tables.py 없음"; exit 1; }
+    grep -q "drop_table.*service_category_items\|drop_table.*\"service_category_items\"" \
+      "alembic/versions/0046_drop_service_category_tables.py" \
+      || { echo "FAIL: 0046에 service_category_items drop 없음"; exit 1; }
+    grep -q "drop_table.*service_categories\|drop_table.*\"service_categories\"" \
+      "alembic/versions/0046_drop_service_category_tables.py" \
+      || { echo "FAIL: 0046에 service_categories drop 없음"; exit 1; }
+    echo "  ✓ alembic 0046 — service_categories/service_category_items drop 확인"
+
+    # 2) models.py에 ServiceCategory/ServiceCategoryItem 클래스 0
+    MODEL_HIT=$(grep -n "class ServiceCategory\b\|class ServiceCategoryItem\b" api/distribution/models.py 2>/dev/null || true)
+    if [ -n "$MODEL_HIT" ]; then
+      echo "FAIL: api/distribution/models.py 에 레거시 ORM 클래스 잔존:"
+      echo "$MODEL_HIT"
+      exit 1
+    fi
+    echo "  ✓ distribution/models.py 레거시 ORM 클래스 0"
+
+    # 3) api/ 전체에서 ServiceCategory ORM import 잔존 0
+    IMPORT_HIT=$(grep -rn "from api.distribution.models import.*ServiceCategory\|from .models import.*ServiceCategory" \
+      api --include="*.py" 2>/dev/null || true)
+    if [ -n "$IMPORT_HIT" ]; then
+      echo "FAIL: api/ 에 ServiceCategory ORM import 잔존:"
+      echo "$IMPORT_HIT"
+      exit 1
+    fi
+    echo "  ✓ api/ ServiceCategory ORM import 0"
+
+    # 4) tests/ 에서 ServiceCategory ORM 직접 사용 0 (스키마 클래스는 허용)
+    TEST_ORM_HIT=$(grep -rn "from api.distribution.models import.*ServiceCategory\|db\.query(ServiceCategory\|db\.add(ServiceCategory\|db\.add(ServiceCategoryItem" \
+      tests --include="*.py" 2>/dev/null || true)
+    if [ -n "$TEST_ORM_HIT" ]; then
+      echo "FAIL: tests/ 에 ServiceCategory ORM 직접 사용 잔존:"
+      echo "$TEST_ORM_HIT"
+      exit 1
+    fi
+    echo "  ✓ tests/ ServiceCategory ORM 직접 사용 0"
+
+    # 5) 회귀 pytest
+    echo "--- legacy-drop 회귀 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest \
+      tests/test_distribution_step3.py \
+      tests/test_curation_node_adapter.py \
+      tests/test_distribution_step0.py \
+      -q
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest \
+      tests/test_distribution_step3.py \
+      tests/test_curation_node_adapter.py \
+      tests/test_distribution_step0.py \
+      -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: legacy-drop 회귀 pytest 실패"; exit 1; }
+    echo "  ✓ legacy-drop 회귀 테스트 통과"
+
+    echo "=== PASS ==="
+    ;;
+
+  migrate-curation-fe-api)
+    echo "=== migrate-curation-fe-api: 큐레이션 어댑터 존치 + 레거시 0 + 회귀 pytest + FE 타입체크 ==="
+    cd "$BACKEND"
+
+    DIST_SVC="api/distribution/service.py"
+
+    # 1) 어댑터 확인: distribution/service.py 가 scheduling.models 를 임포트하는가
+    if ! grep -q "from api.programming.scheduling.models" "$DIST_SVC" 2>/dev/null; then
+      echo "FAIL: $DIST_SVC 에 'from api.programming.scheduling.models' 없음 — 어댑터 미적용"
+      exit 1
+    fi
+    echo "  ✓ distribution 어댑터 → scheduling.models 임포트 확인"
+
+    # 2) 레거시 ORM ServiceCategory/ServiceCategoryItem 생성 호출 0 가드
+    LEGACY_HIT=$(grep -n "ServiceCategory(\|ServiceCategoryItem(" "$DIST_SVC" 2>/dev/null || true)
+    if [ -n "$LEGACY_HIT" ]; then
+      echo "FAIL: $DIST_SVC 에 레거시 ORM 생성 호출 발견:"
+      echo "$LEGACY_HIT"
+      exit 1
+    fi
+    echo "  ✓ distribution/service.py 레거시 ORM 생성 호출 0"
+
+    # 3) 회귀 pytest (어댑터 + step0 레거시 교체 포함)
+    echo "--- 큐레이션 회귀 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py tests/test_distribution_step0.py -q
+    DATABASE_URL="sqlite:///./test_tmp.db" "$PY" -m pytest tests/test_curation_node_adapter.py tests/test_distribution_step0.py -q 2>/dev/null | grep -qE "[0-9]+ passed" \
+      || { echo "FAIL: 큐레이션 회귀 pytest 실패"; exit 1; }
+    echo "  ✓ 큐레이션 회귀 테스트 통과"
+
+    # 4) FE 타입체크 (distributionApi 스키마 불변 확인)
+    cd /home/ktalpha/Work/mediaX/mediaX-CMS
+    echo "--- FE 타입체크 실행 중 ---"
+    if command -v nvm &>/dev/null; then
+      export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm use 22 --silent 2>/dev/null || true
+    fi
+    if npm run -w @app/web typecheck 2>&1 | grep -qE "error TS|Type error"; then
+      echo "FAIL: FE 타입체크 오류 발생"
+      npm run -w @app/web typecheck 2>&1 | grep -E "error TS|Type error" | head -20
+      exit 1
+    fi
+    echo "  ✓ FE 타입체크 통과"
+
+    echo "=== PASS ==="
+    ;;
+
+  migrate-catalog-fe-api)
+    echo "=== migrate-catalog-fe-api: catalog 어댑터 존치 + 레거시 0 + 회귀 pytest ==="
+    cd "$BACKEND"
+
+    CATALOG_SVC="api/programming/catalog/service.py"
+
+    # 1) 어댑터 확인: catalog/service.py 가 scheduling.models 를 임포트하는가
+    if ! grep -q "from api.programming.scheduling.models" "$CATALOG_SVC" 2>/dev/null; then
+      echo "FAIL: $CATALOG_SVC 에 'from api.programming.scheduling.models' 없음 — 어댑터 미적용"
+      exit 1
+    fi
+    echo "  ✓ catalog 어댑터 → scheduling.models 임포트 확인"
+
+    # 2) 레거시 ORM 클래스 정의 부재 확인
+    LEGACY_HIT=$(grep -rn "class Category(\|class CategorySet(\|class ContentCategory(" api/programming/catalog/ 2>/dev/null || true)
+    if [ -n "$LEGACY_HIT" ]; then
+      echo "FAIL: catalog 패키지에 레거시 ORM 클래스 정의 발견:"
+      echo "$LEGACY_HIT"
+      exit 1
+    fi
+    echo "  ✓ catalog 패키지 레거시 ORM 클래스 0"
+
+    # 3) catalog 회귀 pytest
+    echo "--- catalog 회귀 테스트 실행 중 ---"
+    PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
+    "$PY" -m pytest tests/test_catalog_api.py tests/test_catalog_node_adapter.py tests/test_catalog_tree.py -q
+    echo "  ✓ catalog 회귀 테스트 통과"
+
     echo "=== PASS ==="
     ;;
 

@@ -5,16 +5,22 @@ from sqlalchemy.orm import Session
 
 from shared.database import get_db
 from api.programming.catalog import service
-from api.programming.catalog import pricing_service, holdback_service
+from api.programming.catalog import pricing_service, holdback_service, set_service
 from api.programming.catalog.schemas import (
     CategoryCreate,
     CategoryUpdate,
     CategoryMoveRequest,
     CategoryMergeRequest,
+    BulkCategoryCreate,
+    BulkCategoryResult,
     ContentMapRequest,
     CategoryOut,
     CategoryTreeNode,
     ContentCategoryOut,
+    CategorySetOut,
+    CategorySetCommit,
+    CategorySetUpdate,
+    LoadSetRequest,
     PricingSet,
     PricingOut,
     BulkPricingRequest,
@@ -30,11 +36,14 @@ router = APIRouter()
 
 
 def _get_category_or_404(db: Session, category_id: int):
-    from api.programming.catalog.models import Category
-    cat = db.query(Category).filter(Category.id == category_id).first()
-    if cat is None:
+    from api.programming.scheduling.models import NodeKind, ProgrammingNode
+    node = db.query(ProgrammingNode).filter(
+        ProgrammingNode.id == category_id,
+        ProgrammingNode.kind == NodeKind.container,
+    ).first()
+    if node is None:
         raise HTTPException(status_code=404, detail=f"Category {category_id} not found")
-    return cat
+    return node
 
 
 # ── 카테고리 트리 ──────────────────────────────────────────────────────────────
@@ -49,6 +58,30 @@ def get_category_tree(
     return nodes
 
 
+@router.post("/categories/bulk", response_model=BulkCategoryResult, status_code=201)
+def bulk_create_categories(data: BulkCategoryCreate, db: Session = Depends(get_db)):
+    try:
+        created, skipped, overwritten = service.bulk_create_categories(
+            db,
+            nodes=[n.model_dump() for n in data.nodes],
+            parent_id=data.parent_id,
+            dup_policy=data.dup_policy,
+        )
+        db.commit()
+    except ValueError as e:
+        # reject 정책의 중복 충돌 → 409, 그 외(parent 없음 등) → 404
+        if str(e).startswith("duplicate categories:"):
+            raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
+    tree = service.list_tree(db, root_id=data.parent_id, include_counts=True)
+    return {
+        "created": created,
+        "skipped": skipped,
+        "overwritten": overwritten,
+        "tree": tree,
+    }
+
+
 @router.post("/categories", response_model=CategoryOut, status_code=201)
 def create_category(data: CategoryCreate, db: Session = Depends(get_db)):
     try:
@@ -56,10 +89,13 @@ def create_category(data: CategoryCreate, db: Session = Depends(get_db)):
             db, name=data.name, parent_id=data.parent_id, sort_order=data.sort_order
         )
         if data.slug is not None:
-            cat.slug = data.slug
-            db.flush()
+            from api.programming.scheduling.models import ProgrammingNode
+            node = db.query(ProgrammingNode).filter(ProgrammingNode.id == cat.id).first()
+            if node:
+                node.slug = data.slug
+                db.flush()
+                cat.slug = data.slug
         db.commit()
-        db.refresh(cat)
         return cat
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -69,19 +105,30 @@ def create_category(data: CategoryCreate, db: Session = Depends(get_db)):
 def update_category(category_id: int, data: CategoryUpdate, db: Session = Depends(get_db)):
     _get_category_or_404(db, category_id)
     try:
+        from api.programming.scheduling.models import ProgrammingLink, ProgrammingNode
+        node = db.query(ProgrammingNode).filter(ProgrammingNode.id == category_id).first()
         if data.name is not None:
-            service.rename_category(db, category_id, data.name)
+            node.name = data.name
         if data.is_active is not None:
-            service.set_active(db, category_id, data.is_active)
-        from api.programming.catalog.models import Category
-        cat = db.query(Category).filter(Category.id == category_id).first()
+            node.is_active = data.is_active
         if data.slug is not None:
-            cat.slug = data.slug
+            node.slug = data.slug
         if data.sort_order is not None:
-            cat.sort_order = data.sort_order
+            lnk = db.query(ProgrammingLink).filter(
+                ProgrammingLink.child_node_id == category_id,
+                ProgrammingLink.child_type == "node",
+            ).first()
+            if lnk:
+                lnk.sort_order = data.sort_order
+        db.flush()
         db.commit()
-        db.refresh(cat)
-        return cat
+        lnk = service._incoming_link(db, category_id)
+        return service._cat_view(
+            node,
+            depth=service._get_node_depth(db, category_id),
+            sort_order=lnk.sort_order if lnk else 0,
+            parent_id=lnk.parent_node_id if lnk else None,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -99,7 +146,6 @@ def move_category(
             new_sort_order=data.new_sort_order,
         )
         db.commit()
-        db.refresh(cat)
         return cat
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -113,7 +159,6 @@ def merge_category(
     try:
         cat = service.merge_category(db, category_id, data.target_id)
         db.commit()
-        db.refresh(cat)
         return cat
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -139,13 +184,23 @@ def delete_category(
 def map_content_categories(
     content_id: int, data: ContentMapRequest, db: Session = Depends(get_db)
 ):
-    rows = service.map_content(
+    links = service.map_content(
         db, content_id, data.category_ids, primary_id=data.primary_id
     )
+    db.flush()
+    result = [
+        {
+            "id": lnk.id,
+            "content_id": lnk.child_content_id,
+            "category_id": lnk.parent_node_id,
+            "sort_order": lnk.sort_order,
+            "is_primary": (lnk.child_content_id == data.primary_id),
+            "created_at": lnk.created_at,
+        }
+        for lnk in links
+    ]
     db.commit()
-    for r in rows:
-        db.refresh(r)
-    return rows
+    return result
 
 
 @router.delete("/contents/{content_id}/categories/{category_id}", status_code=204)
@@ -162,11 +217,26 @@ def unmap_content_category(
 @router.get("/categories/{category_id}/contents", response_model=list[ContentCategoryOut])
 def get_category_contents(category_id: int, db: Session = Depends(get_db)):
     _get_category_or_404(db, category_id)
-    from api.programming.catalog.models import ContentCategory
-    rows = db.query(ContentCategory).filter(
-        ContentCategory.category_id == category_id
-    ).all()
-    return rows
+    from api.programming.scheduling.models import ChildType, ProgrammingLink
+    links = (
+        db.query(ProgrammingLink)
+        .filter(
+            ProgrammingLink.parent_node_id == category_id,
+            ProgrammingLink.child_type == ChildType.content,
+        )
+        .all()
+    )
+    return [
+        {
+            "id": lnk.id,
+            "content_id": lnk.child_content_id,
+            "category_id": lnk.parent_node_id,
+            "sort_order": lnk.sort_order,
+            "is_primary": False,
+            "created_at": lnk.created_at,
+        }
+        for lnk in links
+    ]
 
 
 # ── 가격 정책 ─────────────────────────────────────────────────────────────────
@@ -320,3 +390,80 @@ def holdback_calendar(
     db: Session = Depends(get_db),
 ):
     return holdback_service.calendar(db, start_date=start, end_date=end)
+
+
+# ── 카테고리 세트 ──────────────────────────────────────────────────────────────
+
+@router.get("/sets", response_model=list[CategorySetOut])
+def list_sets(db: Session = Depends(get_db)):
+    return set_service.list_sets(db)
+
+
+@router.post("/sets", response_model=CategorySetOut, status_code=201)
+def commit_set(data: CategorySetCommit, db: Session = Depends(get_db)):
+    result = set_service.commit_draft(db, name=data.name, description=data.description)
+    db.commit()
+    return result
+
+
+@router.patch("/sets/{set_id}", response_model=CategorySetOut)
+def update_set(set_id: int, data: CategorySetUpdate, db: Session = Depends(get_db)):
+    try:
+        result = set_service.update_set(db, set_id, name=data.name, description=data.description)
+        db.commit()
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/sets/{set_id}", status_code=204)
+def delete_set(set_id: int, db: Session = Depends(get_db)):
+    try:
+        set_service.delete_set(db, set_id)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/sets/{set_id}/tree", response_model=list[CategoryTreeNode])
+def get_set_tree(set_id: int, db: Session = Depends(get_db)):
+    from api.programming.scheduling.models import ProgrammingNodeSet
+
+    s = db.query(ProgrammingNodeSet).filter(ProgrammingNodeSet.id == set_id).first()
+    if s is None:
+        raise HTTPException(status_code=404, detail=f"set_id={set_id} not found")
+    nodes = service.list_tree_by_set(db, set_id=set_id)
+    return nodes
+
+
+@router.get("/sets/{set_id}/load-preview")
+def preview_load_set(set_id: int, db: Session = Depends(get_db)):
+    try:
+        return set_service.preview_load_set(db, set_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/sets/{set_id}/load")
+def load_set(
+    set_id: int,
+    data: LoadSetRequest = LoadSetRequest(),
+    db: Session = Depends(get_db),
+):
+    try:
+        cleared, loaded = set_service.load_set(
+            db, set_id, mode=data.mode, dup_policy=data.dup_policy
+        )
+        db.commit()
+        return {"cleared": cleared, "loaded": loaded}
+    except ValueError as e:
+        if str(e).startswith("duplicate categories:"):
+            raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/sets/clear-draft")
+def clear_draft(db: Session = Depends(get_db)):
+    cleared = set_service.clear_draft(db)
+    db.commit()
+    return {"cleared": cleared}

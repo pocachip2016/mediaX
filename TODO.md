@@ -4,27 +4,39 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-(없음)
+(비어있음)
 
 ## Next (이번 마일스톤)
-(없음)
+- [ ] 1.3 큐레이션 모듈 설계 확정
 
 ## Later (백로그)
-- [ ] 1.3 큐레이션 모듈 설계 확정
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
-- [x] **dev-catalog-pricing** — 가격 정책 + 홀드백 (1.2.2 + 1.2.3) — BE 4테이블/마이그레이션/pricing·holdback 서비스(25 테스트)/11 API + FE pricing·holdback 2페이지 + typecheck 통과 (2026-06-06)
-- [x] **feat(catalog-category-tree)** — 카탈로그 카테고리 트리(1.2.1) — BE 모델/마이그레이션/서비스(18 테스트)/API(15 테스트) + FE 트리 화면(읽기+생성+삭제+nav) (2026-06-06)
-- [x] **feat(contents-hierarchy)** — 콘텐츠 목록 계층 트리(평면/계층 토글, 기본 계층) + 파이프라인 S1 기본 트리 + lib/contentTree 공유 유틸 + 시즌/에피 포스터 숨김 (2026-06-06)
-- [x] **반려/실패 콘솔 S4 배치** — RejectedConsole 3컬럼(목록+이전단계 / 상세+필드편집+재검수 / WebSearch) + 승인·반려 AUTO 토글 숨김 + 승인 체크박스 폴링 풀림 수정(idsKey) + 반려 목록 밑 다음단계→이전단계 (2026-06-05)
-- [x] **revert/재검수 단계 AUTO OFF** — revert/re-review 시 도착 단계(검수 s4_auto) 자동 OFF + auto_hold 미사용(재-ON 시 재개) + RevertResponse.disabled_stages + FE 토글 동기화(syncStageAuto). reject hold 유지. e2e/backward-hold 신정책 테스트 (2026-06-05)
-- [x] **dev-child-inheritance** — 시즌/에피소드 상속을 quality_score 채점에 완전 배선(synopsis/genre/country/year/cast/director) + 스칼라 필드(year/country) 자식 DB autofill(apply_parent_inheritance, empty-only·멱등, title/synopsis 제외) + FE (상속) 표시 + 테스트 8건 + 우영우 시즌1 22→78·에피 32→88 보정 (2026-06-05)
-- [x] **feat(series-meta)** — TmdbTvCache→ContentMetadata 시리즈 6필드 보강(apply_series_meta_from_cache, S2 AUTO 배선, 멱등, series 한정) + alembic 0038 + FE 표시 + worker watchmedo 핫리로드 인프라(stale 코드 차단) + apply_migration 훅. 우영우/오징어게임/무빙 백필 (2026-06-05)
-- [x] **feat(pipeline)** — cascade advance(시리즈/시즌 동일버킷 자손 포함) + 계층 상세 메타 패널(포스터+필드→하위목록) + 외부소스 master-detail(TMDB/KOBIS/KMDB 행 클릭 상세) + 건수 breakdown 라벨(N시즌/M편) + 부모 브레드크럼 (2026-06-05)
-- [x] **feat(pipeline-tree-drilldown)** — 계층 트리 + 타입별 드릴다운 (PipelineTreeList 평면/계층 토글 + PipelineDrilldownDetail 타입 디스패치 + ChildrenTable ASC 정렬 + list_contents size 100→500) (2026-06-05)
-- [x] **dev-pipeline-auto-worker** — 파이프라인 진행 엔진 FE→Celery 워커 이관 (ADR-010): Beat 15s tick + bucket 병행 + AI per-item fan-out(pipeline_ai 큐) + SKIP LOCKED claim + 멱등 advance/approve + auto_hold(수동 override) + FE 콘솔 모니터화(auto-status/auto-log 폴링·처리건 스크롤 로그·advance 시 목록 제거). Steps 0~8 + 운영픽스 4종 + UX복원 + S4 미승인 자동 반려(bucket 6, 잔류 폐지) (2026-06-04)
+- [x] **dev-programming-link Phase 5.3** — alembic 0046(service_categories/items drop) + ORM 클래스 제거 + 레거시 테스트 3파일 어댑터 전환 + 48테스트 pass (2026-06-09)
+- [x] **dev-programming-link Phase 5.2** — migrate-curation-fe-api: 큐레이션 어댑터 전환 + 레거시 ORM 0 + 28테스트 pass + FE 타입체크 통과 (2026-06-09)
+- [x] **dev-programming-link Phase 5.1** — migrate-catalog-fe-api: 어댑터 존치 + 레거시 0 가드 + catalog 회귀 49건 통과 (2026-06-09)
+- [x] **dev-programming-link Phase 4.4** — BackrefList/ExposureCalendar/NodeGraph FE 3종 + GET /sets/{id}/graph (2026-06-09)
+- [x] **feat(scheduling Phase 4.3)** — interpret_intent Tier1 배선 + AiSuggestPanel(자연어의도/해석칩/체크박스확정) + NodePropsPanel 2탭 전환 (2026-06-09)
+- [x] **feat(scheduling Phase 3.4~4.2)** — suggest_service(suggest/confirm/reject + 11테스트) + 엔드포인트 3종 + lib/api.ts schedulingApi 21함수 + 편성 보드 3컬럼(팔레트/LinkCanvas/NodePropsPanel, dnd-kit+pin+confirm/reject+AI추천) (2026-06-09)
+- [x] **feat(scheduling Phase 3.2c+3.3)** — node-embed-theme(ProgrammingNode.embed_theme + alembic 0045 + node_theme_service) + tier2-semantic-match(match_service cosine+facet 가중합 + 23테스트) (2026-06-08)
+- [x] **feat(catalog-node-adapter)** — ProgrammingNode/Link DAG 완전 마이그레이션 — Steps 1-5 완료. alembic 0044 legacy drop + models 정리 + 16테스트 + verify s1~s5 모두 통과 (2026-06-08)
+- [x] **feat(catalog-restore+facet-intensity)** — catalog workspace 6컴포넌트 복원 + SingleContentForm/BulkUploadForm 공유화 + facet intensity axis(9 tests) + viewport-height fix + category-node-adapter 계획 수립 (2026-06-08)
+- [x] **dev-programming-link Phase 3.0~3.2** — CUP 모델(0042) + bge-m3 임베딩 + facet 통제어휘 + ingest Beat + Tier1 intent(qwen2.5:3b) (2026-06-08)
+- [x] **dev-programming-link Phase 2.2~3.1** — link-service + scheduling router(15 ep) + Tier0 rule engine + 72 테스트 (2026-06-08)
+- [x] **dev-programming-link Phase 1~2.1** — scheduling 모델(0041) + 데이터 이관(187노드/170링크) + node_service(사이클 가드/멤버 산출) + 19 테스트 (2026-06-08)
+- [x] **docs(scheduling)** — ADR-011 편성 통합 모델(ProgrammingNode+Link DAG) 설계 + plan 스캐폴드 17스텝 (2026-06-08)
+- [x] **refactor(single-content-form-shared)** — SingleContentForm 공유화 + pipeline S1 건별 리치 폼 + 사이드바 3단 트리 + 메뉴 정비 (2026-06-07)
+- [x] **feat(catalog-merge-preview)** — 세트 병합 시 신규/중복 카운트 표시 (preview_load_set + GET /sets/{id}/load-preview + SetListPanel 배지) (2026-06-07)
+- [x] **refactor(bulk-upload-shared)** — upload 폼 BulkUploadForm 공유화 + pipeline 대량(CSV) 동일 기능화 (upload 345→24줄, embed 87→3줄) (2026-06-07)
+- [x] **feat(contents-nav)** — 콘텐츠 관리 메뉴 정비 + 외부 소스 하위 이동 + TMDB/KOBIS/KMDB 백링크 (2026-06-07)
+- [x] **feat(catalog-workspace-ux3)** — Step 2 FE 완료 (api.ts dup_policy/loadSet opts + SaveSetDialog 템플릿 체크박스 + SetListPanel/BulkImportPanel 중복정책 UI + page.tsx 헤더 버튼 제거 + verify.sh 신규 case 3종) (2026-06-08)
+- [x] **feat(catalog-workspace-ux2)** — 네비 카탈로그→카테고리관리/생성 + 건별탭 서브토글(단건/텍스트일괄) + 대량(CSV) 파일전용 + SetListPanel 단일행+클릭 인라인 트리미리보기(◀템플릿저장·▶작업반영) (2026-06-07)
+- [x] **feat(catalog-workspace-ux)** — 3컬럼 헤더(카테고리 등록/목록/작업중) + 컬럼 순서 재배치 + 커스텀 템플릿 CRUD(localStorage·중복Overwrite·즉시반영) + 템플릿저장 버튼(목록카드·작업중헤더) + 카테고리목록 검색/페이징 + BE GET /sets/{id}/tree + 대량(CSV) 파일업로드(드래그&드롭·템플릿다운·txt들여쓰기보존) + 탭/버튼 라벨 정비 (2026-06-07)
+- [x] **feat(catalog-workspace-redesign)** — 3컬럼 레이아웃(InputPanel 탭/프리셋+SetListPanel 작업반영) + SetBar→SetDialogs/SetListPanel 리팩터 + BulkImportPanel onClose 옵셔널 (2026-06-07)
+- [x] **feat(catalog-sets)** — 카테고리 세트 다중 저장 관리 (Step B~E: set_service + router 6종 + SetBar UI + 17테스트 + e2e) (2026-06-07)
+- [x] **feat(catalog-category-workspace)** — 카탈로그 카테고리 트리 워크스페이스 — DnD(@dnd-kit 3존)/BulkImport(indent·path)/TEST데이터 30+노드/인라인 rename/CategoryDetailPanel + CategorySet 모델·0041 마이그레이션 + bulk API(13테스트) (2026-06-07)
 - [x] **fix(tmdb-cache)** — TMDB 캐시 목록 정렬 불안정 해소 (id tiebreaker 추가 — popularity/last_fetched_at 비유일 정렬 + daily sync 값 변동으로 새로고침마다 행 섞임) (2026-05-30)
 - [x] **dev-auto-headless BE 회귀 pytest** — enrich_content KMDB 한도 초과 graceful degrade(kmdb:daily_limit, 500 아님) 단위 테스트 3건 + verify.sh `auto-headless-be`. KMDB 한도는 _fetch_kmdb_with_cache 1개만 monkeypatch로 시뮬레이션 (2026-06-03)
 - [x] **dev-stage-auto-autofill 회귀 가드** — recompute_quality_score 단위 테스트 9케이스(mock 없음) + verify.sh `stage-auto-autofill-guard`(pytest + 빈필드보존/status불변/재계산 grep 가드). empty-only는 grep 가드로 대체 (2026-06-03)
