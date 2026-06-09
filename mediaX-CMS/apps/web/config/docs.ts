@@ -53,17 +53,13 @@ export const docsNav: NavSection[] = [
         ],
       },
       {
-        title: "큐레이션",
-        href: "/programming/categories",
+        title: "편성 관리",
+        href: "/programming/schedule",
         items: [
-          { title: "큐레이션 목록", href: "/programming/categories", label: "NEW" },
+          { title: "편성표 작성", href: "/programming/schedule" },
+          { title: "AI 큐레이션", href: "/programming/categories", label: "NEW" },
           { title: "새 큐레이션", href: "/programming/categories/new", label: "NEW" },
         ],
-      },
-      {
-        title: "편성 스케줄",
-        href: "/programming/schedule",
-        items: [],
       },
     ],
   },

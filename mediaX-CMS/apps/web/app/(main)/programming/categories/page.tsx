@@ -175,7 +175,7 @@ export default function CategoriesPage() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">큐레이션 워크벤치</h1>
+          <h1 className="text-2xl font-bold">AI 큐레이션</h1>
           <p className="text-sm text-muted-foreground mt-1">
             테마별 콘텐츠 묶음을 설계하고 관리합니다.
             {usedMock && (

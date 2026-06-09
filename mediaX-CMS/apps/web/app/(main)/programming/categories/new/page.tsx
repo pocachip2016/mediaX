@@ -70,7 +70,7 @@ function ManualCreateForm() {
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        큐레이션 목록
+        AI 큐레이션
       </Link>
 
       <div className="flex items-center gap-3 mb-6">

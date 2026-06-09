@@ -296,7 +296,7 @@ export function ExternalImport() {
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        큐레이션 목록
+        AI 큐레이션
       </Link>
 
       <div className="flex items-center gap-3 mb-6">
@@ -338,7 +338,7 @@ export function ExternalImport() {
             className="text-xs text-blue-600 hover:underline flex items-center gap-1"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            큐레이션 목록으로 돌아가기
+            AI 큐레이션으로 돌아가기
           </Link>
         </div>
       ) : (
