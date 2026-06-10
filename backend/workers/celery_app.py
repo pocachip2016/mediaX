@@ -20,6 +20,7 @@ celery_app = Celery(
         "workers.tasks.semantic_profile",  # ADR-011-05 ingest-time CUP
         "workers.tasks.scheduling_auto",   # ADR-012 자동편성 Beat + 이벤트 훅
         "workers.tasks.curation",          # ADR-013 홈 큐레이션 Beat
+        "workers.tasks.facet_tasks",       # MediSearch facet 배치 평가
     ],
 )
 
@@ -176,6 +177,14 @@ celery_app.conf.update(
             "task": "workers.tasks.curation.weekly_banner_plan",
             "schedule": crontab(hour=1, minute=10, day_of_week=1),
         },
+        # MediSearch facet 야간 배치 — 매일 21:40 KST
+        # 100건 × ~2분 ≈ 01:10 종료. 02:00~08:30 수집 블록 및 03:20 semantic-profile 분리.
+        # FACET_BATCH_ENABLED=False(기본)이면 beat 트리거 시 즉시 no-op.
+        "facet-analysis-nightly": {
+            "task": "workers.tasks.facet_tasks.dispatch_facet_batch",
+            "schedule": crontab(hour=21, minute=40),
+            "kwargs": {"trigger": "beat"},
+        },
     },
     broker_connection_retry_on_startup=True,
     broker_transport_options={
@@ -202,6 +211,7 @@ celery_app.conf.update(
         "workers.tasks.pipeline_auto.pipeline_auto_tick":  {"queue": "pipeline_fast"},
         "workers.tasks.pipeline_auto.process_fast_bucket": {"queue": "pipeline_fast"},
         "workers.tasks.pipeline_auto.process_ai_item":     {"queue": "pipeline_ai"},
+        "workers.tasks.facet_tasks.*":                     {"queue": "facet"},
     },
 )
 
