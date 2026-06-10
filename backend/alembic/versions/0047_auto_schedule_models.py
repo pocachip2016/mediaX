@@ -5,6 +5,7 @@ Revises: 0046
 Create Date: 2026-06-09
 """
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision = "0047"
@@ -15,23 +16,26 @@ depends_on = None
 
 def upgrade() -> None:
     # ── 1. ENUM 타입 생성 ──────────────────────────────────────────────────────
+    # create_type=False 객체를 한 번 정의해 명시적 create 후 모든 컬럼에서 재사용한다.
+    # (sa.Enum(create_type=False)를 create_table에 새로 넘기면 CREATE TYPE이 중복 emit되어
+    #  "type already exists"로 실패하므로, 동일 인스턴스를 공유해 암묵적 생성을 막는다.)
     # auto_stage: ProgrammingNode.auto_stage + SchedulingStageEvent.stage 공용
-    auto_stage_enum = sa.Enum(
+    auto_stage_enum = postgresql.ENUM(
         "p1_define", "p2_candidate", "p3_match", "p4_autoconfirm", "p5_conflict", "p6_publish",
-        name="auto_stage",
+        name="auto_stage", create_type=False,
     )
     auto_stage_enum.create(op.get_bind(), checkfirst=True)
 
     # auto_event_type: SchedulingStageEvent.event_type 전용
-    auto_event_type_enum = sa.Enum(
+    auto_event_type_enum = postgresql.ENUM(
         "entered", "completed", "skipped", "failed", "advanced", "rejected",
-        name="auto_event_type",
+        name="auto_event_type", create_type=False,
     )
     auto_event_type_enum.create(op.get_bind(), checkfirst=True)
 
     # ── 2. ProgrammingNode AUTO 추적 필드 ──────────────────────────────────────
     op.add_column("programming_nodes", sa.Column("auto_enabled",    sa.Boolean(),  nullable=False, server_default="false"))
-    op.add_column("programming_nodes", sa.Column("auto_stage",      sa.Enum("p1_define", "p2_candidate", "p3_match", "p4_autoconfirm", "p5_conflict", "p6_publish", name="auto_stage", create_type=False), nullable=True))
+    op.add_column("programming_nodes", sa.Column("auto_stage",      auto_stage_enum, nullable=True))
     op.add_column("programming_nodes", sa.Column("auto_hold",       sa.Boolean(),  nullable=False, server_default="false"))
     op.add_column("programming_nodes", sa.Column("auto_claimed_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("programming_nodes", sa.Column("auto_skipped_at", sa.DateTime(timezone=True), nullable=True))
@@ -45,8 +49,8 @@ def upgrade() -> None:
         "scheduling_stage_events",
         sa.Column("id",           sa.Integer(), primary_key=True),
         sa.Column("node_id",      sa.Integer(), sa.ForeignKey("programming_nodes.id", ondelete="CASCADE"), nullable=False, index=True),
-        sa.Column("stage",        sa.Enum("p1_define", "p2_candidate", "p3_match", "p4_autoconfirm", "p5_conflict", "p6_publish", name="auto_stage", create_type=False), nullable=False, index=True),
-        sa.Column("event_type",   sa.Enum("entered", "completed", "skipped", "failed", "advanced", "rejected", name="auto_event_type", create_type=False), nullable=False, index=True),
+        sa.Column("stage",        auto_stage_enum, nullable=False, index=True),
+        sa.Column("event_type",   auto_event_type_enum, nullable=False, index=True),
         sa.Column("source",       sa.String(100), nullable=True),
         sa.Column("started_at",   sa.DateTime(timezone=True), nullable=True, index=True),
         sa.Column("ended_at",     sa.DateTime(timezone=True), nullable=True),
