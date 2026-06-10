@@ -2560,3 +2560,97 @@ export const curationApi = {
   publishPlan: (id: number) =>
     request<BannerPlanOut>(`${CURATION}/banner/plans/${id}/publish`, { method: "POST" }),
 }
+
+
+// ── facetApi ──────────────────────────────────────────────
+
+const FACETS = "/api/programming/metadata/facets"
+
+export interface FacetCoverageOut {
+  movies_total: number
+  with_final_facet: number
+  stale: number
+  pending: number
+}
+
+export interface FacetBatchRunOut {
+  id: number
+  status: string
+  trigger: string
+  total_count: number
+  success_count: number
+  failed_count: number
+  skipped_count: number
+  error_log: unknown[] | null
+  params: Record<string, unknown> | null
+  created_at: string
+  finished_at: string | null
+  eta_seconds: number | null
+}
+
+export interface FacetDailyPoint {
+  date: string
+  runs: number
+  total: number
+  success: number
+  failed: number
+}
+
+export interface FacetPolicyOut {
+  id: number
+  log_enabled: boolean
+  updated_at: string
+}
+
+export interface FacetEventOut {
+  id: number
+  run_id: number
+  content_id: number | null
+  event_type: string
+  message: string | null
+  detail: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface FacetEventsPage {
+  items: FacetEventOut[]
+  next_cursor: number
+  total: number
+}
+
+export const facetApi = {
+  getCoverage: () =>
+    request<FacetCoverageOut>(`${FACETS}/coverage`),
+
+  listRuns: (limit = 20) =>
+    request<FacetBatchRunOut[]>(`${FACETS}/batch?limit=${limit}`),
+
+  getRun: (runId: number) =>
+    request<FacetBatchRunOut>(`${FACETS}/batch/${runId}`),
+
+  triggerBatch: (params?: { limit?: number; content_ids?: number[]; force?: boolean }) =>
+    request<{ queued: boolean }>(`${FACETS}/batch`, {
+      method: "POST",
+      body: JSON.stringify(params ?? {}),
+    }),
+
+  getDaily: (days = 14) =>
+    request<FacetDailyPoint[]>(`${FACETS}/daily?days=${days}`),
+
+  getPolicy: () =>
+    request<FacetPolicyOut>(`${FACETS}/policy`),
+
+  setPolicy: (logEnabled: boolean) =>
+    request<FacetPolicyOut>(`${FACETS}/policy`, {
+      method: "PATCH",
+      body: JSON.stringify({ log_enabled: logEnabled }),
+    }),
+
+  getEvents: (params: { since?: number; limit?: number; run_id?: number }) => {
+    const q = new URLSearchParams()
+    if (params.since !== undefined) q.set("since", String(params.since))
+    if (params.limit !== undefined) q.set("limit", String(params.limit))
+    if (params.run_id !== undefined) q.set("run_id", String(params.run_id))
+    return request<FacetEventsPage>(`${FACETS}/events?${q.toString()}`)
+  },
+}

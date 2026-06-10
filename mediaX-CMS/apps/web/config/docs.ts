@@ -39,6 +39,7 @@ export const docsNav: NavSection[] = [
               { title: "KOBIS", href: "/programming/sources/kobis" },
               { title: "KMDB", href: "/programming/sources/kmdb" },
               { title: "WebSearch", href: "/programming/contents/external" },
+              { title: "나무위키+facet", href: "/programming/sources/facet" },
             ],
           },
         ],

@@ -108,6 +108,34 @@ class FacetBatchRun(Base):
     finished_at = Column(DateTime(timezone=True))
 
 
+class FacetEvent(Base):
+    """
+    facet 배치 실시간 진행 이벤트 — FacetPolicy.log_enabled=True 일 때만 기록.
+    대시보드 실시간 로그 창의 since-id 커서 폴링 대상 (StageEvent 패턴 축약판).
+    """
+    __tablename__ = "facet_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, ForeignKey("facet_batch_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    content_id = Column(Integer, nullable=True, index=True)  # batch_* 이벤트는 None
+    event_type = Column(String(30), nullable=False, index=True)  # batch_started/item_started/item_success/item_failed/batch_done
+    message = Column(String(500), nullable=True)
+    detail = Column(JSON, nullable=True)  # {confidence, reason, ...}
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class FacetPolicy(Base):
+    """
+    facet 배치 전역 정책 — EnrichPolicy 패턴 단일 행(id=1).
+    log_enabled: facet_events 실시간 로깅 on/off (off 시 이벤트 미기록, 카운터는 항상 유지).
+    """
+    __tablename__ = "facet_policy"
+
+    id = Column(Integer, primary_key=True, default=1)
+    log_enabled = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class AiTaskSetting(Base):
     """
     AI Task 항목별 on/off 설정 — ADR-007 B4

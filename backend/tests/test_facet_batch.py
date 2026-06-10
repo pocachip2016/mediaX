@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from shared.database import get_db
 from api.programming.metadata.router_facets import router as facets_router
-from api.programming.metadata.models.external import FacetBatchRun
+from api.programming.metadata.models.external import FacetBatchRun, FacetEvent, FacetPolicy
 
 BASE = ""
 
@@ -97,3 +97,110 @@ def test_coverage_empty(client):
     assert data["with_final_facet"] == 0
     assert data["stale"] == 0
     assert data["pending"] == 0
+
+
+# ── GET /events ────────────────────────────────────────────────────────────────
+
+def test_events_empty(client):
+    r = client.get("/events?since=0")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["items"] == []
+    assert data["next_cursor"] == 0
+
+
+def test_events_since_cursor(client, db):
+    run = FacetBatchRun(status="running", trigger="manual", total_count=2)
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    e1 = FacetEvent(run_id=run.id, event_type="batch_started", message="시작")
+    e2 = FacetEvent(run_id=run.id, event_type="item_success", message="완료")
+    db.add_all([e1, e2])
+    db.commit()
+    db.refresh(e1)
+    db.refresh(e2)
+
+    # since=0 → 둘 다 반환
+    r = client.get("/events?since=0")
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 2
+    assert items[0]["event_type"] == "batch_started"
+
+    # since=e1.id → e2만 반환
+    r2 = client.get(f"/events?since={e1.id}")
+    assert r2.status_code == 200
+    items2 = r2.json()["items"]
+    assert len(items2) == 1
+    assert items2[0]["event_type"] == "item_success"
+
+
+def test_events_filter_by_run_id(client, db):
+    run1 = FacetBatchRun(status="done", trigger="manual", total_count=1)
+    run2 = FacetBatchRun(status="done", trigger="beat", total_count=1)
+    db.add_all([run1, run2])
+    db.commit()
+    db.refresh(run1)
+    db.refresh(run2)
+
+    db.add(FacetEvent(run_id=run1.id, event_type="batch_started", message="run1"))
+    db.add(FacetEvent(run_id=run2.id, event_type="batch_started", message="run2"))
+    db.commit()
+
+    r = client.get(f"/events?since=0&run_id={run1.id}")
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["message"] == "run1"
+
+
+# ── GET/PATCH /policy ─────────────────────────────────────────────────────────
+
+def test_policy_default_false(client):
+    r = client.get("/policy")
+    assert r.status_code == 200
+    assert r.json()["log_enabled"] is False
+
+
+def test_policy_toggle_roundtrip(client):
+    # ON
+    r = client.patch("/policy", json={"log_enabled": True})
+    assert r.status_code == 200
+    assert r.json()["log_enabled"] is True
+
+    # 재조회
+    r2 = client.get("/policy")
+    assert r2.json()["log_enabled"] is True
+
+    # OFF
+    r3 = client.patch("/policy", json={"log_enabled": False})
+    assert r3.json()["log_enabled"] is False
+
+
+# ── GET /daily ─────────────────────────────────────────────────────────────────
+
+def test_daily_empty(client):
+    r = client.get("/daily?days=7")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_daily_aggregates(client, db):
+    from datetime import datetime, timezone
+    run = FacetBatchRun(
+        status="done", trigger="manual",
+        total_count=10, success_count=8, failed_count=2,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(run)
+    db.commit()
+
+    r = client.get("/daily?days=1")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["runs"] == 1
+    assert data[0]["success"] == 8
+    assert data[0]["failed"] == 2

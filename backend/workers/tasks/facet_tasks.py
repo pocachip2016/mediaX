@@ -122,6 +122,33 @@ def _select_targets(db, limit: int, content_ids: list[int] | None,
     return [r[0] for r in rows]
 
 
+def _emit_event(
+    run_id: int,
+    content_id: int | None,
+    event_type: str,
+    message: str,
+    detail: dict | None = None,
+) -> None:
+    """FacetPolicy.log_enabled=True 일 때만 FacetEvent 기록. 실패해도 배치 중단 안 함."""
+    try:
+        from api.programming.metadata.models.external import FacetEvent, FacetPolicy
+
+        with SessionLocal() as db:
+            policy = db.query(FacetPolicy).filter(FacetPolicy.id == 1).first()
+            if not policy or not policy.log_enabled:
+                return
+            db.add(FacetEvent(
+                run_id=run_id,
+                content_id=content_id,
+                event_type=event_type,
+                message=message,
+                detail=detail,
+            ))
+            db.commit()
+    except Exception as exc:
+        logger.debug("[facet_event] emit failed (non-fatal): %s", exc)
+
+
 def _handle_stale_running_runs(db) -> None:
     """24h+ running 상태 run → failed 처리 (유실 태스크 방어)."""
     from api.programming.metadata.models.external import FacetBatchRun
@@ -208,6 +235,8 @@ def dispatch_facet_batch(
         run_id = run.id
 
     logger.info("[facet_batch] run %d started — %d targets", run_id, len(targets))
+    logger.info("[facet_batch] target IDs: %s", targets[:10])  # 첫 10개 표시
+    _emit_event(run_id, None, "batch_started", f"배치 시작 — 대상 {len(targets)}건", {"total": len(targets), "trigger": trigger})
 
     for cid in targets:
         evaluate_content_facet.apply_async(
@@ -264,12 +293,16 @@ def evaluate_content_facet(self, content_id: int, run_id: int) -> dict:
             run.status = "done"
             run.finished_at = datetime.now(timezone.utc)
             logger.info("[facet_batch] run %d done (%d/%d)", rid, run.success_count, run.failed_count)
+            _emit_event(rid, None, "batch_done", f"배치 완료 성공={run.success_count} 실패={run.failed_count}", {"success": run.success_count, "failed": run.failed_count})
+
+    _emit_event(run_id, content_id, "item_started", f"평가 시작 content_id={content_id}")
 
     try:
         with SessionLocal() as db:
             payload = _build_evaluate_payload(content_id, db)
     except ValueError as exc:
         logger.error("[facet] content %d not found: %s", content_id, exc)
+        _emit_event(run_id, content_id, "item_failed", f"콘텐츠 없음: {exc}", {"error": "not_found"})
         _fail_run_counter({"content_id": content_id, "error": str(exc)})
         return {"content_id": content_id, "status": "failed", "error": str(exc)}
 
@@ -290,6 +323,7 @@ def evaluate_content_facet(self, content_id: int, run_id: int) -> dict:
 
     except SoftTimeLimitExceeded:
         logger.warning("[facet] content %d soft timeout", content_id)
+        _emit_event(run_id, content_id, "item_failed", "soft timeout", {"error": "soft_timeout"})
         _fail_run_counter({"content_id": content_id, "error": "soft_timeout"})
         return {"content_id": content_id, "status": "timeout"}
 
@@ -300,6 +334,7 @@ def evaluate_content_facet(self, content_id: int, run_id: int) -> dict:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code not in (429, 500, 502, 503, 504):
             logger.error("[facet] content %d HTTP error %d", content_id, exc.response.status_code)
+            _emit_event(run_id, content_id, "item_failed", f"HTTP {exc.response.status_code}", {"error": f"http_{exc.response.status_code}"})
             _fail_run_counter({"content_id": content_id, "error": f"http_{exc.response.status_code}"})
             return {"content_id": content_id, "status": "failed"}
         raise
@@ -309,6 +344,7 @@ def evaluate_content_facet(self, content_id: int, run_id: int) -> dict:
     confidence = data.get("confidence", 0.0)
     if source_count == 0 or confidence == 0:
         logger.warning("[facet] content %d low quality source_count=%d confidence=%.2f", content_id, source_count, confidence)
+        _emit_event(run_id, content_id, "item_failed", f"low_quality source_count={source_count} confidence={confidence:.2f}", {"error": "low_quality", "source_count": source_count, "confidence": confidence})
         _fail_run_counter({"content_id": content_id, "error": "low_quality", "source_count": source_count, "confidence": confidence})
         return {"content_id": content_id, "status": "failed", "reason": "low_quality"}
 
@@ -354,5 +390,6 @@ def evaluate_content_facet(self, content_id: int, run_id: int) -> dict:
         _maybe_close_run(db, run_id)
         db.commit()
 
+    _emit_event(run_id, content_id, "item_success", f"저장 완료 confidence={confidence:.2f}", {"confidence": confidence, "source_count": source_count})
     logger.info("[facet] content %d saved confidence=%.2f", content_id, confidence)
     return {"content_id": content_id, "status": "ok", "confidence": confidence}

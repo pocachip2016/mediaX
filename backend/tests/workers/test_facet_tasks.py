@@ -28,7 +28,7 @@ from api.programming.metadata.models import (
     ExternalMetaSource, ExternalSourceType,
 )
 from api.programming.metadata.models.content import Content, ContentType
-from api.programming.metadata.models.external import FacetBatchRun
+from api.programming.metadata.models.external import FacetBatchRun, FacetEvent, FacetPolicy
 
 
 @pytest.fixture
@@ -284,3 +284,46 @@ def test_evaluate_demotes_existing_final(session):
     )
     assert len(new_finals) == 1
     assert new_finals[0].quality_score == 0.9
+
+
+# ── _emit_event / 로깅 ────────────────────────────────────────────────────────
+
+def _enable_log(session) -> FacetPolicy:
+    policy = FacetPolicy(id=1, log_enabled=True)
+    session.merge(policy)
+    session.commit()
+    return policy
+
+
+def test_emit_event_log_disabled_no_write(session):
+    """log_enabled=False → FacetEvent 미기록."""
+    from workers.tasks.facet_tasks import _emit_event
+
+    run = _make_run(session)
+    # policy 행 없음 (= log_enabled 기본 False)
+
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        _emit_event(run.id, None, "batch_started", "테스트")
+
+    assert session.query(FacetEvent).count() == 0
+
+
+def test_emit_event_log_enabled_writes_event(session):
+    """log_enabled=True → FacetEvent 기록."""
+    from workers.tasks.facet_tasks import _emit_event
+
+    run = _make_run(session)
+    _enable_log(session)
+
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        _emit_event(run.id, 42, "item_success", "저장 완료", {"confidence": 0.9})
+
+    events = session.query(FacetEvent).all()
+    assert len(events) == 1
+    assert events[0].run_id == run.id
+    assert events[0].content_id == 42
+    assert events[0].event_type == "item_success"
