@@ -115,6 +115,9 @@ def _select_targets(db, limit: int, content_ids: list[int] | None,
         )
         q = q.filter(~has_fresh_facet)
 
+    # TMDB 기준 최신→옛날 순 정렬 (production_year DESC, tie-break: id DESC)
+    q = q.order_by(Content.production_year.desc(), Content.id.desc())
+
     rows = q.limit(limit).all()
     return [r[0] for r in rows]
 

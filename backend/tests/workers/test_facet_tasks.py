@@ -117,6 +117,25 @@ def test_select_force_includes_fresh(session):
     assert movie.id in targets
 
 
+def test_select_orders_by_production_year_desc(session):
+    from workers.tasks.facet_tasks import _select_targets
+
+    # 3개 영화: 2024, 2020, 2022 production_year
+    m2024 = Content(title="최신영화", content_type=ContentType.movie, production_year=2024)
+    m2020 = Content(title="옛날영화", content_type=ContentType.movie, production_year=2020)
+    m2022 = Content(title="중간영화", content_type=ContentType.movie, production_year=2022)
+    session.add_all([m2024, m2020, m2022])
+    session.flush()
+
+    for c in [m2024, m2020, m2022]:
+        _make_tmdb_source(session, c.id)
+    session.commit()
+
+    targets = _select_targets(session, limit=100, content_ids=None, force=False, staleness_days=180)
+    # 예상 순서: 2024 → 2022 → 2020
+    assert targets == [m2024.id, m2022.id, m2020.id]
+
+
 def test_select_excludes_no_external_source(session):
     from workers.tasks.facet_tasks import _select_targets
 
