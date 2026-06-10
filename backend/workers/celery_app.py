@@ -19,6 +19,7 @@ celery_app = Celery(
         "workers.tasks.pipeline_auto",     # ADR-010 파이프라인 AUTO 워커
         "workers.tasks.semantic_profile",  # ADR-011-05 ingest-time CUP
         "workers.tasks.scheduling_auto",   # ADR-012 자동편성 Beat + 이벤트 훅
+        "workers.tasks.curation",          # ADR-013 홈 큐레이션 Beat
     ],
 )
 
@@ -169,6 +170,11 @@ celery_app.conf.update(
         "auto-schedule-tick": {
             "task": "workers.tasks.scheduling_auto.auto_schedule_tick",
             "schedule": 120.0,  # seconds
+        },
+        # ADR-013 주간 배너 편성안 자동 생성 — 매주 월요일 01:10 KST (멱등, week_start 기준)
+        "weekly-banner-plan": {
+            "task": "workers.tasks.curation.weekly_banner_plan",
+            "schedule": crontab(hour=1, minute=10, day_of_week=1),
         },
     },
     broker_connection_retry_on_startup=True,

@@ -15,7 +15,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.drop_index("ix_cat_item_rank", table_name="service_category_items")
-    op.drop_index("uq_cat_item_content", table_name="service_category_items")
+    op.drop_constraint("uq_cat_item_content", "service_category_items", type_="unique")
     op.drop_table("service_category_items")
     op.drop_table("service_categories")
 

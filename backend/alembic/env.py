@@ -12,6 +12,7 @@ import api.distribution.models  # noqa: F401
 import api.programming.catalog.models  # noqa: F401
 import api.programming.scheduling.models  # noqa: F401
 import api.programming.scheduling.profile_models  # noqa: F401
+import api.programming.curation.models  # noqa: F401
 # import api.design.models               # noqa: F401  — 추후 추가
 
 config = context.config

@@ -62,6 +62,14 @@ export const docsNav: NavSection[] = [
           { title: "자동편성관리", href: "/programming/schedule/auto", label: "NEW" },
         ],
       },
+      {
+        title: "홈 큐레이션",
+        href: "/programming/curation",
+        items: [
+          { title: "슬롯 보드", href: "/programming/curation", label: "NEW" },
+          { title: "배너 편성안", href: "/programming/curation/banner", label: "NEW" },
+        ],
+      },
     ],
   },
   {

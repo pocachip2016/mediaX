@@ -4,7 +4,6 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] dev-curation Step 2 — curation-model-migration (home_slots + curation_banner_plans + alembic 0048)
 
 ## Next (이번 마일스톤)
 
@@ -13,6 +12,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **dev-curation (1.3 홈 큐레이션)** — HomeSlot+BannerPlan+slot/banner서비스+12EP+SlotBoard+BannerReviewPanel+weekly Beat + 41 tests pass. PR#23 (2026-06-09)
 - [x] **1.3 큐레이션 모듈 설계 확정** — ADR-013 하이브리드(ProgrammingNode 재사용+curation 2테이블) + 8 step plan 스캐폴드 + verify curation-design PASS (2026-06-09)
 - [x] **dev-auto-schedule Step 8** — conflict_service 6 pytest pass + _exec_p5_conflict 실구현/P6 발행 가드 + GET /auto/sets/{id}/conflicts + ConflictItemOut/ConflictReportOut 스키마 + ConflictPanel.tsx(ExposureCalendar 재사용) + verify pass (2026-06-09)
 - [x] **dev-auto-schedule Steps 1~7** — ADR-012 자동편성 파이프라인: 모델/0047 + auto_service(claim/advance/run/score) + 엔드포인트 7종 + 트리거 3종(Beat/이벤트/온디맨드) + FE 콘솔 3컬럼 + AutoRunPanel/StageEventLog. verify s2~s7 통과, commit f9eddeb (2026-06-09)
