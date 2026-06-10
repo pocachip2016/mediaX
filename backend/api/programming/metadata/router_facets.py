@@ -2,10 +2,14 @@
 
 엔드포인트 prefix: /api/programming/metadata/facets
 
-  POST /batch          — 배치 수동 트리거 (실행 중 409, 아니면 202)
-  GET  /batch          — 최근 run 20건
-  GET  /batch/{run_id} — 단건 상세 (카운트, error_log, ETA)
-  GET  /coverage       — 전체 커버리지 통계
+  POST  /batch          — 배치 수동 트리거 (실행 중 409, 아니면 202)
+  GET   /batch          — 최근 run 20건
+  GET   /batch/{run_id} — 단건 상세 (카운트, error_log, ETA)
+  GET   /coverage       — 전체 커버리지 통계
+  GET   /events         — since-id 커서 실시간 이벤트 폴링
+  GET   /policy         — 로깅 정책 조회
+  PATCH /policy         — 로깅 정책 변경
+  GET   /daily          — 날짜별 배치 통계
 """
 
 from datetime import datetime, timedelta, timezone
@@ -96,13 +100,14 @@ def trigger_batch(req: BatchTriggerRequest, db: Session = Depends(get_db)):
             detail=f"run {running.id} already in progress (started {running.created_at})",
         )
 
-    dispatch_facet_batch.delay(
+    # 동기 호출 (celery broker 우회)
+    result = dispatch_facet_batch(
         limit=req.limit,
         content_ids=req.content_ids,
         force=req.force,
         trigger="manual",
     )
-    return {"queued": True}
+    return {"queued": True, "run_id": result.get("run_id")}
 
 
 @router.get("/batch", response_model=list[FacetBatchRunOut])
@@ -144,10 +149,14 @@ def get_coverage(db: Session = Depends(get_db)):
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.FACET_STALENESS_DAYS)
 
-    # 전체 영화 수
+    # TMDB 소스 보유 영화 수
     movies_total = (
-        db.query(func.count(Content.id))
-        .filter(Content.content_type == ContentType.movie)
+        db.query(func.count(func.distinct(ExternalMetaSource.content_id)))
+        .join(Content, ExternalMetaSource.content_id == Content.id)
+        .filter(
+            Content.content_type == ContentType.movie,
+            ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+        )
         .scalar()
     )
 
@@ -172,14 +181,10 @@ def get_coverage(db: Session = Depends(get_db)):
         .scalar()
     )
 
-    # pending: 외부소스 있는 영화 중 final facet 없는 수
-    has_external = exists().where(
+    # pending: TMDB 소스 있는 영화 중 final facet 없는 수
+    has_tmdb = exists().where(
         ExternalMetaSource.content_id == Content.id,
-        ExternalMetaSource.source_type.in_([
-            ExternalSourceType.tmdb,
-            ExternalSourceType.kmdb,
-            ExternalSourceType.kobis,
-        ]),
+        ExternalMetaSource.source_type == ExternalSourceType.tmdb,
     )
     has_final_facet = exists().where(
         ContentAIResult.content_id == Content.id,
@@ -190,7 +195,7 @@ def get_coverage(db: Session = Depends(get_db)):
         db.query(func.count(Content.id))
         .filter(
             Content.content_type == ContentType.movie,
-            has_external,
+            has_tmdb,
             ~has_final_facet,
         )
         .scalar()
@@ -202,3 +207,141 @@ def get_coverage(db: Session = Depends(get_db)):
         stale=stale,
         pending=pending,
     )
+
+
+# ── 이벤트 스트림 (since-id 커서) ─────────────────────────────────────────────
+
+class FacetEventOut(BaseModel):
+    id: int
+    run_id: int
+    content_id: Optional[int] = None
+    event_type: str
+    message: Optional[str] = None
+    detail: Optional[dict] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FacetEventsPage(BaseModel):
+    items: list[FacetEventOut]
+    next_cursor: int
+    total: int
+
+
+@router.get("/events", response_model=FacetEventsPage)
+def list_events(
+    since: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    run_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """since-id 커서 폴링 — 실시간 로그 FE 폴링용."""
+    from api.programming.metadata.models.external import FacetEvent
+
+    q = db.query(FacetEvent).filter(FacetEvent.id > since)
+    if run_id is not None:
+        q = q.filter(FacetEvent.run_id == run_id)
+    q = q.order_by(FacetEvent.id.asc())
+
+    items = q.limit(limit).all()
+    next_cursor = items[-1].id if items else since
+    total = q.count()
+
+    return FacetEventsPage(
+        items=[FacetEventOut.model_validate(e) for e in items],
+        next_cursor=next_cursor,
+        total=total,
+    )
+
+
+# ── 정책 조회/변경 ──────────────────────────────────────────────────────────
+
+class FacetPolicyOut(BaseModel):
+    id: int
+    log_enabled: bool
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FacetPolicyPatch(BaseModel):
+    log_enabled: bool
+
+
+def _get_or_create_policy(db: Session):
+    from api.programming.metadata.models.external import FacetPolicy
+    policy = db.query(FacetPolicy).filter(FacetPolicy.id == 1).first()
+    if not policy:
+        policy = FacetPolicy(id=1, log_enabled=False)
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
+    return policy
+
+
+@router.get("/policy", response_model=FacetPolicyOut)
+def get_policy(db: Session = Depends(get_db)):
+    """로깅 정책 조회."""
+    return _get_or_create_policy(db)
+
+
+@router.patch("/policy", response_model=FacetPolicyOut)
+def update_policy(req: FacetPolicyPatch, db: Session = Depends(get_db)):
+    """로깅 정책 변경."""
+    policy = _get_or_create_policy(db)
+    policy.log_enabled = req.log_enabled
+    policy.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(policy)
+    return policy
+
+
+# ── 일별 배치 통계 ──────────────────────────────────────────────────────────
+
+class FacetDailyPoint(BaseModel):
+    date: str
+    runs: int
+    total: int
+    success: int
+    failed: int
+
+
+@router.get("/daily", response_model=list[FacetDailyPoint])
+def get_daily_stats(
+    days: int = Query(14, ge=1, le=90),
+    db: Session = Depends(get_db),
+):
+    """최근 N일 날짜별 배치 실행 통계."""
+    from sqlalchemy import func
+    from api.programming.metadata.models.external import FacetBatchRun
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    date_col = func.date(FacetBatchRun.created_at)
+
+    rows = (
+        db.query(
+            date_col.label("date"),
+            func.count(FacetBatchRun.id).label("runs"),
+            func.coalesce(func.sum(FacetBatchRun.total_count), 0).label("total"),
+            func.coalesce(func.sum(FacetBatchRun.success_count), 0).label("success"),
+            func.coalesce(func.sum(FacetBatchRun.failed_count), 0).label("failed"),
+        )
+        .filter(FacetBatchRun.created_at >= since)
+        .group_by(date_col)
+        .order_by(date_col.asc())
+        .all()
+    )
+
+    return [
+        FacetDailyPoint(
+            date=str(r.date),
+            runs=r.runs,
+            total=r.total,
+            success=r.success,
+            failed=r.failed,
+        )
+        for r in rows
+    ]
