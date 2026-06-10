@@ -44,6 +44,7 @@ class AITaskType(str, enum.Enum):
     genre_normalized = "genre_normalized"       # 표준 장르 분류 (Phase1)
     mood_tags = "mood_tags"                     # 감성 태그 분류 (Phase1)
     keywords = "keywords"                       # 키워드 추출 (Phase1)
+    facet_analysis = "facet_analysis"           # MediSearch facet 평가 (멀티소스 검색→Ollama→병합)
 
 
 class ExternalMetaSource(Base):
@@ -85,6 +86,26 @@ class ContentAIResult(Base):
     processed_at = Column(DateTime(timezone=True), server_default=func.now())
 
     content = relationship("Content", back_populates="ai_results")
+
+
+class FacetBatchRun(Base):
+    """
+    MediSearch facet 배치 실행 추적 — 콘텐츠별 facet_analysis 일괄 처리 단위
+    run 1건 = beat/수동 트리거 1회. 결과 자체는 content_ai_results에 저장.
+    """
+    __tablename__ = "facet_batch_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)  # pending/running/done/failed/cancelled
+    trigger = Column(String(20), nullable=False, default="manual")  # beat | manual
+    total_count = Column(Integer, nullable=False, default=0)
+    success_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    skipped_count = Column(Integer, nullable=False, default=0)
+    error_log = Column(JSON)   # [{content_id, error}, ...]
+    params = Column(JSON)      # {limit, content_ids, force, ...} 트리거 시점 인자
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at = Column(DateTime(timezone=True))
 
 
 class AiTaskSetting(Base):
