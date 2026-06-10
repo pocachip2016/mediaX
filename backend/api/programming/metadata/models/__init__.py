@@ -56,6 +56,7 @@ from api.programming.metadata.models.external import (
     AiTaskSetting,
     EnrichPolicy,
     StageAutoPolicy,
+    FacetBatchRun,
 )
 
 # TMDB 로컬 캐시
@@ -87,7 +88,7 @@ __all__ = [
     # image
     "ContentImage", "ImageType",
     # external
-    "ExternalMetaSource", "ContentAIResult", "ExternalSourceType", "AITaskType", "AiTaskSetting", "EnrichPolicy", "StageAutoPolicy",
+    "ExternalMetaSource", "ContentAIResult", "ExternalSourceType", "AITaskType", "AiTaskSetting", "EnrichPolicy", "StageAutoPolicy", "FacetBatchRun",
     # tmdb cache
     "TmdbMovieCache", "TmdbTvCache", "TmdbPersonCache", "TmdbSyncLog",
     "TmdbSyncSource", "TmdbSyncStatus",

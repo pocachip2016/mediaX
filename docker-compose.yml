@@ -97,9 +97,10 @@ services:
   worker-ai:
     build: ./backend
     restart: unless-stopped
-    # ADR-010: AI 단계 전용 워커 — concurrency 2(ai_concurrency 기본값) + pipeline_ai 큐 전용
+    # ADR-010 + facet: AI 단계 + MediSearch facet 평가 공용 워커 — concurrency 2
+    # facet 큐 볼륨 증가 시 전용 worker-facet 컨테이너 분리 가능 (compose 블록 1개 추가).
     # dev: watchmedo auto-restart로 코드 변경 시 자동 재기동 (worker와 동일 정책).
-    command: watchmedo auto-restart --directory=/app --pattern=*.py --recursive --ignore-patterns=*/.* -- celery -A workers.celery_app worker --loglevel=info -Q pipeline_ai --concurrency=2
+    command: watchmedo auto-restart --directory=/app --pattern=*.py --recursive --ignore-patterns=*/.* -- celery -A workers.celery_app worker --loglevel=info -Q pipeline_ai,facet --concurrency=2
     volumes:
       - ./backend:/app
     env_file:
