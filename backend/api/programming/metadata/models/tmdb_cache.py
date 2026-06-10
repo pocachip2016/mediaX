@@ -3,6 +3,7 @@ TMDB 로컬 캐시 모델 + 외부 소스 동기화 이력
 
 테이블:
   - tmdb_movie_cache  : 영화 메타 캐시 (PK = TMDB movie_id)
+  - tmdb_movie_facets : MediSearch facet 평가 결과 (PK = TMDB movie_id)
   - tmdb_tv_cache     : TV 시리즈 메타 캐시 (PK = TMDB tv_id)
   - tmdb_person_cache : 인물 메타 캐시 (PK = TMDB person_id)
   - external_sync_log : 전 외부소스 동기화 이력 (TMDB·KOBIS 등 공용)
@@ -13,7 +14,7 @@ import enum
 import uuid
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, Date, Float, Integer,
+    BigInteger, Boolean, Column, Date, Float, ForeignKey, Integer,
     JSON, String, Text, Enum as SAEnum, UniqueConstraint,
 )
 from sqlalchemy.sql import func
@@ -72,6 +73,30 @@ class TmdbMovieCache(Base):
     first_fetched_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     last_fetched_at = Column(TIMESTAMP(timezone=True), server_default=func.now(),
                              onupdate=func.now(), nullable=False)
+
+
+class TmdbMovieFacet(Base):
+    """MediSearch facet 평가 결과 — TMDB 캐시 모집단 SSOT.
+
+    contents 등록 여부와 무관하게 tmdb_id 키로 저장.
+    Content 매핑이 있으면 content_ai_results 에도 dual-write (facet_tasks).
+
+    status:
+      success — facet_json 보유
+      skipped — 나무위키 문서 부재 등 영구 제외 (재선정 안 함, force 시에만)
+      failed  — 일시 오류, FACET_RETRY_BACKOFF_DAYS 백오프 후 FACET_MAX_ATTEMPTS 까지 재시도
+    """
+    __tablename__ = "tmdb_movie_facets"
+
+    tmdb_id = Column(BigInteger, ForeignKey("tmdb_movie_cache.id"), primary_key=True)
+    status = Column(String(20), nullable=False, index=True)  # success | skipped | failed
+    facet_json = Column(JSON)
+    confidence = Column(Float)
+    source_count = Column(Integer)
+    attempt_count = Column(Integer, nullable=False, default=0, server_default="0")
+    last_attempted_at = Column(TIMESTAMP(timezone=True))
+    evaluated_at = Column(TIMESTAMP(timezone=True), index=True)
+    last_error = Column(String(500))
 
 
 class TmdbTvCache(Base):

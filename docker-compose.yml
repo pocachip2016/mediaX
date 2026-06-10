@@ -108,6 +108,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - TZ=Asia/Seoul
+      - FACET_BATCH_ENABLED=true
     depends_on:
       postgres:
         condition: service_started

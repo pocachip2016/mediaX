@@ -70,11 +70,11 @@ def test_get_batch_run_404(client):
 
 def test_trigger_batch_queued(client, db):
     with patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_task:
-        mock_task.delay.return_value = None
+        mock_task.return_value = {"run_id": 1}
         r = client.post("/batch", json={})
     assert r.status_code == 202
     assert r.json()["queued"] is True
-    mock_task.delay.assert_called_once_with(limit=None, content_ids=None, force=False, trigger="manual")
+    mock_task.assert_called_once_with(limit=None, tmdb_ids=None, force=False, trigger="manual")
 
 
 def test_trigger_batch_409_when_running(client, db):

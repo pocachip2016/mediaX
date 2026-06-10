@@ -52,9 +52,14 @@ class Settings(BaseSettings):
     # MediSearch facet 배치 통합
     MEDISEARCH_URL: str = "http://medisearch-api:8000"
     MEDISEARCH_TIMEOUT_S: int = 420       # 콘텐츠 1건 평가 최악 ~5분 + 여유
-    FACET_BATCH_ENABLED: bool = False     # beat 야간 배치 opt-in (수동 트리거는 무관)
+    FACET_BATCH_ENABLED: bool = False     # beat/auto 트리거 opt-in (수동 트리거는 무관)
     FACET_BATCH_SIZE: int = 100           # run당 처리 상한
-    FACET_STALENESS_DAYS: int = 180       # final facet이 이보다 오래되면 재평가 대상
+    FACET_STALENESS_DAYS: int = 180       # success facet이 이보다 오래되면 재평가 대상
+    FACET_MIN_VOTE_COUNT: int = 10        # tmdb_movie_cache 모집단 vote_count 하한
+    FACET_RETRY_BACKOFF_DAYS: int = 30    # failed 재시도 백오프 (일)
+    FACET_MAX_ATTEMPTS: int = 3           # failed 최대 시도 횟수 (초과 시 영구 제외)
+    FACET_CONTINUOUS: bool = True         # run done 시 다음 run 자동 체인
+    FACET_CONTINUOUS_DELAY_S: int = 60    # 연속 체인 countdown (초)
 
     # Dam integration
     DAM_WEBHOOK_URL: str = ""

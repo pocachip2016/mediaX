@@ -1,13 +1,15 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { RefreshCw, Film, CheckCircle, Clock, AlertCircle, XCircle, Activity, Play } from "lucide-react"
+import { RefreshCw, Film, CheckCircle, Clock, AlertCircle, XCircle, Activity, Play, Search, ChevronLeft, ChevronRight } from "lucide-react"
 import {
   facetApi,
   type FacetBatchRunOut,
   type FacetCoverageOut,
   type FacetDailyPoint,
   type FacetPolicyOut,
+  type FacetResultOut,
+  type FacetResultsPage,
 } from "@/lib/api"
 import { FacetEventLog } from "@/components/sources/FacetEventLog"
 
@@ -119,6 +121,12 @@ export default function FacetPage() {
   const [triggering, setTriggering] = useState(false)
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null)
   const [policyLoading, setPolicyLoading] = useState(false)
+  const [resultStatus, setResultStatus] = useState<"success" | "skipped" | "failed">("failed")
+  const [resultSearch, setResultSearch] = useState("")
+  const [resultPage, setResultPage] = useState(1)
+  const [results, setResults] = useState<FacetResultsPage | null>(null)
+  const [resultsLoading, setResultsLoading] = useState(false)
+  const [selectedFacet, setSelectedFacet] = useState<FacetResultOut | null>(null)
 
   const hasRunning = runs.some((r) => r.status === "running")
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -168,12 +176,35 @@ export default function FacetPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [hasRunning, fetchAll])
 
+  const fetchResults = useCallback(async () => {
+    setResultsLoading(true)
+    try {
+      const data = await facetApi.getResults({
+        status: resultStatus,
+        search: resultSearch || undefined,
+        page: resultPage,
+        size: 20,
+      })
+      setResults(data)
+      setSelectedFacet(null)
+    } catch (e) {
+      console.error("fetchResults error:", e)
+    } finally {
+      setResultsLoading(false)
+    }
+  }, [resultStatus, resultSearch, resultPage])
+
+  useEffect(() => {
+    fetchResults()
+  }, [fetchResults])
+
   async function handleTrigger() {
     setTriggering(true)
     setTriggerMsg(null)
     try {
-      await facetApi.triggerBatch()
-      setTriggerMsg("배치가 큐에 등록됐습니다.")
+      // 모든 대상 처리: limit 없음 (설정 기본값 100) → 여러 run 자동 체인
+      await facetApi.triggerBatch({ force: false })
+      setTriggerMsg("모든 대상 처리가 시작됐습니다. (연속 디스패치 중)")
       await fetchAll()
     } catch (err: unknown) {
       const status = (err as { status?: number })?.status
@@ -222,7 +253,7 @@ export default function FacetPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Play className="w-3.5 h-3.5" />
-            {triggering ? "등록 중..." : hasRunning ? "실행 중" : "배치 실행"}
+            {triggering ? "등록 중..." : hasRunning ? "실행 중 (중지 미지원)" : "모두 처리"}
           </button>
         </div>
       </div>
@@ -342,6 +373,187 @@ export default function FacetPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Facet 결과 목록 */}
+      <div className="xl:grid xl:grid-cols-[1fr_320px] xl:gap-4">
+        <div className="space-y-4">
+          <h3 className="text-sm font-medium">Facet 결과 목록</h3>
+
+          {/* 필터 바 */}
+          <div className="flex gap-2 flex-wrap">
+            {(["success", "skipped", "failed"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => { setResultStatus(s); setResultPage(1) }}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  resultStatus === s
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                ●{" "}
+                {{success: "성공", skipped: "스킵", failed: "실패"}[s]}
+              </button>
+            ))}
+            <div className="flex-1 min-w-[200px] relative flex items-center">
+              <Search className="absolute left-3 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                value={resultSearch}
+                onChange={(e) => { setResultSearch(e.target.value); setResultPage(1) }}
+                placeholder="제목 검색..."
+                className="w-full pl-9 pr-8 py-1.5 text-sm rounded-md border bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <button
+              onClick={() => fetchResults()}
+              disabled={resultsLoading}
+              className="px-3 py-1.5 text-sm rounded-md bg-muted hover:bg-muted/80 disabled:opacity-50"
+            >
+              새로고침
+            </button>
+          </div>
+
+          {/* 결과 테이블 */}
+          <div className="rounded-xl border bg-card shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 border-b">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">TMDB ID</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">제목</th>
+                  <th className="text-center px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">점수</th>
+                  <th className="text-center px-4 py-3 font-medium text-muted-foreground">소스</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">평가일</th>
+                  <th className="text-center px-4 py-3 font-medium text-muted-foreground">상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultsLoading ? (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">로딩...</td></tr>
+                ) : !results || results.items.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">결과가 없습니다.</td></tr>
+                ) : (
+                  results.items.map((item) => (
+                    <tr
+                      key={item.tmdb_id}
+                      onClick={() => setSelectedFacet(item)}
+                      className={`border-t hover:bg-muted/30 transition-colors cursor-pointer ${
+                        selectedFacet?.tmdb_id === item.tmdb_id ? "bg-primary/5 border-l-2 border-l-primary" : ""
+                      }`}
+                    >
+                      <td className="px-4 py-3 text-muted-foreground tabular-nums text-xs">{item.tmdb_id}</td>
+                      <td className="px-4 py-3 hidden sm:table-cell truncate">{item.title}</td>
+                      <td className="px-4 py-3 text-center hidden md:table-cell tabular-nums">
+                        {item.confidence ? `${(item.confidence * 100).toFixed(0)}%` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-center tabular-nums">{item.source_count ?? "-"}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs hidden lg:table-cell">
+                        {item.evaluated_at ? new Date(item.evaluated_at).toLocaleDateString("ko-KR") : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-block px-2 py-0.5 text-xs rounded-full ${
+                          item.status === "success" ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" :
+                          item.status === "skipped" ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :
+                          "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                        }`}>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 페이지네이션 */}
+          {results && results.total > 0 && (
+            <div className="flex justify-between items-center text-xs text-muted-foreground">
+              <div>총 {results.total}건</div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setResultPage(Math.max(1, resultPage - 1))}
+                  disabled={resultPage === 1}
+                  className="p-1 hover:bg-muted disabled:opacity-50"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                {Array.from({ length: Math.ceil(results.total / 20) })
+                  .map((_, i) => i + 1)
+                  .filter((p) => Math.abs(p - resultPage) < 3 || [1, Math.ceil(results.total / 20)].includes(p))
+                  .map((p, i, arr) => (
+                    <div key={p}>
+                      {i > 0 && arr[i - 1] !== p - 1 && <span className="px-1">…</span>}
+                      <button
+                        onClick={() => setResultPage(p)}
+                        className={`min-w-[32px] h-8 rounded-md transition-colors ${
+                          p === resultPage
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    </div>
+                  ))}
+                <button
+                  onClick={() => setResultPage(Math.min(Math.ceil(results.total / 20), resultPage + 1))}
+                  disabled={resultPage >= Math.ceil(results.total / 20)}
+                  className="p-1 hover:bg-muted disabled:opacity-50"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 상세 패널 */}
+        {selectedFacet && (
+          <div className="hidden xl:block rounded-xl border bg-card p-4 shadow-sm space-y-4 h-fit">
+            <div>
+              <p className="font-medium text-sm">{selectedFacet.title}</p>
+              <p className="text-xs text-muted-foreground mt-1">{selectedFacet.original_title}</p>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">상태</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                  selectedFacet.status === "success" ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" :
+                  selectedFacet.status === "skipped" ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :
+                  "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                }`}>
+                  {selectedFacet.status}
+                </span>
+              </div>
+              <div className="flex justify-between"><span className="text-muted-foreground">점수</span><span>{selectedFacet.confidence ? `${(selectedFacet.confidence * 100).toFixed(0)}%` : "-"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">소스</span><span>{selectedFacet.source_count ?? "-"}개</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">시도</span><span>{selectedFacet.attempt_count}</span></div>
+            </div>
+            {selectedFacet.facet_preview && Object.keys(selectedFacet.facet_preview).length > 0 && (
+              <div className="border-t pt-3 space-y-2">
+                <p className="text-xs font-medium">주요 필드</p>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {Object.entries(selectedFacet.facet_preview).map(([k, v]) => (
+                      <tr key={k} className="border-t">
+                        <td className="px-2 py-1 text-muted-foreground">{k}</td>
+                        <td className="px-2 py-1 text-right">{String(v)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {selectedFacet.last_error && (
+              <div className="border-t pt-3">
+                <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">오류</p>
+                <p className="text-xs text-muted-foreground break-words">{selectedFacet.last_error}</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

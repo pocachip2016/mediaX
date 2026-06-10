@@ -7305,6 +7305,28 @@ print('  ✓ SQLite create_all 스모크 통과 (home_slots, curation_banner_pla
     echo "=== PASS ==="
     ;;
 
+  facet-confidence-skip)
+    echo "=== facet-confidence-skip: confidence=None 가드 + source 미확보 신작 skipped ==="
+    cd "$BACKEND"
+    # 1. 분류/포맷 순수 단위 테스트
+    python3 -m pytest tests/test_facet_classify.py -q --tb=short 2>&1 | tail -5
+    echo "  ✓ _decide_facet_outcome / _fmt_conf 단위 테스트 통과"
+    # 2. 구조 가드 (회귀 방지)
+    python3 -c "
+import pathlib, re
+src = pathlib.Path('workers/tasks/facet_tasks.py').read_text()
+assert 'def _decide_facet_outcome' in src, '_decide_facet_outcome 없음'
+assert 'def _fmt_conf' in src, '_fmt_conf 없음'
+assert 'no_sources' in src, 'source 미확보 → no_sources skipped 분류 없음 (③ 회귀)'
+# 성공 경로에 raw confidence:.2f / %.2f 잔존 시 None 크래시 재발 (② 회귀) — 헬퍼 함수 내부는 제외
+src_without_fmt_conf = re.sub(r'def _fmt_conf.*?return.*?\"n/a\"', '', src, flags=re.DOTALL)
+assert 'confidence:.2f' not in src_without_fmt_conf, 'task 본체에 raw confidence:.2f 잔존 (② 회귀 — None 크래시)'
+assert 'confidence=%.2f' not in src_without_fmt_conf, 'task 본체에 raw confidence=%.2f 잔존 (② 회귀 — None 크래시)'
+print('  ✓ 구조 가드 통과 (_decide_facet_outcome/_fmt_conf 존재, task 본체 raw confidence 0)')
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"

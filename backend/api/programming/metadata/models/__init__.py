@@ -64,6 +64,7 @@ from api.programming.metadata.models.external import (
 # TMDB 로컬 캐시
 from api.programming.metadata.models.tmdb_cache import (
     TmdbMovieCache,
+    TmdbMovieFacet,
     TmdbTvCache,
     TmdbPersonCache,
     TmdbSyncLog,
@@ -92,7 +93,7 @@ __all__ = [
     # external
     "ExternalMetaSource", "ContentAIResult", "ExternalSourceType", "AITaskType", "AiTaskSetting", "EnrichPolicy", "StageAutoPolicy", "FacetBatchRun", "FacetEvent", "FacetPolicy",
     # tmdb cache
-    "TmdbMovieCache", "TmdbTvCache", "TmdbPersonCache", "TmdbSyncLog",
+    "TmdbMovieCache", "TmdbMovieFacet", "TmdbTvCache", "TmdbPersonCache", "TmdbSyncLog",
     "TmdbSyncSource", "TmdbSyncStatus",
     # kmdb cache
     "KmdbMovieCache",

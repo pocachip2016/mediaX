@@ -6,6 +6,7 @@
   GET   /batch          — 최근 run 20건
   GET   /batch/{run_id} — 단건 상세 (카운트, error_log, ETA)
   GET   /coverage       — 전체 커버리지 통계
+  GET   /results        — facet 평가 결과 목록 (status/search/페이지네이션)
   GET   /events         — since-id 커서 실시간 이벤트 폴링
   GET   /policy         — 로깅 정책 조회
   PATCH /policy         — 로깅 정책 변경
@@ -31,7 +32,7 @@ _ETA_SECONDS_PER_ITEM = 120  # 콘텐츠 1건당 예상 소요 시간
 
 class BatchTriggerRequest(BaseModel):
     limit: Optional[int] = None
-    content_ids: Optional[list[int]] = None
+    tmdb_ids: Optional[list[int]] = None
     force: bool = False
 
 
@@ -54,10 +55,34 @@ class FacetBatchRunOut(BaseModel):
 
 
 class CoverageOut(BaseModel):
-    movies_total: int
-    with_final_facet: int
-    stale: int
-    pending: int
+    movies_total: int   # tmdb_movie_cache 모집단 (개봉작 + vote_count 필터)
+    with_final_facet: int  # status=success 수
+    stale: int          # success 중 staleness 초과
+    pending: int        # movies_total - success - skipped
+    skipped: int = 0    # 나무위키 부재 등 영구 제외
+
+
+class FacetResultOut(BaseModel):
+    tmdb_id: int
+    title: str
+    original_title: Optional[str] = None
+    status: str  # success | skipped | failed
+    confidence: Optional[float] = None
+    source_count: Optional[int] = None
+    attempt_count: int
+    evaluated_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    facet_preview: Optional[dict] = None  # {primary_genre, tension, immersion, sentiment, ending_type}
+
+    class Config:
+        from_attributes = True
+
+
+class FacetResultsPage(BaseModel):
+    items: list[FacetResultOut]
+    total: int
+    page: int
+    size: int
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
@@ -103,7 +128,7 @@ def trigger_batch(req: BatchTriggerRequest, db: Session = Depends(get_db)):
     # 동기 호출 (celery broker 우회)
     result = dispatch_facet_batch(
         limit=req.limit,
-        content_ids=req.content_ids,
+        tmdb_ids=req.tmdb_ids,
         force=req.force,
         trigger="manual",
     )
@@ -140,72 +165,56 @@ def get_batch_run(run_id: int, db: Session = Depends(get_db)):
 
 @router.get("/coverage", response_model=CoverageOut)
 def get_coverage(db: Session = Depends(get_db)):
-    """영화 콘텐츠 facet 커버리지 통계."""
-    from sqlalchemy import exists, func
-    from api.programming.metadata.models import (
-        ContentAIResult, AITaskType, ExternalMetaSource, ExternalSourceType,
+    """TMDB 캐시 모집단(개봉작 + vote_count 필터) 기준 facet 커버리지 통계."""
+    from datetime import date
+    from sqlalchemy import func, or_
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieCache, TmdbMovieFacet
+
+    today = date.today()
+    freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=settings.FACET_STALENESS_DAYS)
+
+    # 모집단: 개봉작 중 한국영화(vote 무관) OR 해외영화(vote>=N)
+    population_filter = or_(
+        TmdbMovieCache.original_language == "ko",
+        TmdbMovieCache.vote_count >= settings.FACET_MIN_VOTE_COUNT,
     )
-    from api.programming.metadata.models.content import Content, ContentType
-
-    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.FACET_STALENESS_DAYS)
-
-    # TMDB 소스 보유 영화 수
     movies_total = (
-        db.query(func.count(func.distinct(ExternalMetaSource.content_id)))
-        .join(Content, ExternalMetaSource.content_id == Content.id)
+        db.query(func.count(TmdbMovieCache.id))
         .filter(
-            Content.content_type == ContentType.movie,
-            ExternalMetaSource.source_type == ExternalSourceType.tmdb,
+            TmdbMovieCache.release_date.isnot(None),
+            TmdbMovieCache.release_date <= today,
+            population_filter,
         )
         .scalar()
-    )
+    ) or 0
 
-    # final facet 보유 수
-    with_final_facet = (
-        db.query(func.count(func.distinct(ContentAIResult.content_id)))
-        .filter(
-            ContentAIResult.task_type == AITaskType.facet_analysis,
-            ContentAIResult.is_final.is_(True),
-        )
-        .scalar()
+    # status별 집계
+    counts = dict(
+        db.query(TmdbMovieFacet.status, func.count(TmdbMovieFacet.tmdb_id))
+        .group_by(TmdbMovieFacet.status)
+        .all()
     )
+    success_total = counts.get("success", 0)
+    skipped_total = counts.get("skipped", 0)
 
-    # stale: final facet이 staleness 기준 초과
+    # stale: success 중 staleness 기준 초과
     stale = (
-        db.query(func.count(func.distinct(ContentAIResult.content_id)))
+        db.query(func.count(TmdbMovieFacet.tmdb_id))
         .filter(
-            ContentAIResult.task_type == AITaskType.facet_analysis,
-            ContentAIResult.is_final.is_(True),
-            ContentAIResult.processed_at < cutoff,
+            TmdbMovieFacet.status == "success",
+            TmdbMovieFacet.evaluated_at < freshness_cutoff,
         )
         .scalar()
-    )
+    ) or 0
 
-    # pending: TMDB 소스 있는 영화 중 final facet 없는 수
-    has_tmdb = exists().where(
-        ExternalMetaSource.content_id == Content.id,
-        ExternalMetaSource.source_type == ExternalSourceType.tmdb,
-    )
-    has_final_facet = exists().where(
-        ContentAIResult.content_id == Content.id,
-        ContentAIResult.task_type == AITaskType.facet_analysis,
-        ContentAIResult.is_final.is_(True),
-    )
-    pending = (
-        db.query(func.count(Content.id))
-        .filter(
-            Content.content_type == ContentType.movie,
-            has_tmdb,
-            ~has_final_facet,
-        )
-        .scalar()
-    )
+    pending = max(movies_total - success_total - skipped_total, 0)
 
     return CoverageOut(
         movies_total=movies_total,
-        with_final_facet=with_final_facet,
+        with_final_facet=success_total,
         stale=stale,
         pending=pending,
+        skipped=skipped_total,
     )
 
 
@@ -228,6 +237,68 @@ class FacetEventsPage(BaseModel):
     items: list[FacetEventOut]
     next_cursor: int
     total: int
+
+
+@router.get("/results", response_model=FacetResultsPage)
+def get_facet_results(
+    status: str = Query("success", regex="^(success|skipped|failed)$"),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """facet 평가 결과 목록. status/search/페이지네이션 지원."""
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieCache, TmdbMovieFacet
+
+    q = (
+        db.query(
+            TmdbMovieFacet.tmdb_id,
+            TmdbMovieCache.title,
+            TmdbMovieCache.original_title,
+            TmdbMovieFacet.status,
+            TmdbMovieFacet.confidence,
+            TmdbMovieFacet.source_count,
+            TmdbMovieFacet.attempt_count,
+            TmdbMovieFacet.evaluated_at,
+            TmdbMovieFacet.last_error,
+            TmdbMovieFacet.facet_json,
+        )
+        .join(TmdbMovieCache, TmdbMovieCache.id == TmdbMovieFacet.tmdb_id)
+        .filter(TmdbMovieFacet.status == status)
+    )
+
+    if search:
+        q = q.filter(TmdbMovieCache.title.ilike(f"%{search}%"))
+
+    total = q.count()
+    offset = (page - 1) * size
+
+    rows = q.order_by(TmdbMovieFacet.evaluated_at.desc()).offset(offset).limit(size).all()
+
+    items = []
+    for row in rows:
+        facet_json = row.facet_json or {}
+        preview = {}
+        for key in ["primary_genre", "tension", "immersion", "sentiment", "ending_type"]:
+            if key in facet_json:
+                preview[key] = facet_json[key]
+
+        items.append(
+            FacetResultOut(
+                tmdb_id=row.tmdb_id,
+                title=row.title,
+                original_title=row.original_title,
+                status=row.status,
+                confidence=row.confidence,
+                source_count=row.source_count,
+                attempt_count=row.attempt_count,
+                evaluated_at=row.evaluated_at,
+                last_error=row.last_error,
+                facet_preview=preview if preview else None,
+            )
+        )
+
+    return FacetResultsPage(items=items, total=total, page=page, size=size)
 
 
 @router.get("/events", response_model=FacetEventsPage)

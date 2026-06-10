@@ -2571,6 +2571,7 @@ export interface FacetCoverageOut {
   with_final_facet: number
   stale: number
   pending: number
+  skipped?: number
 }
 
 export interface FacetBatchRunOut {
@@ -2612,6 +2613,26 @@ export interface FacetEventOut {
   created_at: string
 }
 
+export interface FacetResultOut {
+  tmdb_id: number
+  title: string
+  original_title?: string
+  status: string
+  confidence?: number
+  source_count?: number
+  attempt_count: number
+  evaluated_at?: string
+  last_error?: string
+  facet_preview?: Record<string, unknown>
+}
+
+export interface FacetResultsPage {
+  items: FacetResultOut[]
+  total: number
+  page: number
+  size: number
+}
+
 export interface FacetEventsPage {
   items: FacetEventOut[]
   next_cursor: number
@@ -2628,11 +2649,20 @@ export const facetApi = {
   getRun: (runId: number) =>
     request<FacetBatchRunOut>(`${FACETS}/batch/${runId}`),
 
-  triggerBatch: (params?: { limit?: number; content_ids?: number[]; force?: boolean }) =>
+  triggerBatch: (params?: { limit?: number; tmdb_ids?: number[]; force?: boolean }) =>
     request<{ queued: boolean }>(`${FACETS}/batch`, {
       method: "POST",
       body: JSON.stringify(params ?? {}),
     }),
+
+  getResults: (params?: { status?: string; search?: string; page?: number; size?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.status) q.set("status", params.status)
+    if (params?.search) q.set("search", params.search)
+    if (params?.page !== undefined) q.set("page", String(params.page))
+    if (params?.size !== undefined) q.set("size", String(params.size))
+    return request<FacetResultsPage>(`${FACETS}/results?${q.toString()}`)
+  },
 
   getDaily: (days = 14) =>
     request<FacetDailyPoint[]>(`${FACETS}/daily?days=${days}`),
