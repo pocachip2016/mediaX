@@ -121,12 +121,13 @@ export default function FacetPage() {
   const [triggering, setTriggering] = useState(false)
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null)
   const [policyLoading, setPolicyLoading] = useState(false)
-  const [resultStatus, setResultStatus] = useState<"success" | "skipped" | "failed">("failed")
+  const [resultStatus, setResultStatus] = useState<"success" | "skipped" | "failed">("success")
   const [resultSearch, setResultSearch] = useState("")
   const [resultPage, setResultPage] = useState(1)
   const [results, setResults] = useState<FacetResultsPage | null>(null)
   const [resultsLoading, setResultsLoading] = useState(false)
   const [selectedFacet, setSelectedFacet] = useState<FacetResultOut | null>(null)
+  const [stopping, setStopping] = useState(false)
 
   const hasRunning = runs.some((r) => r.status === "running")
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -218,6 +219,25 @@ export default function FacetPage() {
     }
   }
 
+  async function handleStop() {
+    setStopping(true)
+    setTriggerMsg(null)
+    try {
+      await facetApi.stopBatch()
+      setTriggerMsg("배치 중지 요청이 완료됐습니다.")
+      await fetchAll()
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status
+      if (status === 404) {
+        setTriggerMsg("실행 중인 배치가 없습니다.")
+      } else {
+        setTriggerMsg("중지 요청 중 오류가 발생했습니다.")
+      }
+    } finally {
+      setStopping(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32 text-muted-foreground">
@@ -247,14 +267,25 @@ export default function FacetPage() {
           >
             <RefreshCw className="w-4 h-4" />새로고침
           </button>
-          <button
-            onClick={handleTrigger}
-            disabled={triggering || hasRunning}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Play className="w-3.5 h-3.5" />
-            {triggering ? "등록 중..." : hasRunning ? "실행 중 (중지 미지원)" : "모두 처리"}
-          </button>
+          {hasRunning ? (
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              {stopping ? "중지 중..." : "중지"}
+            </button>
+          ) : (
+            <button
+              onClick={handleTrigger}
+              disabled={triggering}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Play className="w-3.5 h-3.5" />
+              {triggering ? "등록 중..." : "모두 처리"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -325,10 +356,11 @@ export default function FacetPage() {
         )}
       </div>
 
-      {/* 최근 run 테이블 */}
-      <div>
-        <h3 className="text-sm font-medium mb-3">최근 배치 실행</h3>
-        <div className="rounded-xl border bg-card shadow-sm overflow-y-auto max-h-[280px]">
+      {/* 최근 run 테이블 + 실시간 이벤트 로그 (50:50 레이아웃) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <h3 className="text-sm font-medium mb-3">최근 배치 실행</h3>
+          <div className="rounded-xl border bg-card shadow-sm overflow-y-auto max-h-[280px]">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b sticky top-0 z-10">
               <tr>
@@ -372,6 +404,13 @@ export default function FacetPage() {
               )}
             </tbody>
           </table>
+        </div>
+        </div>
+
+        {/* 실시간 이벤트 로그 */}
+        <div>
+          <h3 className="text-sm font-medium mb-3">실시간 이벤트</h3>
+          <FacetEventLog maxHeight="5.5rem" />
         </div>
       </div>
 
@@ -531,12 +570,12 @@ export default function FacetPage() {
               <div className="flex justify-between"><span className="text-muted-foreground">소스</span><span>{selectedFacet.source_count ?? "-"}개</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">시도</span><span>{selectedFacet.attempt_count}</span></div>
             </div>
-            {selectedFacet.facet_preview && Object.keys(selectedFacet.facet_preview).length > 0 && (
+            {selectedFacet.facet_json && Object.keys(selectedFacet.facet_json).length > 0 && (
               <div className="border-t pt-3 space-y-2">
                 <p className="text-xs font-medium">주요 필드</p>
                 <table className="w-full text-xs">
                   <tbody>
-                    {Object.entries(selectedFacet.facet_preview).map(([k, v]) => (
+                    {Object.entries(selectedFacet.facet_json).map(([k, v]) => (
                       <tr key={k} className="border-t">
                         <td className="px-2 py-1 text-muted-foreground">{k}</td>
                         <td className="px-2 py-1 text-right">{String(v)}</td>

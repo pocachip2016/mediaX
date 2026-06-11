@@ -401,13 +401,21 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
             run.finished_at = datetime.now(timezone.utc)
             logger.info("[facet_batch] run %d done (s=%d f=%d sk=%d)", rid, run.success_count, run.failed_count, run.skipped_count)
             _emit_event(rid, None, "batch_done", f"배치 완료 성공={run.success_count} 실패={run.failed_count} 스킵={run.skipped_count}")
-            # 연속 디스패치
-            if settings.FACET_CONTINUOUS:
+            # 연속 디스패치 (cancelled run은 재체인 차단)
+            if settings.FACET_CONTINUOUS and run.status == "done":
                 dispatch_facet_batch.apply_async(
                     kwargs={"trigger": "auto"},
                     countdown=settings.FACET_CONTINUOUS_DELAY_S,
                 )
                 logger.info("[facet_batch] 연속 dispatch 예약 (countdown=%ds)", settings.FACET_CONTINUOUS_DELAY_S)
+
+    # 중지 guard — run이 running이 아니면(취소/완료) 즉시 no-op.
+    # cancelled run의 잔여 enqueue 태스크가 카운터 미증가로 빠르게 소진되어 체인이 끊긴다.
+    with SessionLocal() as db:
+        run = db.query(FacetBatchRun).filter(FacetBatchRun.id == run_id).first()
+    if not run or run.status != "running":
+        logger.debug("[facet] tmdb %d skip — run %d not running (%s)", tmdb_id, run_id, run and run.status)
+        return {"tmdb_id": tmdb_id, "status": "cancelled"}
 
     _emit_event(run_id, tmdb_id, "item_started", f"평가 시작 tmdb_id={tmdb_id}")
 

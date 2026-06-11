@@ -2623,7 +2623,7 @@ export interface FacetResultOut {
   attempt_count: number
   evaluated_at?: string
   last_error?: string
-  facet_preview?: Record<string, unknown>
+  facet_json?: Record<string, unknown>
 }
 
 export interface FacetResultsPage {
@@ -2653,6 +2653,11 @@ export const facetApi = {
     request<{ queued: boolean }>(`${FACETS}/batch`, {
       method: "POST",
       body: JSON.stringify(params ?? {}),
+    }),
+
+  stopBatch: () =>
+    request<{ stopped: boolean; run_id: number }>(`${FACETS}/batch/stop`, {
+      method: "POST",
     }),
 
   getResults: (params?: { status?: string; search?: string; page?: number; size?: number }) => {
