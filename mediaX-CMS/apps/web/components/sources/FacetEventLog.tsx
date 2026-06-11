@@ -22,6 +22,38 @@ const EVENT_BADGE: Record<string, string> = {
 
 const MAX_EVENTS = 300
 
+const PROVIDER_LABEL: Record<string, string> = {
+  playwright: "namu",
+  wikipedia:  "wiki",
+  kowiki:     "kowiki",
+  omdb:       "omdb",
+  tmdb:       "tmdb",
+  kmdb:       "kmdb",
+}
+
+interface ProviderEntry { p: string; docs: number; eval: boolean }
+
+function ProviderBadges({ detail }: { detail: Record<string, unknown> | null }) {
+  const providers = (detail as { providers?: ProviderEntry[] } | null)?.providers
+  if (!providers?.length) return null
+  return (
+    <span className="ml-1.5 inline-flex flex-wrap gap-0.5">
+      {providers.map((pr) => {
+        const label = PROVIDER_LABEL[pr.p] ?? pr.p
+        return pr.eval ? (
+          <span key={pr.p} className="px-1 py-0 rounded text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+            {label}✓
+          </span>
+        ) : (
+          <span key={pr.p} className="px-1 py-0 rounded text-[10px] bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500">
+            {label}·{pr.docs}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
 interface FacetEventLogProps {
   runId?: number
   maxHeight?: string
@@ -124,7 +156,10 @@ export function FacetEventLog({ runId, maxHeight = "400px" }: FacetEventLogProps
                     {ev.content_id != null ? `#${ev.content_id}` : ""}
                   </td>
                   <td className={`px-2 py-1.5 ${EVENT_COLOR[ev.event_type] ?? ""}`}>
-                    {ev.message ?? ""}
+                    <span className="inline-flex flex-wrap items-center gap-0.5">
+                      {ev.message ?? ""}
+                      <ProviderBadges detail={ev.detail} />
+                    </span>
                   </td>
                 </tr>
               ))}

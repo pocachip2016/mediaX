@@ -127,6 +127,51 @@ def test_handle_stale_returns_zero_when_fresh(session):
     assert run.status == "running"
 
 
+# ── _summarize_sources ───────────────────────────────────────────────────────
+
+def test_summarize_sources_normal():
+    """정상 입력 → compact 요약 반환."""
+    from workers.tasks.facet_tasks import _summarize_sources
+
+    data = {
+        "sources_detail": [
+            {"provider": "playwright", "docs_count": 1, "evaluated": True},
+            {"provider": "wikipedia", "docs_count": 1, "evaluated": True},
+            {"provider": "omdb", "docs_count": 0, "evaluated": False},
+        ]
+    }
+    result = _summarize_sources(data)
+    assert result is not None
+    assert len(result) == 3
+    assert result[0] == {"p": "playwright", "docs": 1, "eval": True}
+    assert result[2] == {"p": "omdb", "docs": 0, "eval": False}
+
+
+def test_summarize_sources_missing():
+    """sources_detail 없음/None/빈 리스트 → None 반환."""
+    from workers.tasks.facet_tasks import _summarize_sources
+
+    assert _summarize_sources({}) is None
+    assert _summarize_sources({"sources_detail": None}) is None
+    assert _summarize_sources({"sources_detail": []}) is None
+
+
+def test_summarize_sources_broken_entries():
+    """키 누락 엔트리 포함 → raise 없이 통과, 정상 엔트리는 반환."""
+    from workers.tasks.facet_tasks import _summarize_sources
+
+    data = {
+        "sources_detail": [
+            "not_a_dict",
+            {"provider": "kowiki", "docs_count": 2, "evaluated": True},
+        ]
+    }
+    result = _summarize_sources(data)
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["p"] == "kowiki"
+
+
 # ── check_stale_facet_runs ────────────────────────────────────────────────────
 
 def test_watchdog_no_stale_no_redispatch(session):

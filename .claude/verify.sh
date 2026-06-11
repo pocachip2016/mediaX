@@ -7327,6 +7327,36 @@ print('  ✓ 구조 가드 통과 (_decide_facet_outcome/_fmt_conf 존재, task 
     echo "=== PASS ==="
     ;;
 
+  PD2)
+    echo "=== PD2: event-log-source-badge — FE 타입체크 + 구조 가드 ==="
+    cd "$PROJ/mediaX-CMS"
+    npm run typecheck 2>&1 | tail -5
+    echo "  ✓ TypeScript 타입체크 통과"
+    grep -q "ProviderBadges" "$PROJ/mediaX-CMS/apps/web/components/sources/FacetEventLog.tsx" \
+      || { echo "FAIL: ProviderBadges 컴포넌트 없음"; exit 1; }
+    grep -q "PROVIDER_LABEL" "$PROJ/mediaX-CMS/apps/web/components/sources/FacetEventLog.tsx" \
+      || { echo "FAIL: PROVIDER_LABEL 매핑 없음"; exit 1; }
+    grep -q "detail" "$PROJ/mediaX-CMS/apps/web/components/sources/FacetEventLog.tsx" \
+      || { echo "FAIL: detail 필드 미사용"; exit 1; }
+    echo "  ✓ ProviderBadges + PROVIDER_LABEL + detail 렌더 확인"
+    echo "=== PASS ==="
+    ;;
+
+  PD1)
+    echo "=== PD1: worker-source-emit — _summarize_sources 단위 테스트 ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 python -m pytest tests/workers/test_facet_tasks.py -k summarize_sources -q --tb=short 2>&1 | tail -10
+    echo "  ✓ _summarize_sources 단위 테스트 통과"
+    python3 -c "
+import pathlib
+src = pathlib.Path('workers/tasks/facet_tasks.py').read_text()
+assert 'def _summarize_sources' in src, '_summarize_sources 헬퍼 없음'
+assert '\"providers\": _summarize_sources' in src, 'item_success/item_skipped emit에 providers 첨부 없음'
+print('  ✓ _summarize_sources 헬퍼 + emit providers 첨부 확인')
+"
+    echo "=== PASS ==="
+    ;;
+
   stale-run-watchdog)
     echo "=== stale-run-watchdog: stale facet run 감지 Beat 태스크 ==="
     cd "$BACKEND"

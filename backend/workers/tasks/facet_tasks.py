@@ -245,6 +245,29 @@ def _dual_write_content_ai_result(db, tmdb_id: int, facet_json: dict, confidence
         ))
 
 
+def _summarize_sources(data: dict) -> list[dict] | None:
+    """MediSearch 응답의 sources_detail → compact [{p, docs, eval}] 요약.
+
+    입력 형태가 예상과 달라도 절대 raise하지 않음 — emit은 best-effort.
+    """
+    try:
+        raw = data.get("sources_detail")
+        if not raw:
+            return None
+        result = []
+        for e in raw:
+            if not isinstance(e, dict):
+                continue
+            result.append({
+                "p": e.get("provider"),
+                "docs": e.get("docs_count") or 0,
+                "eval": bool(e.get("evaluated")),
+            })
+        return result or None
+    except Exception:
+        return None
+
+
 def _emit_event(run_id: int, tmdb_id: int | None, event_type: str, message: str, detail: dict | None = None) -> None:
     """FacetPolicy.log_enabled=True 일 때만 FacetEvent 기록. 실패해도 배치 중단 안 함."""
     try:
@@ -440,7 +463,7 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
             "title": cache_row.title,
             "production_year": production_year,
             "tmdb_id": tmdb_id,
-            "require_namu": True,
+            "require_namu": False,
         }
     except ValueError as exc:
         logger.error("[facet] tmdb %d not found in cache: %s", tmdb_id, exc)
@@ -493,7 +516,7 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
         with SessionLocal() as db:
             _upsert_tmdb_facet(db, tmdb_id, "skipped", last_error=reason)
             db.commit()
-        _emit_event(run_id, tmdb_id, "item_skipped", f"skipped: {reason}", {"reason": reason})
+        _emit_event(run_id, tmdb_id, "item_skipped", f"skipped: {reason}", {"reason": reason, "providers": _summarize_sources(data)})
         _inc_counter("skipped_count")
         return {"tmdb_id": tmdb_id, "status": "skipped", "reason": reason}
 
@@ -511,7 +534,7 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
         _maybe_close_run(db, run_id)
         db.commit()
 
-    _emit_event(run_id, tmdb_id, "item_success", f"저장 완료 tmdb_id={tmdb_id} confidence={_fmt_conf(confidence)}", {"confidence": confidence})
+    _emit_event(run_id, tmdb_id, "item_success", f"저장 완료 tmdb_id={tmdb_id} confidence={_fmt_conf(confidence)}", {"confidence": confidence, "providers": _summarize_sources(data)})
     logger.info("[facet] tmdb %d saved confidence=%s", tmdb_id, _fmt_conf(confidence))
     return {"tmdb_id": tmdb_id, "status": "ok", "confidence": confidence}
 

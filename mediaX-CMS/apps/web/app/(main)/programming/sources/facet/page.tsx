@@ -357,18 +357,18 @@ export default function FacetPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div>
           <h3 className="text-sm font-medium mb-3">최근 배치 실행</h3>
-          <div className="rounded-xl border bg-card shadow-sm overflow-y-auto" style={{ maxHeight: "7rem" }}>
-          <table className="w-full text-sm">
+          <div className="rounded-xl border bg-card shadow-sm overflow-y-auto" style={{ maxHeight: "8rem" }}>
+          <table className="w-full text-xs">
             <thead className="bg-card border-b sticky top-0 z-10">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground w-12">ID</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">상태</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">트리거</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">전체</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">성공</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">실패</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">시작</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">ETA</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground w-12">ID</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">상태</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground hidden sm:table-cell">트리거</th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground">전체</th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground">성공</th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground">실패</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground hidden md:table-cell">시작</th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground hidden lg:table-cell">ETA</th>
               </tr>
             </thead>
             <tbody>
