@@ -7327,6 +7327,26 @@ print('  ✓ 구조 가드 통과 (_decide_facet_outcome/_fmt_conf 존재, task 
     echo "=== PASS ==="
     ;;
 
+  stale-run-watchdog)
+    echo "=== stale-run-watchdog: stale facet run 감지 Beat 태스크 ==="
+    cd "$BACKEND"
+    docker exec mediax-backend-1 python -m pytest tests/workers/test_facet_tasks.py -q --tb=short 2>&1 | tail -10
+    echo "  ✓ facet_tasks 단위 테스트 통과"
+    # 구조 가드
+    python3 -c "
+import pathlib
+src = pathlib.Path('workers/tasks/facet_tasks.py').read_text()
+assert 'def check_stale_facet_runs' in src, 'check_stale_facet_runs 태스크 없음'
+assert 'def _handle_stale_running_runs' in src, '_handle_stale_running_runs 없음'
+assert '-> int' in src or 'return closed' in src, '_handle_stale_running_runs 반환값 없음'
+beat_src = pathlib.Path('workers/celery_app.py').read_text()
+assert 'facet-stale-run-watchdog' in beat_src, 'Beat 스케줄 미등록'
+assert '600' in beat_src, 'watchdog 10분 주기 미설정'
+print('  ✓ check_stale_facet_runs 태스크 + Beat 스케줄 확인')
+"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"

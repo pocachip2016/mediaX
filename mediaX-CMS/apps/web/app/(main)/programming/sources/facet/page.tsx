@@ -357,7 +357,7 @@ export default function FacetPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div>
           <h3 className="text-sm font-medium mb-3">최근 배치 실행</h3>
-          <div className="rounded-xl border bg-card shadow-sm overflow-y-auto max-h-[280px]">
+          <div className="rounded-xl border bg-card shadow-sm overflow-y-auto" style={{ maxHeight: "5.5rem" }}>
           <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b sticky top-0 z-10">
               <tr>
