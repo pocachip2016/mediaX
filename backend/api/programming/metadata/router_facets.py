@@ -72,7 +72,7 @@ class FacetResultOut(BaseModel):
     attempt_count: int
     evaluated_at: Optional[datetime] = None
     last_error: Optional[str] = None
-    facet_preview: Optional[dict] = None  # {primary_genre, tension, immersion, sentiment, ending_type}
+    facet_json: Optional[dict] = None  # 전체 facet 분석 필드
 
     class Config:
         from_attributes = True
@@ -303,12 +303,6 @@ def get_facet_results(
 
     items = []
     for row in rows:
-        facet_json = row.facet_json or {}
-        preview = {}
-        for key in ["primary_genre", "tension", "immersion", "sentiment", "ending_type"]:
-            if key in facet_json:
-                preview[key] = facet_json[key]
-
         items.append(
             FacetResultOut(
                 tmdb_id=row.tmdb_id,
@@ -320,7 +314,7 @@ def get_facet_results(
                 attempt_count=row.attempt_count,
                 evaluated_at=row.evaluated_at,
                 last_error=row.last_error,
-                facet_preview=preview if preview else None,
+                facet_json=row.facet_json or None,
             )
         )
 

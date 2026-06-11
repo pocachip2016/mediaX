@@ -121,7 +121,7 @@ export default function FacetPage() {
   const [triggering, setTriggering] = useState(false)
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null)
   const [policyLoading, setPolicyLoading] = useState(false)
-  const [resultStatus, setResultStatus] = useState<"success" | "skipped" | "failed">("failed")
+  const [resultStatus, setResultStatus] = useState<"success" | "skipped" | "failed">("success")
   const [resultSearch, setResultSearch] = useState("")
   const [resultPage, setResultPage] = useState(1)
   const [results, setResults] = useState<FacetResultsPage | null>(null)
@@ -356,10 +356,11 @@ export default function FacetPage() {
         )}
       </div>
 
-      {/* 최근 run 테이블 */}
-      <div>
-        <h3 className="text-sm font-medium mb-3">최근 배치 실행</h3>
-        <div className="rounded-xl border bg-card shadow-sm overflow-y-auto max-h-[280px]">
+      {/* 최근 run 테이블 + 실시간 이벤트 로그 (50:50 레이아웃) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <h3 className="text-sm font-medium mb-3">최근 배치 실행</h3>
+          <div className="rounded-xl border bg-card shadow-sm overflow-y-auto max-h-[280px]">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b sticky top-0 z-10">
               <tr>
@@ -403,6 +404,13 @@ export default function FacetPage() {
               )}
             </tbody>
           </table>
+        </div>
+        </div>
+
+        {/* 실시간 이벤트 로그 */}
+        <div>
+          <h3 className="text-sm font-medium mb-3">실시간 이벤트</h3>
+          <FacetEventLog maxHeight="5.5rem" />
         </div>
       </div>
 
@@ -562,12 +570,12 @@ export default function FacetPage() {
               <div className="flex justify-between"><span className="text-muted-foreground">소스</span><span>{selectedFacet.source_count ?? "-"}개</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">시도</span><span>{selectedFacet.attempt_count}</span></div>
             </div>
-            {selectedFacet.facet_preview && Object.keys(selectedFacet.facet_preview).length > 0 && (
+            {selectedFacet.facet_json && Object.keys(selectedFacet.facet_json).length > 0 && (
               <div className="border-t pt-3 space-y-2">
                 <p className="text-xs font-medium">주요 필드</p>
                 <table className="w-full text-xs">
                   <tbody>
-                    {Object.entries(selectedFacet.facet_preview).map(([k, v]) => (
+                    {Object.entries(selectedFacet.facet_json).map(([k, v]) => (
                       <tr key={k} className="border-t">
                         <td className="px-2 py-1 text-muted-foreground">{k}</td>
                         <td className="px-2 py-1 text-right">{String(v)}</td>

@@ -24,9 +24,10 @@ const MAX_EVENTS = 300
 
 interface FacetEventLogProps {
   runId?: number
+  maxHeight?: string
 }
 
-export function FacetEventLog({ runId }: FacetEventLogProps) {
+export function FacetEventLog({ runId, maxHeight = "400px" }: FacetEventLogProps) {
   const [events, setEvents]   = useState<FacetEventOut[]>([])
   const [isPaused, setIsPaused] = useState(false)
   const cursorRef = useRef(0)
@@ -98,7 +99,8 @@ export function FacetEventLog({ runId }: FacetEventLogProps) {
       {/* 로그 스크롤 창 */}
       <div
         ref={listRef}
-        className="max-h-[400px] overflow-y-auto rounded-lg border bg-muted/30 font-mono text-xs"
+        className="overflow-y-auto rounded-lg border bg-muted/30 font-mono text-xs"
+        style={{ maxHeight }}
         onScroll={() => { isUserScrollingRef.current = true }}
         onMouseLeave={() => { isUserScrollingRef.current = false }}
       >

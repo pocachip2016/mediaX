@@ -2623,7 +2623,7 @@ export interface FacetResultOut {
   attempt_count: number
   evaluated_at?: string
   last_error?: string
-  facet_preview?: Record<string, unknown>
+  facet_json?: Record<string, unknown>
 }
 
 export interface FacetResultsPage {
