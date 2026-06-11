@@ -351,9 +351,6 @@ export default function FacetPage() {
           </button>
         </div>
 
-        {policy?.log_enabled && (
-          <FacetEventLog />
-        )}
       </div>
 
       {/* 최근 run 테이블 + 실시간 이벤트 로그 (50:50 레이아웃) */}

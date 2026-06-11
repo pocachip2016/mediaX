@@ -185,6 +185,11 @@ celery_app.conf.update(
             "schedule": crontab(hour=21, minute=40),
             "kwargs": {"trigger": "beat"},
         },
+        # facet stale run watchdog — 10분마다 (워커 재시작/크래시로 교착된 run 감지 + 재디스패치)
+        "facet-stale-run-watchdog": {
+            "task": "workers.tasks.facet_tasks.check_stale_facet_runs",
+            "schedule": 600.0,  # 10분
+        },
     },
     broker_connection_retry_on_startup=True,
     broker_transport_options={

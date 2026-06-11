@@ -89,3 +89,86 @@ def test_emit_event_log_enabled_writes_event(session):
     assert events[0].run_id == run.id
     assert events[0].content_id == 42
     assert events[0].event_type == "item_success"
+
+
+# ── _handle_stale_running_runs (return value) ─────────────────────────────────
+
+def test_handle_stale_returns_count(session):
+    """stale run이 있으면 closed 수를 반환한다."""
+    from datetime import timedelta
+    from workers.tasks.facet_tasks import _handle_stale_running_runs
+
+    run = FacetBatchRun(
+        status="running",
+        trigger="auto",
+        total_count=1,
+        created_at=datetime.now(timezone.utc) - timedelta(hours=3),
+    )
+    session.add(run)
+    session.commit()
+
+    closed = _handle_stale_running_runs(session)
+    assert closed == 1
+    session.refresh(run)
+    assert run.status == "failed"
+
+
+def test_handle_stale_returns_zero_when_fresh(session):
+    """stale 기준 미달 run은 0 반환."""
+    from workers.tasks.facet_tasks import _handle_stale_running_runs
+
+    run = FacetBatchRun(status="running", trigger="auto", total_count=1)
+    session.add(run)
+    session.commit()
+
+    closed = _handle_stale_running_runs(session)
+    assert closed == 0
+    session.refresh(run)
+    assert run.status == "running"
+
+
+# ── check_stale_facet_runs ────────────────────────────────────────────────────
+
+def test_watchdog_no_stale_no_redispatch(session):
+    """stale run 없으면 재디스패치 안 함."""
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+
+        from workers.tasks.facet_tasks import check_stale_facet_runs
+        result = check_stale_facet_runs()
+
+    assert result == {"closed": 0}
+    mock_dispatch.apply_async.assert_not_called()
+
+
+def test_watchdog_stale_triggers_redispatch(session):
+    """stale run 있고 FACET_CONTINUOUS=True면 재디스패치한다."""
+    from datetime import timedelta
+
+    run = FacetBatchRun(
+        status="running",
+        trigger="auto",
+        total_count=1,
+        created_at=datetime.now(timezone.utc) - timedelta(hours=3),
+    )
+    session.add(run)
+    session.commit()
+
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch, \
+         patch("workers.tasks.facet_tasks.settings") as mock_settings:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_settings.FACET_CONTINUOUS = True
+        mock_settings.FACET_BATCH_ENABLED = True
+        mock_settings.FACET_CONTINUOUS_DELAY_S = 60
+
+        from workers.tasks.facet_tasks import check_stale_facet_runs
+        result = check_stale_facet_runs()
+
+    assert result == {"closed": 1}
+    mock_dispatch.apply_async.assert_called_once_with(
+        kwargs={"trigger": "auto"}, countdown=60
+    )

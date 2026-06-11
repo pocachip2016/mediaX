@@ -266,8 +266,12 @@ def _emit_event(run_id: int, tmdb_id: int | None, event_type: str, message: str,
         logger.debug("[facet_event] emit failed (non-fatal): %s", exc)
 
 
-def _handle_stale_running_runs(db) -> None:
-    """stale running run → failed. 기준: max(2h, total_count × 240s) 경과."""
+def _handle_stale_running_runs(db) -> int:
+    """stale running run → failed. 기준: max(2h, total_count × 240s) 경과.
+
+    Returns:
+        닫힌 run 수 (0이면 stale run 없음).
+    """
     from api.programming.metadata.models.external import FacetBatchRun
 
     running_runs = (
@@ -276,15 +280,21 @@ def _handle_stale_running_runs(db) -> None:
         .all()
     )
     now = datetime.now(timezone.utc)
+    closed = 0
     for run in running_runs:
         dynamic_secs = max(7200, run.total_count * 240)
-        threshold = run.created_at + timedelta(seconds=dynamic_secs)
+        created = run.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        threshold = created + timedelta(seconds=dynamic_secs)
         if now >= threshold:
             run.status = "failed"
             run.finished_at = now
-    if any(r.status == "failed" for r in running_runs):
+            closed += 1
+    if closed:
         db.commit()
-        logger.warning("[facet_batch] %d stale running→failed", sum(1 for r in running_runs if r.status == "failed"))
+        logger.warning("[facet_batch] %d stale running→failed", closed)
+    return closed
 
 
 # ── 태스크 ───────────────────────────────────────────────────────────────────
@@ -504,3 +514,31 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
     _emit_event(run_id, tmdb_id, "item_success", f"저장 완료 tmdb_id={tmdb_id} confidence={_fmt_conf(confidence)}", {"confidence": confidence})
     logger.info("[facet] tmdb %d saved confidence=%s", tmdb_id, _fmt_conf(confidence))
     return {"tmdb_id": tmdb_id, "status": "ok", "confidence": confidence}
+
+
+@celery_app.task(
+    name="workers.tasks.facet_tasks.check_stale_facet_runs",
+    queue="facet",
+    bind=False,
+    max_retries=0,
+    acks_late=False,
+)
+def check_stale_facet_runs() -> dict:
+    """stale running run 감지 Beat 태스크 (10분 주기).
+
+    워커 재시작/크래시로 unacked 메시지가 고아가 되어 run이 닫히지 않는 경우를
+    주기적으로 감지해 failed로 마킹하고, FACET_CONTINUOUS=True면 즉시 재디스패치.
+    """
+    with SessionLocal() as db:
+        closed = _handle_stale_running_runs(db)
+
+    if closed and settings.FACET_CONTINUOUS and settings.FACET_BATCH_ENABLED:
+        dispatch_facet_batch.apply_async(
+            kwargs={"trigger": "auto"},
+            countdown=settings.FACET_CONTINUOUS_DELAY_S,
+        )
+        logger.info("[facet_watchdog] %d stale run(s) closed → 재디스패치 예약 (countdown=%ds)", closed, settings.FACET_CONTINUOUS_DELAY_S)
+    else:
+        logger.info("[facet_watchdog] closed=%d (no redispatch: continuous=%s enabled=%s)", closed, settings.FACET_CONTINUOUS, settings.FACET_BATCH_ENABLED)
+
+    return {"closed": closed}
