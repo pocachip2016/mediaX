@@ -1,5 +1,47 @@
 # CHANGELOG — mediaX
 
+## 2026-06-09
+
+- **1.3 큐레이션 모듈 설계 확정** — ADR-013 하이브리드(ProgrammingNode 재사용+curation 2테이블) + 8 step plan 스캐폴드 + verify curation-design PASS
+- **dev-auto-schedule Step 8** — conflict_service 6 pytest pass + _exec_p5_conflict + GET /auto/sets/{id}/conflicts + ConflictPanel.tsx(ExposureCalendar 재사용) + verify pass
+- **dev-auto-schedule Steps 1~7** — ADR-012 자동편성 파이프라인: 모델/0047 + auto_service + 엔드포인트 7종 + 트리거 3종 + FE 콘솔 3컬럼 + AutoRunPanel/StageEventLog. commit f9eddeb
+- **dev-programming-link Phase 5.1~5.3** — migrate-catalog/curation-fe-api 어댑터 전환 + 레거시 ORM 0 + 125테스트 pass
+- **dev-programming-link Phase 4.4** — BackrefList/ExposureCalendar/NodeGraph FE 3종 + GET /sets/{id}/graph
+- **feat(scheduling Phase 3.4~4.3)** — suggest_service + 엔드포인트 3종 + schedulingApi 21함수 + 편성 보드 3컬럼(dnd-kit+pin+AI추천) + interpret_intent Tier1 + AiSuggestPanel
+
+## 2026-06-08
+
+- **feat(scheduling Phase 3.2c+3.3)** — node-embed-theme + tier2-semantic-match(match_service cosine+facet 가중합 + 23테스트)
+- **feat(catalog-node-adapter)** — ProgrammingNode/Link DAG 완전 마이그레이션. alembic 0044 + 16테스트
+- **feat(catalog-restore+facet-intensity)** — catalog workspace 6컴포넌트 복원 + facet intensity axis(9 tests)
+- **dev-programming-link Phase 1~3.2** — CUP 모델(0042) + bge-m3 임베딩 + facet 통제어휘 + link-service + scheduling router(15 ep) + Tier0 rule engine + 110테스트
+- **docs(scheduling)** — ADR-011 편성 통합 모델(ProgrammingNode+Link DAG) 설계 + plan 스캐폴드 17스텝
+- **feat(catalog-workspace-ux3)** — Step 2 FE: dup_policy/loadSet opts + SaveSetDialog + verify.sh 신규 case 3종
+
+## 2026-06-07
+
+- **refactor(single-content-form-shared)** — SingleContentForm 공유화 + pipeline S1 건별 리치 폼 + 사이드바 3단 트리
+- **feat(catalog-merge-preview)** — 세트 병합 신규/중복 카운트 표시
+- **refactor(bulk-upload-shared)** — BulkUploadForm 공유화 (upload 345→24줄)
+- **feat(contents-nav)** — 콘텐츠 관리 메뉴 정비 + TMDB/KOBIS/KMDB 백링크
+- **feat(catalog-workspace-ux/ux2)** — 3컬럼 헤더/커스텀 템플릿 CRUD + 탭 서브토글/CSV 파일전용/인라인 트리미리보기
+- **feat(catalog-workspace-redesign/sets)** — 3컬럼 레이아웃 + 카테고리 세트 다중 저장 관리(17테스트 + e2e)
+- **feat(catalog-category-workspace)** — DnD(@dnd-kit)/BulkImport/30+노드/인라인 rename + CategorySet 모델·0041 + bulk API(13테스트)
+
+## 2026-06-01~06-03
+
+- **dev-auto-headless** — AUTO 헤드리스 단계 자동 연쇄: run-to-stable + stage-게이트 + quality_score 재계산. verify 12체크. PR #18
+- **dev-auto-headless BE 회귀 pytest** — KMDB graceful degrade 단위 테스트 3건
+- **dev-stage-auto-autofill 회귀 가드** — recompute_quality_score 단위 테스트 9케이스
+- **dev-s4-auto-residual** — S4 AUTO 잔류 유지 + 재검수 차단 + 임계값 재평가. verify pass
+- **dev-stage-auto-autofill** — S2 enrich-autofill/S3 ai-autofill(빈 필드만) + S4 quality_threshold 자동승인 + AutoRunPanel
+- **dev-pipeline-console-3col** — S2~S5 단계별 3단 카드 재구성, StageActionBar 공용화
+- **dev-stage-bulk-buttons** — S2/S3/S4 개별+전체 다음단계 버튼 통일
+- **dev-seed-dedup** — 시드 멱등화 + pytest 4건
+- **dev-s6-rejected-card** — S6 반려/실패 버킷 + RejectedPanel + pytest 5건
+- **dev-pipeline-review-edit** — S2 멀티소스배지 + S4 검수 인라인 편집(9필드)
+- **dev-pipeline-console-controls C3~D1** — AiProcessPanel + ProgressLog(10초 폴링) + E2E 5케이스
+
 ## 2026-05-31
 
 - **dev-pipeline-console-controls A1–C1** — BE 상태머신 분리 + AiTask registry + 5개 Phase1 LLM 태스크(translate/short/genre/mood/keywords) + FE ContentStatus 마이그레이션(raw/enriched/ai)
