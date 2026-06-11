@@ -4,15 +4,19 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] facet 백필 연속 체인 관찰 — run 4 진행 중(89,232건 모집단, 30/h), success 첫 건 + auto 체인 점화 확인
+- [ ] facet 백필 상시 가동 모니터링 — run 8+ auto 체인 진행 중 (모집단 89,374건, rate_limit 제거 후 ~36~67s/항목, 7b 평가)
 
 ## Next (이번 마일스톤)
+- [ ] facet run 완료 판정 watchdog — 현재 카운트 기반(`_maybe_close_run`)이라 워커 재시작/크래시로 고아 unacked 1건만 생겨도 run이 닫히지 않고 체인이 visibility_timeout(2h)까지 교착. `_handle_stale_running_runs`를 주기 Beat로 승격(무진행 N분 → close+재디스패치) 필요. (2026-06-11 7b 전환 중 워커 재시작으로 재현)
+- [ ] 보안 후속 — backend 8000/frontend 3000/medisearch 8080 바인딩 검토 + postgres 비밀번호 변경 (Redis 침해 2026-06-11 여파)
+- [ ] 미커밋 변경 커밋 — mediaX compose(127.0.0.1 바인딩) + facet_tasks rate_limit 제거, MediSearch compose(qwen2.5:7b, NAMU 30s)/Dockerfile(chromium 명시 설치)
 
 ## Later (백로그)
 - [ ] 1.4 결재 워크플로우
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **facet 백필 정상화 + Redis 침해 차단 + 7b 전환** — MediSearch stale env 교체(실검색 3-provider + 도커 Ollama + chromium) → 기생충 검증 pass. 큐 유실 원인 = 외부 봇 FLUSHALL(Redis 0.0.0.0 노출) → 인프라 4종 127.0.0.1 바인딩 + 공격 키 제거. rate_limit=30/h 제거(페이스 ~125s→~40s, 3배) + Ollama qwen2.5:7b 전환(NAMU 30s) + 소스보유 구간 거의 전건 success 확인. run 6~10 auto 체인 정상(실패 0) (2026-06-11)
 - [x] **dev-curation (1.3 홈 큐레이션)** — HomeSlot+BannerPlan+slot/banner서비스+12EP+SlotBoard+BannerReviewPanel+weekly Beat + 41 tests pass. PR#23 (2026-06-09)
 - [x] **1.3 큐레이션 모듈 설계 확정** — ADR-013 하이브리드(ProgrammingNode 재사용+curation 2테이블) + 8 step plan 스캐폴드 + verify curation-design PASS (2026-06-09)
 - [x] **dev-auto-schedule Step 8** — conflict_service 6 pytest pass + _exec_p5_conflict 실구현/P6 발행 가드 + GET /auto/sets/{id}/conflicts + ConflictItemOut/ConflictReportOut 스키마 + ConflictPanel.tsx(ExposureCalendar 재사용) + verify pass (2026-06-09)

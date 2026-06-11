@@ -363,7 +363,8 @@ def dispatch_facet_batch(
     bind=True,
     max_retries=2,
     default_retry_delay=180,
-    rate_limit="30/h",
+    # rate_limit 제거 — 페이싱은 MediSearch 단일 throttle(MAX_CONCURRENT_EVALS=1 +
+    # NAMU_MIN_INTERVAL_S)에 일원화. 평가 완료 즉시 다음 항목으로 진행(~3배 처리량).
     acks_late=True,
     soft_time_limit=540,
     time_limit=600,
