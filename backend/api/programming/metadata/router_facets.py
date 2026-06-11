@@ -135,6 +135,32 @@ def trigger_batch(req: BatchTriggerRequest, db: Session = Depends(get_db)):
     return {"queued": True, "run_id": result.get("run_id")}
 
 
+@router.post("/batch/stop")
+def stop_batch(db: Session = Depends(get_db)):
+    """실행 중인 배치 중지 — running run을 cancelled로 마킹.
+
+    잔여 enqueue된 evaluate 태스크는 진입 guard에서 no-op 처리되어 빠르게 소진되고,
+    연속 디스패치 체인이 끊긴다. (평가 진행 중인 1건만 자연 완료.)
+    """
+    from api.programming.metadata.models.external import FacetBatchRun
+    from workers.tasks.facet_tasks import _emit_event
+
+    running = (
+        db.query(FacetBatchRun)
+        .filter(FacetBatchRun.status == "running")
+        .first()
+    )
+    if not running:
+        raise HTTPException(status_code=404, detail="no running batch")
+
+    running.status = "cancelled"
+    running.finished_at = datetime.now(timezone.utc)
+    db.commit()
+
+    _emit_event(running.id, None, "batch_cancelled", "운영자 중지")
+    return {"stopped": True, "run_id": running.id}
+
+
 @router.get("/batch", response_model=list[FacetBatchRunOut])
 def list_batch_runs(
     limit: int = Query(20, ge=1, le=100),

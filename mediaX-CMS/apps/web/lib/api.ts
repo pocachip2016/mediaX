@@ -2655,6 +2655,11 @@ export const facetApi = {
       body: JSON.stringify(params ?? {}),
     }),
 
+  stopBatch: () =>
+    request<{ stopped: boolean; run_id: number }>(`${FACETS}/batch/stop`, {
+      method: "POST",
+    }),
+
   getResults: (params?: { status?: string; search?: string; page?: number; size?: number }) => {
     const q = new URLSearchParams()
     if (params?.status) q.set("status", params.status)

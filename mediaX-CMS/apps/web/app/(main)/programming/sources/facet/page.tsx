@@ -127,6 +127,7 @@ export default function FacetPage() {
   const [results, setResults] = useState<FacetResultsPage | null>(null)
   const [resultsLoading, setResultsLoading] = useState(false)
   const [selectedFacet, setSelectedFacet] = useState<FacetResultOut | null>(null)
+  const [stopping, setStopping] = useState(false)
 
   const hasRunning = runs.some((r) => r.status === "running")
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -218,6 +219,25 @@ export default function FacetPage() {
     }
   }
 
+  async function handleStop() {
+    setStopping(true)
+    setTriggerMsg(null)
+    try {
+      await facetApi.stopBatch()
+      setTriggerMsg("배치 중지 요청이 완료됐습니다.")
+      await fetchAll()
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status
+      if (status === 404) {
+        setTriggerMsg("실행 중인 배치가 없습니다.")
+      } else {
+        setTriggerMsg("중지 요청 중 오류가 발생했습니다.")
+      }
+    } finally {
+      setStopping(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32 text-muted-foreground">
@@ -247,14 +267,25 @@ export default function FacetPage() {
           >
             <RefreshCw className="w-4 h-4" />새로고침
           </button>
-          <button
-            onClick={handleTrigger}
-            disabled={triggering || hasRunning}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Play className="w-3.5 h-3.5" />
-            {triggering ? "등록 중..." : hasRunning ? "실행 중 (중지 미지원)" : "모두 처리"}
-          </button>
+          {hasRunning ? (
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              {stopping ? "중지 중..." : "중지"}
+            </button>
+          ) : (
+            <button
+              onClick={handleTrigger}
+              disabled={triggering}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Play className="w-3.5 h-3.5" />
+              {triggering ? "등록 중..." : "모두 처리"}
+            </button>
+          )}
         </div>
       </div>
 
