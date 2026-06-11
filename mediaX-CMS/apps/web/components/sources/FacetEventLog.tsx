@@ -99,7 +99,7 @@ export function FacetEventLog({ runId, maxHeight = "400px" }: FacetEventLogProps
       {/* 로그 스크롤 창 */}
       <div
         ref={listRef}
-        className="overflow-y-auto rounded-lg border bg-muted/30 font-mono text-xs"
+        className="overflow-y-auto rounded-xl border bg-card shadow-sm font-mono text-xs"
         style={{ maxHeight }}
         onScroll={() => { isUserScrollingRef.current = true }}
         onMouseLeave={() => { isUserScrollingRef.current = false }}

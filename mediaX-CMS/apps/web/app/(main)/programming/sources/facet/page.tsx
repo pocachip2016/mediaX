@@ -359,7 +359,7 @@ export default function FacetPage() {
           <h3 className="text-sm font-medium mb-3">최근 배치 실행</h3>
           <div className="rounded-xl border bg-card shadow-sm overflow-y-auto" style={{ maxHeight: "5.5rem" }}>
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b sticky top-0 z-10">
+            <thead className="bg-card border-b sticky top-0 z-10">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground w-12">ID</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">상태</th>
