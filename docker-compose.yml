@@ -7,15 +7,16 @@ services:
       POSTGRES_USER: media_ax
       POSTGRES_PASSWORD: media_ax
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # 0.0.0.0 노출 시 외부 봇이 FLUSHALL로 celery 큐를 비우는 침해 발생(2026-06-11) — localhost 한정
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   elasticsearch:
     image: elasticsearch:8.14.0
@@ -25,15 +26,14 @@ services:
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
 
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
-    ports:
-      - "11434:11434"
+    # 호스트 127.0.0.1:11434는 Windows 측 리스너가 점유 — 컨테이너 내부 전용(서비스명 ollama:11434)
     volumes:
       - ollama_data:/root/.ollama
     deploy:
