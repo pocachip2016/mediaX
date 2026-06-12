@@ -4,7 +4,7 @@
 > **세션 재개 프롬프트**: "TODO.md 확인하고 `## Now`부터 이어서 진행해"
 
 ## Now (진행 중, 1~3개)
-- [ ] facet 백필 skipped/pending 처리 — ~378건 force 배치 추가 필요(limit=100 적용됨) + ~39,900건 Beat 자동 처리
+- [ ] facet 백필 pending 드레인 — run #25(skipped 436 force 재시도) 진행 중 → 완료 후 auto 체인으로 ~39,848건 순차 드레인(수일~수주, 백그라운드). baseline 2026-06-12: total=41,042 / success=758 / skipped=436 / pending=39,848. nightly beat 21:40 + watchdog 10min 안전망 작동 중.
 
 ## Next (이번 마일스톤)
 

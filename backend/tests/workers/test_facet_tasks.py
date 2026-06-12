@@ -217,3 +217,58 @@ def test_watchdog_stale_triggers_redispatch(session):
     mock_dispatch.apply_async.assert_called_once_with(
         kwargs={"trigger": "auto"}, countdown=60
     )
+
+
+# ── evaluate_tmdb_facet payload ───────────────────────────────────────────────
+
+def test_evaluate_payload_includes_backfill(session):
+    """evaluate_tmdb_facet이 MediSearch에 보내는 payload에 backfill=True가 포함된다."""
+    import httpx
+    from unittest.mock import patch, MagicMock
+    from api.programming.metadata.models.external import FacetBatchRun
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieCache
+
+    # 테스트용 run + cache row 준비
+    run = FacetBatchRun(status="running", trigger="manual", total_count=1)
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    from datetime import date
+    cache = TmdbMovieCache(
+        id=99999,
+        title="테스트영화",
+        original_language="ko",
+        vote_count=100,
+        release_date=date(2020, 1, 1),
+    )
+    session.add(cache)
+    session.commit()
+
+    captured_payload = {}
+
+    def fake_post(url, json=None, **kwargs):
+        captured_payload.update(json or {})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "source_count": 2,
+            "facet": {"mood": ["경쾌"]},
+        }
+        return mock_resp
+
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.httpx.Client") as mock_client:
+        # SessionLocal이 테스트 session 반환
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        # httpx.Client.post → fake_post
+        mock_client.return_value.__enter__ = lambda s: MagicMock(post=fake_post)
+        mock_client.return_value.__exit__ = MagicMock(return_value=False)
+
+        from workers.tasks.facet_tasks import evaluate_tmdb_facet
+        evaluate_tmdb_facet(tmdb_id=99999, run_id=run.id)
+
+    assert captured_payload.get("backfill") is True, \
+        f"payload에 backfill=True 없음: {captured_payload}"

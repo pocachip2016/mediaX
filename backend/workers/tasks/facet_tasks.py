@@ -464,6 +464,7 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
             "production_year": production_year,
             "tmdb_id": tmdb_id,
             "require_namu": False,
+            "backfill": True,
         }
     except ValueError as exc:
         logger.error("[facet] tmdb %d not found in cache: %s", tmdb_id, exc)
