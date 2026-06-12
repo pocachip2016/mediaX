@@ -5,7 +5,6 @@
 
 ## Now (진행 중, 1~3개)
 - [ ] facet 백필 상시 가동 모니터링 — run 17 완료 후 skipped 잔여 ~378건 force 배치 추가 필요(limit=100 적용됨) + pending ~39,900건 Beat 자동 처리
-- [ ] 보안 후속 — backend 8000/frontend 3000/medisearch 8080 바인딩 검토 + postgres 비밀번호 변경 (Redis 침해 2026-06-11 여파)
 
 ## Next (이번 마일스톤)
 
@@ -14,6 +13,7 @@
 - [ ] 1.5 CP 수급 관리
 
 ## Done (최근 5개만)
+- [x] **보안 후속** — 8000/3000/8080 바인딩 127.0.0.1 제한 + postgres 비밀번호 변경 (2026-06-12)
 - [x] **dev-medisearch-freetext OMDB fix** — evaluate 경로 content_type end-to-end 전달(MediSearch BE + mediaX BE/FE) — OMDB type=series 정상 동작 확인 (2026-06-12)
 - [x] **dev-medisearch-ondemand** — 편집 페이지 MediSearch 3단 패널(현재값|기본메타+출처|facet) + 필드 Apply + ExternalSourceType.medisearch + 0052 alembic (2026-06-12)
 - [x] **facet 소스 출처 추적** — provider detail 이벤트 로그 배지 + require_namu=False + skipped 478건 backfill (run 17) (2026-06-11)
