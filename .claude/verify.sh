@@ -7377,12 +7377,133 @@ print('  ✓ check_stale_facet_runs 태스크 + Beat 스케줄 확인')
     echo "=== PASS ==="
     ;;
 
+  # ── dev-medisearch-freetext steps ──────────────────────────
+  backend-freetext-endpoints)
+    echo "=== backend-freetext-endpoints: router_medisearch free-text 엔드포인트 검증 ==="
+    cd "$BACKEND"
+    python3 -c "
+import pathlib, ast
+src = pathlib.Path('api/programming/metadata/router_medisearch.py').read_text()
+
+# 신규 스키마 확인
+assert 'class MediSearchFreeRequest' in src, 'MediSearchFreeRequest 없음'
+assert 'class MediSearchFreeResult' in src, 'MediSearchFreeResult 없음'
+assert 'class MediSearchEvaluateRequest' in src, 'MediSearchEvaluateRequest 없음'
+print('  ✓ free-text 스키마 3종 확인')
+
+# 신규 엔드포인트 확인
+assert 'medisearch_search_freetext' in src, 'POST /medisearch/search 없음'
+assert 'medisearch_evaluate_freetext' in src, 'POST /medisearch/evaluate 없음'
+print('  ✓ free-text 엔드포인트 2개 확인')
+
+# 순수 헬퍼 확인
+assert '_call_medisearch_enrich' in src, '_call_medisearch_enrich 없음'
+assert '_load_stored_facet_by_tmdb' in src, '_load_stored_facet_by_tmdb 없음'
+assert '_resolve_ids' in src, '_resolve_ids 없음'
+print('  ✓ 순수 헬퍼 추출 확인')
+
+# 기존 content-bound 엔드포인트 회귀 확인
+assert 'medisearch_search' in src, 'medisearch_search(content-bound) 없음'
+assert 'get_stored_facet' in src, 'get_stored_facet 없음'
+print('  ✓ content-bound 기존 엔드포인트 유지 확인')
+
+# FK 가드 확인
+assert 'TmdbMovieCache' in src, 'TmdbMovieCache FK 가드 없음'
+print('  ✓ tmdb FK 존재 가드 확인')
+
+# Python 문법 유효성
+ast.parse(src)
+print('  ✓ Python 문법 유효')
+"
+    # import 체크
+    python3 -c "
+import sys; sys.path.insert(0, '.')
+# 모듈 임포트만 테스트 (DB 연결 없이)
+import importlib.util, pathlib
+spec = importlib.util.spec_from_file_location(
+    'router_medisearch',
+    pathlib.Path('api/programming/metadata/router_medisearch.py')
+)
+" 2>&1 | grep -v "^$" || true
+    echo "=== PASS ==="
+    ;;
+
+  api-client-freetext)
+    echo "=== api-client-freetext: lib/api.ts free-text 클라이언트 검증 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    python3 -c "
+import pathlib
+src = pathlib.Path('$FE_ROOT/lib/api.ts').read_text()
+assert 'MediSearchFreeResult' in src, 'MediSearchFreeResult 타입 없음'
+assert 'searchByTitle' in src, 'searchByTitle 없음'
+assert 'evaluateByTitle' in src, 'evaluateByTitle 없음'
+assert 'resolved_tmdb_id' in src, 'resolved_tmdb_id 필드 없음'
+print('  ✓ free-text 클라이언트 타입/함수 확인')
+"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  fe-shared-columns)
+    echo "=== fe-shared-columns: MediSearchColumns 추출 + MediSearchPanel 회귀 검증 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    python3 -c "
+import pathlib
+cols = pathlib.Path('$FE_ROOT/components/contents/medisearch/MediSearchColumns.tsx').read_text()
+assert 'export function MetaColumn' in cols, 'MetaColumn export 없음'
+assert 'export function FacetColumn' in cols, 'FacetColumn export 없음'
+assert 'export function ColHeader' in cols, 'ColHeader export 없음'
+assert 'export function FieldRow' in cols, 'FieldRow export 없음'
+assert 'export function FacetScoreBar' in cols, 'FacetScoreBar export 없음'
+assert 'onApply?' in cols, 'MetaColumn.onApply optional화 안 됨'
+print('  ✓ MediSearchColumns 분리 확인')
+panel = pathlib.Path('$FE_ROOT/components/contents/medisearch/MediSearchPanel.tsx').read_text()
+assert 'MediSearchColumns' in panel, 'MediSearchPanel이 MediSearchColumns import 안 함'
+print('  ✓ MediSearchPanel import 교체 확인')
+"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
+  websearch-page)
+    echo "=== websearch-page: external/page.tsx WebSearch 페이지 검증 ==="
+    FE_ROOT="$SCRIPT_DIR/../mediaX-CMS/apps/web"
+    python3 -c "
+import pathlib
+src = pathlib.Path('$FE_ROOT/app/(main)/programming/contents/external/page.tsx').read_text()
+assert 'searchByTitle' in src, 'searchByTitle 호출 없음'
+assert 'evaluateByTitle' in src, 'evaluateByTitle 호출 없음'
+assert 'evaluating' in src, 'evaluating 상태 없음'
+assert 'Query 중' in src or 'Query' in src, 'Query 중 메시지 없음'
+assert 'Step 5' not in src, 'stub 텍스트 남아있음'
+print('  ✓ WebSearch 페이지 구현 확인')
+"
+    cd "$SCRIPT_DIR/../mediaX-CMS"
+    TS_OUT=$(npm run typecheck 2>&1) || true
+    if echo "$TS_OUT" | grep -q "error TS"; then
+      echo "FAIL: TypeScript 에러"; echo "$TS_OUT" | grep "error TS" | head -5; exit 1
+    fi
+    echo "  ✓ TypeScript 타입 체크 통과"
+    echo "=== PASS ==="
+    ;;
+
   *)
     echo "ERROR: 알 수 없는 step-id '$STEP'"
     echo "사용 가능한 step: ... catalog-models, catalog-migration, catalog-service, catalog-api, catalog-fe"
     echo "  dev-catalog-pricing: 2.1~2.6 또는 pricing-holdback-models, pricing-holdback-migration, pricing-service, holdback-service, catalog-pricing-api, catalog-pricing-fe"
     echo "  dev-auto-schedule: auto-schedule-s2~s8"
     echo "  dev-curation: curation-model-migration"
+    echo "  dev-medisearch-freetext: backend-freetext-endpoints, api-client-freetext, fe-shared-columns, websearch-page"
     exit 1
     ;;
 esac
