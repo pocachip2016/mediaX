@@ -14,6 +14,7 @@ import { AIRecColumn } from "@/components/contents/shell/AIRecColumn"
 import { AlignedFieldRows } from "@/components/contents/shell/AlignedFieldRows"
 import { AISummaryBottom } from "@/components/contents/recommend/AISummaryBottom"
 import { isRecSimilarToCurrent } from "@/lib/recommendDerive"
+import { MediSearchPanel } from "@/components/contents/medisearch/MediSearchPanel"
 
 const STATUS_BADGE: Record<string, { label: string; emoji: string; color: string }> = {
   raw:      { label: "수신",      emoji: "⏳", color: "bg-slate-100 text-slate-600" },
@@ -50,6 +51,7 @@ export default function ContentDetailPage() {
 
   const [recommendations, setRecommendations] = useState<RecommendationsOut | null>(null)
   const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set())
+  const [showMediSearch, setShowMediSearch] = useState(false)
 
   const [parentChain, setParentChain] = useState<BreadcrumbParent[]>([])
   const [childrenItems, setChildrenItems] = useState<StagingItem[]>([])
@@ -409,7 +411,7 @@ export default function ContentDetailPage() {
           />
         </div>
       ) : mode === "edit" ? (
-        /* edit: poster + 행정렬 AlignedFieldRows */
+        /* edit: poster + 행정렬 AlignedFieldRows + MediSearch 패널 토글 */
         <ThreeColumnShell
           poster={
             <PosterPanel
@@ -427,14 +429,35 @@ export default function ContentDetailPage() {
             />
           }
           alignedFields={
-            <AlignedFieldRows
-              content={content}
-              contentId={contentId}
-              onSaved={(updated) => setContent(updated)}
-              recommendations={recommendations}
-              appliedFields={appliedFields}
-              onApply={handleApplyRec}
-            />
+            <div className="space-y-4">
+              {/* MediSearch 토글 버튼 — 상단 */}
+              <div>
+                <button
+                  onClick={() => setShowMediSearch((v) => !v)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-dashed text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+                >
+                  <span className="text-sm">🔍</span>
+                  {showMediSearch ? "MediSearch 닫기" : "MediSearch 검색"}
+                </button>
+                {showMediSearch && (
+                  <div className="mt-3">
+                    <MediSearchPanel
+                      contentId={contentId}
+                      currentValues={currentValuesByField}
+                      onContentRefresh={(updated) => setContent(updated)}
+                    />
+                  </div>
+                )}
+              </div>
+              <AlignedFieldRows
+                content={content}
+                contentId={contentId}
+                onSaved={(updated) => setContent(updated)}
+                recommendations={recommendations}
+                appliedFields={appliedFields}
+                onApply={handleApplyRec}
+              />
+            </div>
           }
           footer={
             recommendations && (

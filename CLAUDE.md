@@ -44,6 +44,7 @@ docker compose up
 | dev-curation (1.3 홈 큐레이션) | ✅ | ✅ | HomeSlot+CurationBannerPlan(ADR-013) + 슬롯 보드 + 배너 편성안 워크플로우 + weekly Beat(월요일 01:10) |
 | 1.4 결재 워크플로우 | 스텁 | 스텁 | |
 | 1.5 CP 수급 관리 | 스텁 | 스텁 | |
+| dev-medisearch-ondemand | ✅ | ✅ | 편집 페이지 MediSearch 온디맨드 3단 패널 — /enrich 기본메타+출처 + facet(저장값 우선) + 필드별 Apply. router_medisearch.py + ExternalSourceType.medisearch + 0052 마이그레이션 |
 | dev-service-distribution | 미착수 | 미착수 | ContentDistribution(IPTV/OTT) + ServiceCategory + DeviceVariant |
 
 ## 주요 포트

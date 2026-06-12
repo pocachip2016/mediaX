@@ -30,6 +30,7 @@ class ExternalSourceType(str, enum.Enum):
     wikipedia = "wikipedia"    # Wikipedia intro 텍스트 (RAG)
     manual = "manual"          # 수동 입력
     bulk_upload = "bulk_upload"  # CSV/Excel 일괄 업로드
+    medisearch = "medisearch"    # MediSearch 온디맨드 메타 검색
 
 
 class AITaskType(str, enum.Enum):
