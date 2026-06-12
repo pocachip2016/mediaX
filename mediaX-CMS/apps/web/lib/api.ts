@@ -2756,6 +2756,7 @@ export const medisearchApi = {
     production_year?: number
     content_type?: string
     original_title?: string
+    fast?: boolean
   }) =>
     request<MediSearchFreeResult>(
       `${MEDISEARCH_BASE}/medisearch/search`,
