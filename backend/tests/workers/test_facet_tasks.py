@@ -174,12 +174,62 @@ def test_summarize_sources_broken_entries():
 
 # ── check_stale_facet_runs ────────────────────────────────────────────────────
 
-def test_watchdog_no_stale_no_redispatch(session):
-    """stale run 없으면 재디스패치 안 함."""
+def test_watchdog_disabled_no_redispatch(session):
+    """FACET_BATCH_ENABLED=False면 idle여도 재디스패치 안 함 (의도적 정지 존중)."""
     with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
-         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch:
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch, \
+         patch("workers.tasks.facet_tasks.settings") as mock_settings:
         mock_sl.return_value.__enter__ = lambda s: session
         mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_settings.FACET_CONTINUOUS = True
+        mock_settings.FACET_BATCH_ENABLED = False
+
+        from workers.tasks.facet_tasks import check_stale_facet_runs
+        result = check_stale_facet_runs()
+
+    assert result == {"closed": 0}
+    mock_dispatch.apply_async.assert_not_called()
+
+
+def test_watchdog_idle_redispatches(session):
+    """running run이 없으면(idle) stale 닫은 게 없어도 재디스패치한다."""
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch, \
+         patch("workers.tasks.facet_tasks.settings") as mock_settings:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_settings.FACET_CONTINUOUS = True
+        mock_settings.FACET_BATCH_ENABLED = True
+        mock_settings.FACET_CONTINUOUS_DELAY_S = 60
+
+        from workers.tasks.facet_tasks import check_stale_facet_runs
+        result = check_stale_facet_runs()
+
+    assert result == {"closed": 0}
+    mock_dispatch.apply_async.assert_called_once_with(
+        kwargs={"trigger": "auto"}, countdown=60
+    )
+
+
+def test_watchdog_running_no_redispatch(session):
+    """신선한(non-stale) running run이 있으면 재디스패치 안 함."""
+    run = FacetBatchRun(
+        status="running",
+        trigger="auto",
+        total_count=1,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(run)
+    session.commit()
+
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch, \
+         patch("workers.tasks.facet_tasks.settings") as mock_settings:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_settings.FACET_CONTINUOUS = True
+        mock_settings.FACET_BATCH_ENABLED = True
+        mock_settings.FACET_CONTINUOUS_DELAY_S = 60
 
         from workers.tasks.facet_tasks import check_stale_facet_runs
         result = check_stale_facet_runs()

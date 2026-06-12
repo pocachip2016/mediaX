@@ -548,21 +548,41 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
     acks_late=False,
 )
 def check_stale_facet_runs() -> dict:
-    """stale running run 감지 Beat 태스크 (10분 주기).
+    """stale running run 감지 + idle 자가복구 Beat 태스크 (10분 주기).
 
-    워커 재시작/크래시로 unacked 메시지가 고아가 되어 run이 닫히지 않는 경우를
-    주기적으로 감지해 failed로 마킹하고, FACET_CONTINUOUS=True면 즉시 재디스패치.
+    두 가지 정지 상태를 모두 복구한다:
+      1) 크래시/재시작으로 unacked 메시지가 고아가 되어 닫히지 않은 stale `running` run
+         → failed로 마킹(_handle_stale_running_runs).
+      2) running run이 하나도 없는 idle 상태(수동 중지·체인 단절 등) — pending 잔존 가능.
+
+    위 처리 후 running run이 없으면(FACET_CONTINUOUS+FACET_BATCH_ENABLED 시) 재디스패치한다.
+    pending 잔존 여부는 dispatch_facet_batch 내부 가드(run_in_progress / no_targets)에 위임 —
+    타겟이 없으면 no-op이므로 빈 호출 부작용이 없다. 의도적 정지는 FACET_BATCH_ENABLED=False로 표현.
     """
+    from api.programming.metadata.models.external import FacetBatchRun
+
     with SessionLocal() as db:
         closed = _handle_stale_running_runs(db)
+        running = (
+            db.query(FacetBatchRun)
+            .filter(FacetBatchRun.status == "running")
+            .first()
+        )
 
-    if closed and settings.FACET_CONTINUOUS and settings.FACET_BATCH_ENABLED:
+    idle = running is None
+    if idle and settings.FACET_CONTINUOUS and settings.FACET_BATCH_ENABLED:
         dispatch_facet_batch.apply_async(
             kwargs={"trigger": "auto"},
             countdown=settings.FACET_CONTINUOUS_DELAY_S,
         )
-        logger.info("[facet_watchdog] %d stale run(s) closed → 재디스패치 예약 (countdown=%ds)", closed, settings.FACET_CONTINUOUS_DELAY_S)
+        logger.info(
+            "[facet_watchdog] closed=%d, idle → 재디스패치 예약 (countdown=%ds)",
+            closed, settings.FACET_CONTINUOUS_DELAY_S,
+        )
     else:
-        logger.info("[facet_watchdog] closed=%d (no redispatch: continuous=%s enabled=%s)", closed, settings.FACET_CONTINUOUS, settings.FACET_BATCH_ENABLED)
+        logger.info(
+            "[facet_watchdog] closed=%d (no redispatch: idle=%s continuous=%s enabled=%s)",
+            closed, idle, settings.FACET_CONTINUOUS, settings.FACET_BATCH_ENABLED,
+        )
 
     return {"closed": closed}

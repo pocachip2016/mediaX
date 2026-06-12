@@ -1089,7 +1089,7 @@ print(f'  ✓ ExternalMetaSource watcha {count}개 확인 OK')
   dev-api-step0)
     echo "=== dev-api-step0: Schemas + Foundation ==="
     # Schema 직렬화 테스트
-    python3 -m pytest tests/api/programming/metadata/test_dev_api_consolidation_schemas.py -v || true
+    python3 -m pytest tests/api/programming/metadata/test_dev_api_consolidation_schemas.py -q --tb=short || true
 
     # Import 테스트
     python3 -c "
@@ -1240,7 +1240,7 @@ print('  ✓ Content.is_deleted column OK')
 "
 
     # 테스트 실행
-    python3 -m pytest tests/api/programming/metadata/test_dev_api_consolidation_bulk_core.py -v || true
+    python3 -m pytest tests/api/programming/metadata/test_dev_api_consolidation_bulk_core.py -q --tb=short || true
     echo "=== PASS ==="
     ;;
 
@@ -1719,7 +1719,7 @@ print('  ✓ 엔드포인트 3개 OK')
     echo "=== poster-recommend-1.3: backend-tests ==="
     cd "$SCRIPT_DIR/../backend"
     source .venv/bin/activate
-    python3 -m pytest tests/test_poster_recommend.py -v 2>&1
+    python3 -m pytest tests/test_poster_recommend.py -q --tb=short 2>&1
     echo "=== PASS ==="
     ;;
 
@@ -2978,7 +2978,7 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     done
 
     echo "--- pytest ---"
-    .venv/bin/pytest tests/distribution/test_ott_base.py -v 2>&1
+    .venv/bin/pytest tests/distribution/test_ott_base.py -q --tb=short 2>&1
     [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
 
     echo "=== PASS ==="
@@ -2993,7 +2993,7 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "  ✓ api/distribution/ott/watcha.py"
 
     echo "--- pytest ---"
-    .venv/bin/pytest tests/distribution/test_ott_watcha.py -v 2>&1
+    .venv/bin/pytest tests/distribution/test_ott_watcha.py -q --tb=short 2>&1
     [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
 
     echo "=== PASS ==="
@@ -3008,7 +3008,7 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "  ✓ api/distribution/ott/netflix.py"
 
     echo "--- pytest ---"
-    .venv/bin/pytest tests/distribution/test_ott_netflix.py -v 2>&1
+    .venv/bin/pytest tests/distribution/test_ott_netflix.py -q --tb=short 2>&1
     [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
 
     echo "=== PASS ==="
@@ -3025,7 +3025,7 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "  ✓ api/distribution/ott/tving.py"
 
     echo "--- pytest ---"
-    .venv/bin/pytest tests/distribution/test_ott_kr_stubs.py -v 2>&1
+    .venv/bin/pytest tests/distribution/test_ott_kr_stubs.py -q --tb=short 2>&1
     [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
 
     echo "=== PASS ==="
@@ -3040,7 +3040,7 @@ print('  ✓ settings.DAM_POSTER_INGEST_URL + DAM_WEBHOOK_URL OK')
     echo "  ✓ workers/tasks/distribution.py"
 
     echo "--- pytest ---"
-    .venv/bin/pytest tests/distribution/test_sync_status_api.py -v 2>&1
+    .venv/bin/pytest tests/distribution/test_sync_status_api.py -q --tb=short 2>&1
     [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
 
     echo "--- import 검증 ---"
@@ -3080,7 +3080,7 @@ print('  ✓ 모든 service 함수 import OK')
     [ $? -eq 0 ] || { echo "FAIL: service import"; exit 1; }
 
     echo "--- pytest ---"
-    .venv/bin/pytest tests/test_distribution_step3.py -v 2>&1
+    .venv/bin/pytest tests/test_distribution_step3.py -q --tb=short 2>&1
     [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
 
     echo "=== PASS ==="
@@ -3101,7 +3101,7 @@ print('  ✓ 모든 service 함수 import OK')
     [ $? -eq 0 ] || { echo "FAIL: Service import"; exit 1; }
 
     echo "--- pytest ---"
-    .venv/bin/pytest tests/distribution/test_services_table.py -v 2>&1
+    .venv/bin/pytest tests/distribution/test_services_table.py -q --tb=short 2>&1
     [ $? -eq 0 ] || { echo "FAIL: pytest"; exit 1; }
 
     echo "=== PASS ==="
@@ -4394,13 +4394,13 @@ PYEOF
 
   mh-content-kind)
     echo "=== mh-content-kind: content_kind SSOT 헬퍼 단위테스트 ==="
-    python3 -m pytest tests/api/programming/test_content_kind.py -v
+    python3 -m pytest tests/api/programming/test_content_kind.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
   mh-enrich-routing)
     echo "=== mh-enrich-routing: enrich content_type-aware 라우팅 ==="
-    python3 -m pytest tests/meta_core/test_enrich.py -v -k "not live"
+    python3 -m pytest tests/meta_core/test_enrich.py -q --tb=short -k "not live"
     python3 -c "
 from api.programming.metadata.content_kind import is_tv_type, tmdb_search_kind
 from api.programming.metadata.models.content import ContentType, Content
@@ -4420,63 +4420,63 @@ print('  ✓ episode → tv routing OK')
       echo "ERROR: 제거되지 않은 is_series/is_tv ContentType.series 할당 발견"
       exit 1
     fi
-    python3 -m pytest tests/api/programming/test_content_kind.py tests/meta_core/test_enrich.py -v -k "not live"
+    python3 -m pytest tests/api/programming/test_content_kind.py tests/meta_core/test_enrich.py -q --tb=short -k "not live"
     echo "=== PASS ==="
     ;;
 
   mh-inheritance)
     echo "=== mh-inheritance: read-time 상속 resolver 단위테스트 ==="
-    python3 -m pytest tests/api/programming/test_inheritance.py -v
+    python3 -m pytest tests/api/programming/test_inheritance.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
   child-inheritance)
     echo "=== child-inheritance: 시즌/에피소드 상속 채점 + 스칼라 필드 autofill ==="
-    python3 -m pytest tests/test_quality_score_recompute.py -k "inherit" -v
-    python3 -m pytest tests/api/programming/test_inheritance.py -k "cast or director or parent_inheritance" -v
+    python3 -m pytest tests/test_quality_score_recompute.py -k "inherit" -q --tb=short
+    python3 -m pytest tests/api/programming/test_inheritance.py -k "cast or director or parent_inheritance" -q --tb=short
     echo "=== PASS ==="
     ;;
 
   revert-stage-auto-off)
     echo "=== revert-stage-auto-off: 역방향 시 도착 단계 AUTO OFF + hold 미사용 ==="
     # e2e는 실제 postgres 연결 필요 → backend 컨테이너에서 실행
-    docker compose exec -T backend python -m pytest tests/test_pipeline_auto_e2e.py -k "revert" -v
+    docker compose exec -T backend python -m pytest tests/test_pipeline_auto_e2e.py -k "revert" -q --tb=short
     echo "=== PASS ==="
     ;;
 
   mh-gap-aware)
     echo "=== mh-gap-aware: gap analyzer 상속-aware ==="
-    python3 -m pytest tests/meta_core/test_gap.py -v
+    python3 -m pytest tests/meta_core/test_gap.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
   mh-dedup-delete)
     echo "=== mh-dedup-delete: dedup 키 + soft-delete cascade + parent_id 재지정 ==="
-    python3 -m pytest tests/api/programming/test_mh_dedup_delete.py -v
+    python3 -m pytest tests/api/programming/test_mh_dedup_delete.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
   mh-write-guards)
     echo "=== mh-write-guards: create/update/bulk/promote parent_id·type 정합 ==="
-    python3 -m pytest tests/api/programming/test_mh_write_guards.py -v
+    python3 -m pytest tests/api/programming/test_mh_write_guards.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
   mh-bulk-movie)
     echo "=== mh-bulk-movie: movie bulk insert 경로 ==="
-    python3 -m pytest tests/api/programming/test_mh_bulk_movie.py -v
+    python3 -m pytest tests/api/programming/test_mh_bulk_movie.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
   mh-bulk-series)
     echo "=== mh-bulk-series: series bulk insert 계층 구성 ==="
-    python3 -m pytest tests/api/programming/test_mh_bulk_series.py -v
+    python3 -m pytest tests/api/programming/test_mh_bulk_series.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
   mh-bulk-e2e)
     echo "=== mh-bulk-e2e: movie+series E2E 통합 테스트 ==="
-    python3 -m pytest tests/api/programming/test_mh_bulk_e2e.py -v
+    python3 -m pytest tests/api/programming/test_mh_bulk_e2e.py -q --tb=short
     echo "=== PASS ==="
     ;;
 
@@ -4674,17 +4674,17 @@ print('  ✓ ContentOut parent_id/season_number/episode_number OK')
 
   pt-seed-script)
     echo "=== pt-seed-script: seed_pipeline_test.py pytest 6건 ==="
-    .venv/bin/pytest tests/test_seed_pipeline_test.py -v
+    .venv/bin/pytest tests/test_seed_pipeline_test.py -q --tb=short
     ;;
 
   pt-test-api)
     echo "=== pt-test-api: /test/pipeline/* 엔드포인트 pytest ==="
-    .venv/bin/pytest tests/test_pipeline_test_api.py -v
+    .venv/bin/pytest tests/test_pipeline_test_api.py -q --tb=short
     ;;
 
   pt-timeline-api)
     echo "=== pt-timeline-api: /contents/{id}/timeline pytest ==="
-    .venv/bin/pytest tests/test_timeline_api.py -v
+    .venv/bin/pytest tests/test_timeline_api.py -q --tb=short
     ;;
 
   pt-fe-skeleton|pt-s0-panel|pt-timeline-comp|pt-s1-s2-embed|pt-s3-s5-trigger)
@@ -4695,7 +4695,7 @@ print('  ✓ ContentOut parent_id/season_number/episode_number OK')
 
   pt-wrap)
     echo "=== pt-wrap: 전체 backend pytest ==="
-    .venv/bin/pytest tests/ -v --tb=short
+    .venv/bin/pytest tests/ -q --tb=short
     ;;
 
   # ── dev-detail-unified-shell ────────────────────────────────────────────
@@ -4723,7 +4723,7 @@ print('  ✓ ContentOut parent_id/season_number/episode_number OK')
   fess-link-source-enum)
     echo "=== fess-link-source-enum: link source enum 교체 검증 ==="
     cd "$SCRIPT_DIR/../backend"
-    .venv/bin/pytest tests/workers/test_link_source_enum.py -v --tb=short 2>&1
+    .venv/bin/pytest tests/workers/test_link_source_enum.py -q --tb=short 2>&1
     ;;
 
   fess-beat-stability)
@@ -4753,7 +4753,7 @@ print('OK')
   fess-cache-metrics-wiring)
     echo "=== fess-cache-metrics-wiring: cache 메트릭 카운터 테스트 ==="
     cd "$SCRIPT_DIR/../backend"
-    .venv/bin/pytest tests/workers/test_cache_metrics.py -v --tb=short 2>&1
+    .venv/bin/pytest tests/workers/test_cache_metrics.py -q --tb=short 2>&1
     ;;
 
   esc-db-cleanup)
@@ -5503,11 +5503,11 @@ print('  ✓ 스키마 확장 확인')
   pipeline-auto-worker)
     echo "=== pipeline-auto-worker: ADR-010 전체 통합 검증 ==="
     # 1. 스키마 컬럼
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -q --tb=short 2>&1 || exit 1
     # 2. 서비스 패리티
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py -q --tb=short 2>&1 || exit 1
     # 3. 멱등 전이
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -q --tb=short 2>&1 || exit 1
     # 4. Celery 태스크 + beat
     docker exec mediax-backend-1 python -c "
 from workers.tasks.pipeline_auto import pipeline_auto_tick, process_fast_bucket, process_ai_item
@@ -5516,7 +5516,7 @@ assert 'pipeline-auto-tick' in celery_app.conf.beat_schedule
 print('beat OK')
 " 2>&1 || exit 1
     # 5. 역방향 hold
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -q --tb=short 2>&1 || exit 1
     # 6. auto-status API
     docker exec mediax-backend-1 python -c "
 from fastapi.testclient import TestClient
@@ -5536,7 +5536,7 @@ print('auto-status + auto-log OK')
     TS_OUT=$(npm run typecheck 2>&1) || true
     if echo "$TS_OUT" | grep -q "error TS"; then echo "$TS_OUT" | grep "error TS" | head -5; echo "FAIL: typecheck 에러"; exit 1; fi
     # 8. E2E
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_e2e.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_e2e.py -q --tb=short 2>&1 || exit 1
     echo "=== PASS ==="
     ;;
 
@@ -5576,7 +5576,7 @@ print('auto-status shape OK:', d)
 
   pipeline-backward-hold)
     echo "=== pipeline-backward-hold: revert/reject/re-review→hold, resume, 임계값→clear ==="
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_backward_hold.py -q --tb=short 2>&1 || exit 1
     echo "=== PASS ==="
     ;;
 
@@ -5595,19 +5595,19 @@ print('BEAT: OK')
 
   pipeline-idempotent)
     echo "=== pipeline-idempotent: advance/approve 멱등 전이 테스트 ==="
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_idempotent.py -q --tb=short 2>&1 || exit 1
     echo "=== PASS ==="
     ;;
 
   pipeline-auto-service)
     echo "=== pipeline-auto-service: 서비스 추출 + 동작 패리티 ==="
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py tests/test_pipeline_auto_schema.py -v --tb=short 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_console_e2e.py tests/test_pipeline_test_api.py tests/test_pipeline_auto_schema.py -q --tb=short 2>&1 || exit 1
     echo "=== PASS ==="
     ;;
 
   pipeline-auto-schema)
     echo "=== pipeline-auto-schema: ADR-010 스키마 컬럼 존재 확인 ==="
-    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -v 2>&1 || exit 1
+    docker exec mediax-backend-1 python -m pytest tests/test_pipeline_auto_schema.py -q --tb=short 2>&1 || exit 1
     echo "=== PASS ==="
     ;;
 
@@ -5620,7 +5620,7 @@ print('BEAT: OK')
     grep -q "expand_same_bucket_descendants" "$BACKEND/api/test/pipeline_router.py" || { echo "FAIL: pipeline_router.py cascade 없음"; exit 1; }
     echo "  ✓ advance/revert cascade 적용"
     # 3) pytest — cascade 2케이스
-    .venv/bin/python -m pytest tests/test_stage_manual_steps.py::test_advance_cascade_series_moves_all_same_bucket tests/test_stage_manual_steps.py::test_advance_cascade_skips_different_bucket_descendants -v --tb=short 2>&1 || exit 1
+    .venv/bin/python -m pytest tests/test_stage_manual_steps.py::test_advance_cascade_series_moves_all_same_bucket tests/test_stage_manual_steps.py::test_advance_cascade_skips_different_bucket_descendants -q --tb=short 2>&1 || exit 1
     echo "  ✓ cascade pytest 2케이스 PASS"
     # 4) FE: sameBucketSubtreeIds 헬퍼 + 단건 호출부 수정
     PAGE="$SCRIPT_DIR/../mediaX-CMS/apps/web/app/(main)/programming/contents/pipeline/page.tsx"
@@ -5911,7 +5911,7 @@ print('  ✓ SQLite create_all 스모크 통과')
 
   node-service)
     echo "=== node-service: node_service CRUD + 사이클 가드 + 멤버 산출 단위 테스트 ==="
-    .venv/bin/pytest tests/test_node_service.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_node_service.py -q --tb=short 2>&1 | tail -15
     .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
     .venv/bin/pytest tests/test_node_service.py -q 2>/dev/null | grep -q "19 passed" \
       || { echo "FAIL: 19 테스트 모두 통과해야 함"; exit 1; }
@@ -5923,7 +5923,7 @@ print('  ✓ SQLite create_all 스모크 통과')
     echo "=== tier2-semantic-match: match_service — cosine + facet overlap 가중합 ==="
     cd "$BACKEND"
     # 1. 단위 테스트 (13개)
-    .venv/bin/pytest tests/test_match_service.py -v 2>&1 | tail -20
+    .venv/bin/pytest tests/test_match_service.py -q --tb=short 2>&1 | tail -20
     .venv/bin/pytest tests/test_match_service.py -q 2>/dev/null | grep -q "13 passed" \
       || { echo "FAIL: 13 테스트 모두 통과해야 함"; exit 1; }
     echo "  ✓ 13 테스트 통과"
@@ -5943,7 +5943,7 @@ print('  ✓ match_service 심볼 import 확인')
     echo "=== node-embed-theme: ProgrammingNode.embed_theme 컬럼 + 0045 migration + node_theme_service ==="
     cd "$BACKEND"
     # 1. 단위 테스트 (10개)
-    .venv/bin/pytest tests/test_node_theme_service.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_node_theme_service.py -q --tb=short 2>&1 | tail -15
     .venv/bin/pytest tests/test_node_theme_service.py -q 2>/dev/null | grep -q "10 passed" \
       || { echo "FAIL: 10 테스트 모두 통과해야 함"; exit 1; }
     echo "  ✓ 10 테스트 통과"
@@ -5983,7 +5983,7 @@ print('  ✓ revision=0045 down_revision=0044')
   facet-intensity)
     echo "=== facet-intensity: VOCAB intensity 축 추가 + validate/overlap 단위 테스트 ==="
     cd "$BACKEND"
-    .venv/bin/pytest tests/test_facets.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_facets.py -q --tb=short 2>&1 | tail -15
     .venv/bin/pytest tests/test_facets.py -q 2>/dev/null | grep -q "9 passed" \
       || { echo "FAIL: 9 테스트 모두 통과해야 함"; exit 1; }
     echo "  ✓ 9 테스트 통과"
@@ -5999,7 +5999,7 @@ print('  ✓ revision=0045 down_revision=0044')
   catalog-node-adapter-s1)
     echo "=== catalog-node-adapter-s1: read-path 어댑터 — list_node_tree + catalog service 위임 ==="
     cd "$BACKEND"
-    .venv/bin/pytest tests/test_catalog_node_adapter.py -v 2>&1 | tail -15
+    .venv/bin/pytest tests/test_catalog_node_adapter.py -q --tb=short 2>&1 | tail -15
     .venv/bin/pytest tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "4 passed" \
       || { echo "FAIL: 4 테스트 모두 통과해야 함"; exit 1; }
     echo "  ✓ 4 테스트 통과"
@@ -6024,7 +6024,7 @@ print('  ✓ revision=0045 down_revision=0044')
   catalog-node-adapter-s2)
     echo "=== catalog-node-adapter-s2: write-path 어댑터 — map/unmap/merge/delete ProgrammingLink 전환 ==="
     cd "$BACKEND"
-    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -v 2>&1 | tail -30
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q --tb=short 2>&1 | tail -30
     DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_tree.py tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "22 passed" \
       || { echo "FAIL: 22 테스트 모두 통과해야 함"; exit 1; }
     echo "  ✓ 22 테스트 통과"
@@ -6048,7 +6048,7 @@ print('  ✓ revision=0045 down_revision=0044')
   catalog-node-adapter-s3)
     echo "=== catalog-node-adapter-s3: set-service-adapter — ProgrammingNodeSet/Node/Link 전환 ==="
     cd "$BACKEND"
-    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_node_adapter.py -v 2>&1 | tail -40
+    DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_node_adapter.py -q --tb=short 2>&1 | tail -40
     DATABASE_URL="sqlite:///./test_tmp.db" .venv/bin/pytest tests/test_catalog_node_adapter.py -q 2>/dev/null | grep -q "16 passed" \
       || { echo "FAIL: 16 테스트 모두 통과해야 함"; exit 1; }
     echo "  ✓ 16 테스트 통과"
@@ -6125,7 +6125,7 @@ print('  ✓ revision=0045 down_revision=0044')
 
   tier0-rule-engine)
     echo "=== tier0-rule-engine: Tier 0 규칙 필터 엔진 단위 테스트 ==="
-    .venv/bin/pytest tests/test_rule_engine.py -v 2>&1 | tail -25
+    .venv/bin/pytest tests/test_rule_engine.py -q --tb=short 2>&1 | tail -25
     .venv/bin/pytest tests/test_rule_engine.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
     .venv/bin/pytest tests/test_rule_engine.py -q 2>/dev/null | grep -q "19 passed" \
       || { echo "FAIL: 19 테스트 모두 통과해야 함"; exit 1; }
@@ -6139,7 +6139,7 @@ print('  ✓ revision=0045 down_revision=0044')
 
   scheduling-router)
     echo "=== scheduling-router: NodeSet/Node/Link/Backref/Tree API 테스트 ==="
-    .venv/bin/pytest tests/test_scheduling_api.py -v 2>&1 | tail -25
+    .venv/bin/pytest tests/test_scheduling_api.py -q --tb=short 2>&1 | tail -25
     .venv/bin/pytest tests/test_scheduling_api.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
     .venv/bin/pytest tests/test_scheduling_api.py -q 2>/dev/null | grep -q "21 passed" \
       || { echo "FAIL: 21 테스트 모두 통과해야 함"; exit 1; }
@@ -6153,7 +6153,7 @@ print('  ✓ revision=0045 down_revision=0044')
 
   link-service)
     echo "=== link-service: link_service CRUD + 사이클 가드 + backref + window 검증 단위 테스트 ==="
-    .venv/bin/pytest tests/test_link_service.py -v 2>&1 | tail -20
+    .venv/bin/pytest tests/test_link_service.py -q --tb=short 2>&1 | tail -20
     .venv/bin/pytest tests/test_link_service.py -q 2>/dev/null | grep -E "passed|failed|error" | tail -3
     .venv/bin/pytest tests/test_link_service.py -q 2>/dev/null | grep -q "32 passed" \
       || { echo "FAIL: 32 테스트 모두 통과해야 함"; exit 1; }
@@ -6471,7 +6471,7 @@ print('  ✓ pricing/holdback schemas import 확인')
     echo "=== suggest-review-flow: AI 추천 저장 + 확정/반려 API ==="
     cd "$BACKEND"
     # 1. 단위 테스트 (11개)
-    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_suggest_service.py -v 2>&1 | tail -20
+    DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_suggest_service.py -q --tb=short 2>&1 | tail -20
     DATABASE_URL="sqlite:///:memory:" .venv/bin/pytest tests/test_suggest_service.py -q 2>/dev/null | grep -q "11 passed" \
       || { echo "FAIL: 11 테스트 모두 통과해야 함"; exit 1; }
     echo "  ✓ 11 테스트 통과"
@@ -7145,7 +7145,7 @@ print('  ✓ SQLite create_all 스모크 통과 (3 신규 테이블)')
       || { echo "FAIL: test_curation_beat.py 없음"; exit 1; }
     echo "  ✓ test_curation_beat.py 존재"
     echo "  → pytest 실행 중..."
-    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_beat.py -v 2>&1 \
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_beat.py -q --tb=short 2>&1 \
       | grep -E "PASSED|FAILED|ERROR|passed|failed|error"
     DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_beat.py 2>&1 | grep -q "6 passed" \
       || { echo "FAIL: test_curation_beat 테스트 실패"; exit 1; }
@@ -7207,7 +7207,7 @@ print('  ✓ SQLite create_all 스모크 통과 (3 신규 테이블)')
     grep -q "curation_router" api/programming/router.py \
       || { echo "FAIL: programming/router.py에 curation 미등록"; exit 1; }
     echo "  ✓ router.py + schemas.py + programming/router.py 등록 확인"
-    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_api.py -v 2>&1 \
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_api.py -q --tb=short 2>&1 \
       | grep -E "PASSED|FAILED|ERROR|passed|failed"
     DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_api.py 2>&1 | grep -q "11 passed" \
       || { echo "FAIL: 테스트 미통과"; exit 1; }
@@ -7219,7 +7219,7 @@ print('  ✓ SQLite create_all 스모크 통과 (3 신규 테이블)')
     echo "=== banner-service: CurationBannerPlan 워크플로우 + 단위 테스트 ==="
     [ -f "api/programming/curation/banner_service.py" ] \
       || { echo "FAIL: banner_service.py 없음"; exit 1; }
-    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_banner_service.py -v 2>&1 \
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_banner_service.py -q --tb=short 2>&1 \
       | grep -E "PASSED|FAILED|ERROR|passed|failed"
     DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_banner_service.py 2>&1 | grep -q "14 passed" \
       || { echo "FAIL: 테스트 미통과"; exit 1; }
@@ -7231,7 +7231,7 @@ print('  ✓ SQLite create_all 스모크 통과 (3 신규 테이블)')
     echo "=== slot-service: HomeSlot CRUD + resolve 단위 테스트 ==="
     [ -f "api/programming/curation/slot_service.py" ] \
       || { echo "FAIL: slot_service.py 없음"; exit 1; }
-    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_slot_service.py -v 2>&1 \
+    DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_slot_service.py -q --tb=short 2>&1 \
       | grep -E "PASSED|FAILED|ERROR|passed|failed"
     DATABASE_URL="sqlite:///:memory:" python -m pytest tests/test_curation_slot_service.py -q 2>&1 \
       | tail -3
@@ -7373,6 +7373,24 @@ beat_src = pathlib.Path('workers/celery_app.py').read_text()
 assert 'facet-stale-run-watchdog' in beat_src, 'Beat 스케줄 미등록'
 assert '600' in beat_src, 'watchdog 10분 주기 미설정'
 print('  ✓ check_stale_facet_runs 태스크 + Beat 스케줄 확인')
+"
+    echo "=== PASS ==="
+    ;;
+
+  facet-watchdog-idle)
+    echo "=== facet-watchdog-idle: 워치독 idle 자가복구 분기 검증 ==="
+    cd "$BACKEND"
+    python3 -m pytest tests/workers/test_facet_tasks.py -k watchdog -q --tb=short 2>&1 | tail -10
+    [ ${PIPESTATUS[0]} -eq 0 ] || { echo "FAIL: pytest 실패"; exit 1; }
+    echo "  ✓ 워치독 단위 테스트 통과 (idle/disabled/running/stale 4케이스)"
+    # 구조 가드 — idle 재디스패치 분기 존재 확인
+    python3 -c "
+import pathlib
+src = pathlib.Path('workers/tasks/facet_tasks.py').read_text()
+assert 'def check_stale_facet_runs' in src, 'check_stale_facet_runs 없음'
+assert 'idle = running is None' in src, 'idle 판정 분기 없음'
+assert 'idle and settings.FACET_CONTINUOUS and settings.FACET_BATCH_ENABLED' in src, 'idle 재디스패치 조건 없음'
+print('  ✓ idle 자가복구 분기 + 재디스패치 조건 확인')
 "
     echo "=== PASS ==="
     ;;
