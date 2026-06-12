@@ -2768,6 +2768,7 @@ export const medisearchApi = {
     tmdb_id?: number
     imdb_id?: string
     original_title?: string
+    content_type?: string
   }) =>
     request<MediSearchFacetInfo>(
       `${MEDISEARCH_BASE}/medisearch/evaluate`,

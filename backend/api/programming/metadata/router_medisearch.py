@@ -108,6 +108,7 @@ def _call_medisearch_evaluate_raw(payload: dict) -> dict | None:
         "tmdb_id": payload.get("tmdb_id"),
         "imdb_id": payload.get("imdb_id"),
         "original_title": payload.get("original_title"),
+        "content_type": payload.get("content_type"),
         "require_namu": False,
     }.items() if v is not None}
 
@@ -458,6 +459,8 @@ def medisearch_evaluate_freetext(
         payload["imdb_id"] = req.imdb_id
     if req.original_title:
         payload["original_title"] = req.original_title
+    if req.content_type:
+        payload["content_type"] = req.content_type
 
     data = _call_medisearch_evaluate_raw(payload)
     if data is None:

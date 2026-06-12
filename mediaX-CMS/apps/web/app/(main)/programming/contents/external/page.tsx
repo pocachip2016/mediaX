@@ -69,6 +69,8 @@ export default function WebSearchPage() {
         ...(year ? { production_year: parseInt(year, 10) } : {}),
         ...(result.resolved_tmdb_id != null ? { tmdb_id: result.resolved_tmdb_id } : {}),
         ...(result.resolved_imdb_id ? { imdb_id: result.resolved_imdb_id } : {}),
+        ...(contentType ? { content_type: contentType } : {}),
+        ...(result.metadata?.original_title ? { original_title: result.metadata.original_title as string } : {}),
       })
       setFacetData(data)
       setFacetState("fresh")
