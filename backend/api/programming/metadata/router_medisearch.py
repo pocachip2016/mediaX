@@ -62,6 +62,7 @@ class MediSearchFreeRequest(BaseModel):
     production_year: Optional[int] = None
     content_type: Optional[str] = None
     original_title: Optional[str] = None
+    fast: bool = False
 
 
 class MediSearchEvaluateRequest(MediSearchFreeRequest):
@@ -81,11 +82,15 @@ class MediSearchFreeResult(BaseModel):
 
 # ── 순수 헬퍼: MediSearch HTTP 호출 ─────────────────────────────────────────
 
-def _call_medisearch_enrich(payload: dict) -> dict:
+def _call_medisearch_enrich(payload: dict, fast: bool = False) -> dict:
     """POST /api/movies/enrich 호출. HTTPException 발생 시 502 변환."""
     url = f"{settings.MEDISEARCH_URL.rstrip('/')}{_MEDISEARCH_ENRICH_PATH}"
+    # fast=True: 구조화만 ~3s, fast=False: 웹+LLM ~80s + 여유
+    timeout = 15 if fast else 120
+    if fast:
+        payload = {**payload, "fast": True}
     try:
-        with httpx.Client(timeout=min(settings.MEDISEARCH_TIMEOUT_S, 120)) as client:
+        with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, json=payload)
     except (httpx.RequestError, httpx.TimeoutException) as exc:
         logger.warning("[medisearch] enrich network error: %s", exc)
@@ -412,7 +417,7 @@ def medisearch_search_freetext(
     if req.original_title:
         payload["original_title"] = req.original_title
 
-    data = _call_medisearch_enrich(payload)
+    data = _call_medisearch_enrich(payload, fast=req.fast)
 
     metadata = data.get("metadata") or {}
     provenance = metadata.pop("_provenance", {}) if isinstance(metadata, dict) else {}

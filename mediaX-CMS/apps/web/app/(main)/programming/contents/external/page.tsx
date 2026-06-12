@@ -9,6 +9,7 @@ import { MetaColumn, FacetColumn } from "@/components/contents/medisearch/MediSe
 
 type SearchState = "idle" | "searching" | "loaded" | "error"
 type FacetState = "none" | "stored" | "evaluating" | "fresh" | "eval_error"
+type EnrichState = "idle" | "enriching" | "done" | "error"
 
 // ── 메인 페이지 ───────────────────────────────────────────
 
@@ -25,6 +26,9 @@ export default function WebSearchPage() {
   const [facetData, setFacetData] = useState<MediSearchFacetInfo | null>(null)
   const [evalError, setEvalError] = useState<string | null>(null)
 
+  // 웹+LLM 보강 상태 (fast 레인 이후 백그라운드)
+  const [enrichState, setEnrichState] = useState<EnrichState>("idle")
+
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault()
     const q = title.trim()
@@ -36,23 +40,36 @@ export default function WebSearchPage() {
     setFacetState("none")
     setFacetData(null)
     setEvalError(null)
+    setEnrichState("idle")
+
+    const params = {
+      title: q,
+      ...(year ? { production_year: parseInt(year, 10) } : {}),
+      ...(contentType ? { content_type: contentType } : {}),
+    }
 
     try {
-      const data = await medisearchApi.searchByTitle({
-        title: q,
-        ...(year ? { production_year: parseInt(year, 10) } : {}),
-        ...(contentType ? { content_type: contentType } : {}),
-      })
-      setResult(data)
+      // ① fast 레인: 구조화 provider만 (~1.5s) → 즉시 렌더
+      const fastData = await medisearchApi.searchByTitle({ ...params, fast: true })
+      setResult(fastData)
       setSearchState("loaded")
-
-      // facet 즉시 첨부 여부
-      if (data.facet.origin === "stored") {
-        setFacetData(data.facet)
+      if (fastData.facet.origin === "stored") {
+        setFacetData(fastData.facet)
         setFacetState("stored")
-      } else {
-        setFacetState("none")
       }
+
+      // ② full 레인: 웹+LLM 보강 → 백그라운드, 완료 시 결과 갱신
+      setEnrichState("enriching")
+      medisearchApi.searchByTitle({ ...params, fast: false }).then((fullData) => {
+        setResult(fullData)
+        setEnrichState("done")
+        if (fullData.facet.origin === "stored") {
+          setFacetData(fullData.facet)
+          setFacetState("stored")
+        }
+      }).catch(() => {
+        setEnrichState("error")
+      })
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "MediSearch 검색 실패")
       setSearchState("error")
@@ -186,8 +203,15 @@ export default function WebSearchPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4 min-h-[400px]">
-            {/* 기본메타 컬럼 — 즉시 렌더 */}
-            <MetaColumn result={result} />
+            {/* 기본메타 컬럼 — fast 즉시 렌더 + full 보강 배지 */}
+            <div className="relative">
+              {enrichState === "enriching" && (
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary animate-pulse">
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />웹 보강 중…
+                </div>
+              )}
+              <MetaColumn result={result} />
+            </div>
 
             {/* Facet 컬럼 — 독립 상태 */}
             {facetState === "evaluating" ? (
