@@ -2689,3 +2689,89 @@ export const facetApi = {
     return request<FacetEventsPage>(`${FACETS}/events?${q.toString()}`)
   },
 }
+
+
+// ── medisearchApi ──────────────────────────────────────────
+
+const MEDISEARCH_BASE = "/api/programming/metadata"
+
+export interface MediSearchSourceDetail {
+  provider: string
+  docs_count: number
+  trust?: number
+  evaluated?: boolean
+  structured?: boolean
+}
+
+export interface MediSearchFacetInfo {
+  origin: "stored" | "fresh" | "none"
+  facet_json?: Record<string, unknown>
+  source_count?: number
+  confidence?: number
+  evaluated_at?: string
+}
+
+export interface MediSearchResult {
+  meta_source_id: number
+  query: string
+  metadata: Record<string, unknown>
+  provenance: Record<string, string[]>
+  sources_detail: MediSearchSourceDetail[]
+  facet: MediSearchFacetInfo
+}
+
+export interface MediSearchFreeResult {
+  query: string
+  metadata: Record<string, unknown>
+  provenance: Record<string, string[]>
+  sources_detail: MediSearchSourceDetail[]
+  resolved_tmdb_id?: number
+  resolved_imdb_id?: string
+  facet: MediSearchFacetInfo
+}
+
+export const medisearchApi = {
+  search: (
+    contentId: number,
+    opts?: { include_facet?: boolean; force_facet?: boolean }
+  ) =>
+    request<MediSearchResult>(
+      `${MEDISEARCH_BASE}/contents/${contentId}/medisearch/search`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          include_facet: opts?.include_facet ?? true,
+          force_facet: opts?.force_facet ?? false,
+        }),
+      }
+    ),
+
+  getFacet: (contentId: number) =>
+    request<MediSearchFacetInfo>(
+      `${MEDISEARCH_BASE}/contents/${contentId}/medisearch/facet`
+    ),
+
+  searchByTitle: (body: {
+    title: string
+    production_year?: number
+    content_type?: string
+    original_title?: string
+  }) =>
+    request<MediSearchFreeResult>(
+      `${MEDISEARCH_BASE}/medisearch/search`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+
+  evaluateByTitle: (body: {
+    title: string
+    production_year?: number
+    tmdb_id?: number
+    imdb_id?: string
+    original_title?: string
+    content_type?: string
+  }) =>
+    request<MediSearchFacetInfo>(
+      `${MEDISEARCH_BASE}/medisearch/evaluate`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+}

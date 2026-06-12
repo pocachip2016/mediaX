@@ -1,0 +1,44 @@
+{
+  "project": "mediaX",
+  "task": "dev-medisearch-freetext",
+  "title": "WebSearch 페이지 — 제목 free-text MediSearch 검색 (기본메타 즉시 + facet 진행형 로딩)",
+  "branch": "feature/medisearch-freetext",
+  "decision": "콘텐츠 소스 > WebSearch nav(/programming/contents/external) stub 교체. 빠른 레인(enrich/기본메타+저장facet)은 즉시, 느린 레인(evaluate/facet평가)은 후보 선택 시 자동 트리거. tmdb_id 해석 시 TmdbMovieFacet 캐시 저장(재검색 즉시재사용). 편집패널(MediSearchPanel)은 동작 유지 — 표현컴포넌트만 공유.",
+  "steps": [
+    {
+      "id": "1",
+      "name": "plan-scaffold",
+      "summary": "plans/dev-medisearch-freetext/ 스캐폴드 — index.json(5 steps) + step1~5.md spec 파일 생성.",
+      "status": "completed",
+      "completed_at": "2026-06-12T00:00:00+09:00"
+    },
+    {
+      "id": "2",
+      "name": "backend-freetext-endpoints",
+      "summary": "router_medisearch.py 리팩터 — 순수헬퍼 3개(_call_medisearch_enrich/_load_stored_facet_by_tmdb/_resolve_ids) + MediSearchFree*/Evaluate 스키마 + /medisearch/search·evaluate 엔드포인트 추가, content-bound 경로 유지.",
+      "status": "completed",
+      "completed_at": "2026-06-12T00:00:00+09:00"
+    },
+    {
+      "id": "3",
+      "name": "api-client-freetext",
+      "summary": "lib/api.ts — MediSearchFreeResult 타입 + medisearchApi.searchByTitle/evaluateByTitle 추가. 기존 content-bound search/getFacet 유지. typecheck 통과.",
+      "status": "completed",
+      "completed_at": "2026-06-12T00:00:00+09:00"
+    },
+    {
+      "id": "4",
+      "name": "fe-shared-columns",
+      "summary": "MediSearchColumns.tsx 신규 — MetaColumn/FacetColumn/ColHeader/FieldRow/FacetScoreBar + 라벨맵/util export. MetaColumn.onApply optional화(없으면 Apply 미렌더). MediSearchPanel.tsx import 교체. typecheck 통과.",
+      "status": "completed",
+      "completed_at": "2026-06-12T00:00:00+09:00"
+    },
+    {
+      "id": "5",
+      "name": "websearch-page",
+      "summary": "external/page.tsx 교체 — 제목+연도+유형 폼 + 2컬럼(기본메타 즉시|facet 독립로딩) + Query 중.../저장값/신규평가 3상태. typecheck 통과.",
+      "status": "completed",
+      "completed_at": "2026-06-12T00:00:00+09:00"
+    }
+  ]
+}

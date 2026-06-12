@@ -378,12 +378,13 @@ def _extract_field_from_raw(raw: dict, field: str) -> str | None:
     if field == "director":
         return _names_from_list(raw.get("directors") or raw.get("director"))
     if field == "synopsis":
-        return raw.get("synopsis") or raw.get("cp_synopsis") or raw.get("overview") or None
+        return raw.get("synopsis") or raw.get("cp_synopsis") or raw.get("overview") or raw.get("story") or None
     if field == "runtime":
         v = raw.get("runtime") or raw.get("runtime_minutes")
         return str(v) if v else None
     if field == "country":
-        v = raw.get("country") or raw.get("origin_country") or raw.get("nationAlt") or raw.get("repNationNm")
+        # countries: MediSearch enrich 응답 키
+        v = raw.get("country") or raw.get("countries") or raw.get("origin_country") or raw.get("nationAlt") or raw.get("repNationNm")
         if isinstance(v, list):
             return ", ".join(v)
         return str(v) if v else None
