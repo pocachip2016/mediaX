@@ -31,6 +31,14 @@ logger = logging.getLogger(__name__)
 
 _MEDISEARCH_EVALUATE_PATH = "/api/movies/evaluate"
 
+# 저작권 가드 — 나무위키 등 창의물 파생 필드는 DB 영속 금지 (MediSearch 저작권 원칙)
+_COPYRIGHT_STRIP_FIELDS = frozenset({"story"})
+
+
+def _apply_copyright_guard(meta: dict) -> dict:
+    """저작권 보호 필드 제거 후 반환 — meta dict는 변경하지 않음."""
+    return {k: v for k, v in meta.items() if k not in _COPYRIGHT_STRIP_FIELDS}
+
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
 
@@ -188,6 +196,44 @@ def _upsert_tmdb_facet(
                 "attempt_count": TmdbMovieFacet.attempt_count + 1,
             },
         )
+    db.execute(stmt)
+
+
+def _upsert_tmdb_meta(
+    db,
+    tmdb_id: int,
+    status: str,
+    *,
+    meta_json: dict | None = None,
+    confidence: float | None = None,
+    source_count: int | None = None,
+    last_error: str | None = None,
+) -> None:
+    """tmdb_movie_meta row upsert — story 필드는 저장 전 _apply_copyright_guard 로 제거할 것."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieMeta
+
+    now = datetime.now(timezone.utc)
+    values: dict = {
+        "tmdb_id": tmdb_id,
+        "status": status,
+    }
+    if meta_json is not None:
+        values["meta_json"] = meta_json
+    if confidence is not None:
+        values["confidence"] = confidence
+    if source_count is not None:
+        values["source_count"] = source_count
+    if last_error is not None:
+        values["last_error"] = last_error
+    if status == "success":
+        values["enriched_at"] = now
+
+    stmt = pg_insert(TmdbMovieMeta).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["tmdb_id"],
+        set_={k: stmt.excluded[k] for k in values if k != "tmdb_id"},
+    )
     db.execute(stmt)
 
 
@@ -465,6 +511,7 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
             "tmdb_id": tmdb_id,
             "require_namu": False,
             "backfill": True,
+            "include_meta": True,
         }
     except ValueError as exc:
         logger.error("[facet] tmdb %d not found in cache: %s", tmdb_id, exc)
@@ -526,6 +573,20 @@ def evaluate_tmdb_facet(self, tmdb_id: int, run_id: int) -> dict:
     with SessionLocal() as db:
         _upsert_tmdb_facet(db, tmdb_id, "success", facet_json=facet_json, confidence=confidence, source_count=source_count)
         _dual_write_content_ai_result(db, tmdb_id, facet_json, confidence)
+
+        # 기본 메타 저장 (include_meta=True 응답) — 저작권 가드 적용
+        raw_meta = data.get("metadata")
+        if raw_meta and isinstance(raw_meta, dict):
+            guarded_meta = _apply_copyright_guard(raw_meta)
+            meta_confidence = raw_meta.get("confidence")
+            try:
+                _upsert_tmdb_meta(db, tmdb_id, "success", meta_json=guarded_meta,
+                                  confidence=meta_confidence, source_count=source_count)
+            except Exception as meta_exc:
+                logger.warning("[facet] tmdb %d meta 저장 실패 (non-fatal): %s", tmdb_id, meta_exc)
+        else:
+            _upsert_tmdb_meta(db, tmdb_id, "skipped", last_error="no_meta_in_response")
+
         db.execute(
             update(FacetBatchRun)
             .where(FacetBatchRun.id == run_id)

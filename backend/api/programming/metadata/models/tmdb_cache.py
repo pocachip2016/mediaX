@@ -99,6 +99,28 @@ class TmdbMovieFacet(Base):
     last_error = Column(String(500))
 
 
+class TmdbMovieMeta(Base):
+    """MediSearch 기본 메타 보강 결과 — TMDB 캐시 모집단 SSOT.
+
+    facet 평가(evaluate_tmdb_facet)와 동일 run에서 include_meta=True로 수집.
+    저작권 가드 적용: story 필드 제거 후 저장 (나무위키 파생 창의물 영속 금지).
+
+    status:
+      success — meta_json 보유 (구조화 provider 기반, confidence 유효)
+      skipped — 응답 metadata 없음 또는 빈 값
+      failed  — include_meta 응답 파싱/저장 오류
+    """
+    __tablename__ = "tmdb_movie_meta"
+
+    tmdb_id = Column(BigInteger, ForeignKey("tmdb_movie_cache.id"), primary_key=True)
+    status = Column(String(20), nullable=False, index=True)  # success | skipped | failed
+    meta_json = Column(JSON)                                  # story 제거된 구조화 메타
+    confidence = Column(Float)
+    source_count = Column(Integer)
+    enriched_at = Column(TIMESTAMP(timezone=True), index=True)
+    last_error = Column(String(500))
+
+
 class TmdbTvCache(Base):
     __tablename__ = "tmdb_tv_cache"
 
