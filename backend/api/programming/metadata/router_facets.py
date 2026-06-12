@@ -250,6 +250,7 @@ class FacetEventOut(BaseModel):
     id: int
     run_id: int
     content_id: Optional[int] = None
+    content_title: Optional[str] = None
     event_type: str
     message: Optional[str] = None
     detail: Optional[dict] = None
@@ -326,25 +327,47 @@ def list_events(
     since: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     run_id: Optional[int] = Query(None),
+    tail: bool = Query(False, description="True면 최신 limit건부터 (라이브 로그 초기 로드용)"),
     db: Session = Depends(get_db),
 ):
-    """since-id 커서 폴링 — 실시간 로그 FE 폴링용."""
+    """since-id 커서 폴링 — 실시간 로그 FE 폴링용.
+
+    tail=True: 최신 limit건을 시간순(asc)으로 반환 — 라이브 로그 초기 로드용.
+               next_cursor=최대 id 이므로 이후 폴링은 새 이벤트만 받음(idle 시 정지).
+    tail=False: since-id 이후 오래된 순 페이징.
+    """
     from api.programming.metadata.models.external import FacetEvent
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieCache
 
-    q = db.query(FacetEvent).filter(FacetEvent.id > since)
+    base = db.query(FacetEvent)
     if run_id is not None:
-        q = q.filter(FacetEvent.run_id == run_id)
-    q = q.order_by(FacetEvent.id.asc())
+        base = base.filter(FacetEvent.run_id == run_id)
 
-    items = q.limit(limit).all()
+    if tail:
+        # 최신 limit건을 desc로 뽑은 뒤 asc로 뒤집어 반환
+        items = base.order_by(FacetEvent.id.desc()).limit(limit).all()
+        items.reverse()
+    else:
+        items = base.filter(FacetEvent.id > since).order_by(FacetEvent.id.asc()).limit(limit).all()
+
     next_cursor = items[-1].id if items else since
-    total = q.count()
+    total = base.count()
 
-    return FacetEventsPage(
-        items=[FacetEventOut.model_validate(e) for e in items],
-        next_cursor=next_cursor,
-        total=total,
-    )
+    # content_id(=tmdb_id) → title 일괄 조회 (N+1 방지)
+    cids = {e.content_id for e in items if e.content_id is not None}
+    title_map: dict[int, str] = {}
+    if cids:
+        rows = db.query(TmdbMovieCache.id, TmdbMovieCache.title).filter(TmdbMovieCache.id.in_(cids)).all()
+        title_map = {cid: title for cid, title in rows}
+
+    out = []
+    for e in items:
+        dto = FacetEventOut.model_validate(e)
+        if e.content_id is not None:
+            dto.content_title = title_map.get(e.content_id)
+        out.append(dto)
+
+    return FacetEventsPage(items=out, next_cursor=next_cursor, total=total)
 
 
 # ── 정책 조회/변경 ──────────────────────────────────────────────────────────
