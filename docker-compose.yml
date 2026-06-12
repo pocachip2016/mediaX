@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: media_ax
       POSTGRES_USER: media_ax
-      POSTGRES_PASSWORD: media_ax
+      POSTGRES_PASSWORD: x31sFEebPbyFtHMf7S6O1Ost
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -53,7 +53,7 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - ./backend/.env
     environment:
@@ -142,7 +142,7 @@ services:
       - /app/node_modules
       - /app/apps/web/.next
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_ENABLE_PIPELINE_TEST=true
