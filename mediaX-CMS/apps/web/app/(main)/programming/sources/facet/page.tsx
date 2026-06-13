@@ -299,8 +299,9 @@ export default function FacetPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={<Film className="w-5 h-5" />}
-          label="전체 영화"
-          value={fmt(coverage?.movies_total)}
+          label="전체 영화 (캐시)"
+          value={fmt(coverage?.cache_total)}
+          sub={coverage ? `평가 대상 ${fmt(coverage.movies_total)} (${coverage.cache_total > 0 ? ((coverage.movies_total / coverage.cache_total) * 100).toFixed(1) : "0.0"}%)` : undefined}
         />
         <StatCard
           icon={<CheckCircle className="w-5 h-5" />}
