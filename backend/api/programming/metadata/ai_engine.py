@@ -618,6 +618,17 @@ async def _fetch_tmdb(title: str, year: int | None) -> dict | None:
             )
             data = resp.json()
             results = data.get("results", [])
-            return results[0] if results else None
+            if not results:
+                return None
+            item = results[0]
+            if not item.get("overview"):
+                tmdb_id = item.get("id")
+                if tmdb_id:
+                    detail_resp = await client.get(
+                        f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+                        params={"api_key": settings.TMDB_API_KEY, "language": "en-US"},
+                    )
+                    item["overview"] = detail_resp.json().get("overview") or ""
+            return item
     except Exception:
         return None

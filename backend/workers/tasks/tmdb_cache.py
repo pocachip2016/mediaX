@@ -69,11 +69,16 @@ def _upsert_movie(db, item: dict) -> Literal["inserted", "updated", "unchanged"]
         ))
         return "inserted"
 
-    # 변경 감지: popularity 또는 vote_count 차이가 있으면 갱신
+    new_overview = item.get("overview") or ""
+    new_release = item.get("release_date") or ""
+
+    # 변경 감지: popularity/vote_count 차이 또는 overview/release_date 보강
     changed = (
         existing.popularity != item.get("popularity")
         or existing.vote_count != item.get("vote_count")
         or existing.poster_path != item.get("poster_path")
+        or (new_overview and not existing.overview)
+        or (new_release and not existing.release_date)
     )
     existing.last_fetched_at = datetime.utcnow()
     if changed:
@@ -83,6 +88,13 @@ def _upsert_movie(db, item: dict) -> Literal["inserted", "updated", "unchanged"]
         existing.poster_path = item.get("poster_path")
         existing.backdrop_path = item.get("backdrop_path")
         existing.raw_json = item
+        if new_overview and not existing.overview:
+            existing.overview = new_overview
+        if new_release and not existing.release_date:
+            try:
+                existing.release_date = date_type.fromisoformat(new_release)
+            except ValueError:
+                pass
         return "updated"
 
     return "unchanged"
@@ -129,10 +141,15 @@ def _upsert_tv(db, item: dict) -> Literal["inserted", "updated", "unchanged"]:
         ))
         return "inserted"
 
+    new_overview = item.get("overview") or ""
+    new_first_air = item.get("first_air_date") or ""
+
     changed = (
         existing.popularity != item.get("popularity")
         or existing.vote_count != item.get("vote_count")
         or existing.number_of_episodes != item.get("number_of_episodes")
+        or (new_overview and not existing.overview)
+        or (new_first_air and not existing.first_air_date)
     )
     existing.last_fetched_at = datetime.utcnow()
     if changed:
@@ -144,6 +161,10 @@ def _upsert_tv(db, item: dict) -> Literal["inserted", "updated", "unchanged"]:
         existing.status = item.get("status")
         existing.poster_path = item.get("poster_path")
         existing.raw_json = item
+        if new_overview and not existing.overview:
+            existing.overview = new_overview
+        if new_first_air and not existing.first_air_date:
+            existing.first_air_date = _parse_date(new_first_air)
         return "updated"
 
     return "unchanged"
@@ -391,7 +412,16 @@ async def _fetch_changed_details(client, kind: Literal["movie", "tv"], changed_i
     inserted = updated = unchanged = errors = 0
     for tmdb_id in changed_ids:
         try:
-            detail = await client.detail_movie(tmdb_id) if kind == "movie" else await client.detail_tv(tmdb_id)
+            if kind == "movie":
+                detail = await client.detail_movie(tmdb_id)
+                if not detail.get("overview"):
+                    detail_en = await client.detail_movie(tmdb_id, language="en-US")
+                    detail["overview"] = detail_en.get("overview") or ""
+            else:
+                detail = await client.detail_tv(tmdb_id)
+                if not detail.get("overview"):
+                    detail_en = await client.detail_tv(tmdb_id, language="en-US")
+                    detail["overview"] = detail_en.get("overview") or ""
             action = _upsert_movie(db, detail) if kind == "movie" else _upsert_tv(db, detail)
             if action == "inserted":
                 inserted += 1
@@ -765,3 +795,94 @@ def sync_tmdb_poster_to_content_images():
         return {"error": str(exc)}
     finally:
         db.close()
+
+
+# ── overview 빈 행 주기 보강 Beat ─────────────────────────────────────────────
+
+@celery_app.task(name="workers.tasks.tmdb_cache.backfill_tmdb_overview_tick")
+def backfill_tmdb_overview_tick(
+    limit: int = 1000,
+    skip_recent_days: int = 7,
+    batch: int = 200,
+) -> dict:
+    """매일 09:10 KST Beat — overview 빈 tmdb_movie_cache 행 ko→en 폴백 보강.
+
+    - QuotaManager("tmdb") 잔여 < threshold → skip
+    - last_fetched_at 이 skip_recent_days 이내인 행 제외 (중복 억제)
+    - 처리 순서: vote_count DESC (인기 콘텐츠 우선)
+    """
+    from shared.quota_manager import QuotaManager
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieCache
+    from datetime import timezone
+
+    api_key = getattr(settings, "TMDB_API_KEY", "")
+    if not api_key:
+        logger.info("[overview-tick] TMDB_API_KEY 없음 — 스킵")
+        return {"skipped": True, "reason": "no_api_key"}
+
+    quota = QuotaManager()
+    remaining = quota.daily_remaining("tmdb", _TMDB_DAILY_LIMIT)
+    if remaining < _TMDB_QUOTA_THRESHOLD:
+        logger.info("[overview-tick] quota 잔여 %d < %d — 스킵", remaining, _TMDB_QUOTA_THRESHOLD)
+        return {"skipped": True, "remaining": remaining}
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=skip_recent_days)
+        from sqlalchemy import or_
+        rows = (
+            db.query(TmdbMovieCache.id)
+            .filter(
+                or_(
+                    TmdbMovieCache.overview.is_(None),
+                    TmdbMovieCache.overview == "",
+                ),
+                or_(
+                    TmdbMovieCache.last_fetched_at.is_(None),
+                    TmdbMovieCache.last_fetched_at < cutoff,
+                ),
+            )
+            .order_by(TmdbMovieCache.vote_count.desc().nullslast())
+            .limit(limit)
+            .all()
+        )
+        tmdb_ids = [r.id for r in rows]
+    finally:
+        db.close()
+
+    if not tmdb_ids:
+        logger.info("[overview-tick] 보강 대상 없음")
+        return {"skipped": True, "reason": "no_targets"}
+
+    logger.info("[overview-tick] 대상 %d건 처리 시작 (remaining quota=%d)", len(tmdb_ids), remaining)
+
+    updated = unchanged = errors = 0
+
+    async def _run():
+        nonlocal updated, unchanged, errors
+        db2 = SessionLocal()
+        try:
+            async with TmdbClient(api_key=api_key) as client:
+                for i in range(0, len(tmdb_ids), batch):
+                    batch_ids = tmdb_ids[i : i + batch]
+                    for tmdb_id in batch_ids:
+                        try:
+                            detail = await client.detail_movie(tmdb_id)
+                            if not detail.get("overview"):
+                                detail_en = await client.detail_movie(tmdb_id, language="en-US")
+                                detail["overview"] = detail_en.get("overview") or ""
+                            action = _upsert_movie(db2, detail)
+                            if action == "updated":
+                                updated += 1
+                            else:
+                                unchanged += 1
+                        except Exception as exc:
+                            logger.warning("[overview-tick] id=%d 실패: %s", tmdb_id, exc)
+                            errors += 1
+                    db2.commit()
+        finally:
+            db2.close()
+
+    asyncio.run(_run())
+    logger.info("[overview-tick] 완료 updated=%d unchanged=%d errors=%d", updated, unchanged, errors)
+    return {"total": len(tmdb_ids), "updated": updated, "unchanged": unchanged, "errors": errors}

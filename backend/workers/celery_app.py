@@ -140,6 +140,10 @@ celery_app.conf.update(
             "task": "workers.tasks.tmdb_cache.tmdb_quota_backfill_tick",
             "schedule": crontab(hour=8, minute=30),
         },
+        "backfill-tmdb-overview": {
+            "task": "workers.tasks.tmdb_cache.backfill_tmdb_overview_tick",
+            "schedule": crontab(hour=9, minute=10),  # 매일 09:10 KST — historical 이후 quota 공유
+        },
         # OTT popularity sync — 06:40~07:20 KST (06:30 backfill-kobis / 07:00 link-kmdb 충돌 회피)
         "sync-ott-watcha": {
             "task": "workers.tasks.distribution.sync_ott_watcha",

@@ -92,20 +92,26 @@ class SourcesAggregator:
                 movies = await client.discover_movies(
                     with_keywords=query
                 )  # 단순화된 검색
-                return [
-                    {
+                results = []
+                for m in (movies if isinstance(movies, list) else []):
+                    if not m:
+                        continue
+                    overview = m.get("overview") or ""
+                    if not overview and m.get("id"):
+                        detail = await client.detail_movie(m["id"], language="en-US")
+                        overview = detail.get("overview") or ""
+                    results.append({
                         "title": m.get("title", ""),
                         "year": m.get("release_date", "")[:4] if m.get("release_date") else None,
-                        "director": None,  # TMDB discover에선 director 미포함
+                        "director": None,
                         "match_percent": int(m.get("popularity", 0) * 10 // 100),
                         "metadata": {
                             "tmdb_id": m.get("id"),
-                            "overview": m.get("overview"),
+                            "overview": overview,
                             "poster_path": m.get("poster_path"),
                         },
-                    }
-                    for m in movies if isinstance(movies, list) and m
-                ]
+                    })
+                return results
         except Exception as e:
             logger.error(f"TMDB search error: {e}")
             raise
