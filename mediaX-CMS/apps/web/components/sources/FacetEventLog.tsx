@@ -4,20 +4,28 @@ import { useEffect, useRef, useState } from "react"
 import { facetApi, type FacetEventOut } from "@/lib/api"
 import { Pause, Play } from "lucide-react"
 
-const EVENT_COLOR: Record<string, string> = {
-  batch_started: "text-blue-600 dark:text-blue-400",
-  batch_done:    "text-blue-600 dark:text-blue-400",
-  item_started:  "text-muted-foreground",
-  item_success:  "text-green-600 dark:text-green-400",
-  item_failed:   "text-red-600 dark:text-red-400",
-}
-
-const EVENT_BADGE: Record<string, string> = {
+const EVENT_BADGE_STYLE: Record<string, string> = {
   batch_started: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   batch_done:    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   item_started:  "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
   item_success:  "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   item_failed:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+}
+
+const EVENT_BADGE_LABEL: Record<string, string> = {
+  batch_started: "배치시작",
+  batch_done:    "배치완료",
+  item_started:  "시작",
+  item_success:  "성공",
+  item_failed:   "실패",
+}
+
+const EVENT_TITLE_STYLE: Record<string, string> = {
+  item_started: "text-muted-foreground",
+  item_success: "text-green-700 dark:text-green-400 font-medium",
+  item_failed:  "text-red-600 dark:text-red-400",
+  batch_started:"text-blue-600 dark:text-blue-400",
+  batch_done:   "text-blue-600 dark:text-blue-400",
 }
 
 const MAX_EVENTS = 300
@@ -37,7 +45,7 @@ function ProviderBadges({ detail }: { detail: Record<string, unknown> | null }) 
   const providers = (detail as { providers?: ProviderEntry[] } | null)?.providers
   if (!providers?.length) return null
   return (
-    <span className="ml-1.5 inline-flex flex-wrap gap-0.5">
+    <span className="inline-flex flex-wrap gap-0.5">
       {providers.map((pr) => {
         const label = PROVIDER_LABEL[pr.p] ?? pr.p
         return pr.eval ? (
@@ -54,6 +62,26 @@ function ProviderBadges({ detail }: { detail: Record<string, unknown> | null }) 
   )
 }
 
+function SuccessRefer({ detail }: { detail: Record<string, unknown> | null }) {
+  const confidence = (detail as { confidence?: number } | null)?.confidence
+  if (confidence == null) return null
+  const pct = Math.round(confidence * 100)
+  const color = pct >= 80 ? "text-green-600 dark:text-green-400" : pct >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-500 dark:text-red-400"
+  return (
+    <span className={`text-[10px] tabular-nums ${color}`}>
+      {pct}%
+    </span>
+  )
+}
+
+function fmtTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour12: false })
+  } catch {
+    return iso
+  }
+}
+
 interface FacetEventLogProps {
   runId?: number
   maxHeight?: string
@@ -66,11 +94,12 @@ export function FacetEventLog({ runId, maxHeight = "400px" }: FacetEventLogProps
   const listRef   = useRef<HTMLDivElement>(null)
   const isUserScrollingRef = useRef(false)
 
-  const fetchEvents = async () => {
+  const fetchEvents = async (tail = false) => {
     try {
       const data = await facetApi.getEvents({
         since: cursorRef.current,
         limit: 50,
+        tail: tail || undefined,
         ...(runId !== undefined ? { run_id: runId } : {}),
       })
       if (data.items.length > 0) {
@@ -84,30 +113,25 @@ export function FacetEventLog({ runId, maxHeight = "400px" }: FacetEventLogProps
         }
       }
     } catch {
-      // 조용히 실패 — 로그 창이 배치를 막으면 안 됨
+      // 로그 창 오류가 배치 동작을 막으면 안 됨
     }
   }
 
-  // 최초 로드
+  // 최초 로드: tail=true로 최신 이벤트만 가져옴
   useEffect(() => {
     cursorRef.current = 0
     setEvents([])
-    fetchEvents()
+    fetchEvents(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId])
 
   // 1s 폴링
   useEffect(() => {
     if (isPaused) return
-    const id = setInterval(fetchEvents, 1000)
+    const id = setInterval(() => fetchEvents(false), 1000)
     return () => clearInterval(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaused, runId])
-
-  function fmtTime(iso: string) {
-    const m = iso.match(/T(\d{2}):(\d{2}):(\d{2})/)
-    return m ? `${m[1]}:${m[2]}:${m[3]}` : iso
-  }
 
   return (
     <div className="space-y-2">
@@ -143,33 +167,55 @@ export function FacetEventLog({ runId, maxHeight = "400px" }: FacetEventLogProps
         ) : (
           <table className="w-full">
             <tbody>
-              {events.map((ev, idx) => (
-                <tr key={`${ev.id}-${idx}`} className="border-b border-border/50 hover:bg-muted/50 transition-colors">
-                  <td className="px-3 py-1.5 text-muted-foreground w-8 tabular-nums">{ev.id}</td>
-                  <td className="px-2 py-1.5 text-muted-foreground w-20 tabular-nums">{fmtTime(ev.created_at)}</td>
-                  <td className="px-2 py-1.5 w-28">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${EVENT_BADGE[ev.event_type] ?? "bg-gray-100 text-gray-600"}`}>
-                      {ev.event_type}
-                    </span>
-                  </td>
-                  <td className="px-2 py-1.5 text-muted-foreground w-14 tabular-nums">
-                    {ev.content_id != null ? `#${ev.content_id}` : ""}
-                  </td>
-                  <td className={`px-2 py-1.5 ${EVENT_COLOR[ev.event_type] ?? ""}`}>
-                    <span className="inline-flex flex-wrap items-center gap-0.5">
-                      {ev.message ?? ""}
-                      <ProviderBadges detail={ev.detail} />
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {events.map((ev, idx) => {
+                const isBatch = ev.event_type.startsWith("batch_")
+                const title = isBatch
+                  ? (ev.message ?? ev.event_type)
+                  : (ev.content_title ?? (ev.content_id != null ? `#${ev.content_id}` : "—"))
+                const titleStyle = EVENT_TITLE_STYLE[ev.event_type] ?? "text-foreground"
+                const badgeStyle = EVENT_BADGE_STYLE[ev.event_type] ?? "bg-gray-100 text-gray-600"
+                const badgeLabel = EVENT_BADGE_LABEL[ev.event_type] ?? ev.event_type
+
+                return (
+                  <tr key={`${ev.id}-${idx}`} className="border-b border-border/50 hover:bg-muted/50 transition-colors">
+                    {/* 시간 */}
+                    <td className="px-3 py-1.5 text-muted-foreground w-20 tabular-nums whitespace-nowrap">
+                      {fmtTime(ev.created_at)}
+                    </td>
+                    {/* 이벤트 배지 */}
+                    <td className="px-2 py-1.5 w-16">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeStyle}`}>
+                        {badgeLabel}
+                      </span>
+                    </td>
+                    {/* 콘텐츠 제목 (또는 배치 메시지) */}
+                    <td className={`px-2 py-1.5 w-40 truncate max-w-[10rem] ${titleStyle}`}>
+                      {title}
+                    </td>
+                    {/* 세부 정보: 성공 시 confidence + providers, 실패 시 메시지, 배치는 생략 */}
+                    <td className="px-2 py-1.5">
+                      {!isBatch && (
+                        <span className="inline-flex flex-wrap items-center gap-1">
+                          {ev.event_type === "item_success" && (
+                            <SuccessRefer detail={ev.detail} />
+                          )}
+                          {ev.event_type === "item_failed" && ev.message && (
+                            <span className="text-red-500 dark:text-red-400">{ev.message}</span>
+                          )}
+                          <ProviderBadges detail={ev.detail} />
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
       </div>
 
       <p className="text-[10px] text-muted-foreground text-right">
-        {isPaused ? "⏸ 일시정지됨" : "↻ 2초 간격 갱신"}
+        {isPaused ? "⏸ 일시정지됨" : "↻ 1초 간격 갱신"}
       </p>
     </div>
   )

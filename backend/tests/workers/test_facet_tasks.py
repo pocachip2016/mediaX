@@ -174,12 +174,62 @@ def test_summarize_sources_broken_entries():
 
 # ── check_stale_facet_runs ────────────────────────────────────────────────────
 
-def test_watchdog_no_stale_no_redispatch(session):
-    """stale run 없으면 재디스패치 안 함."""
+def test_watchdog_disabled_no_redispatch(session):
+    """FACET_BATCH_ENABLED=False면 idle여도 재디스패치 안 함 (의도적 정지 존중)."""
     with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
-         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch:
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch, \
+         patch("workers.tasks.facet_tasks.settings") as mock_settings:
         mock_sl.return_value.__enter__ = lambda s: session
         mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_settings.FACET_CONTINUOUS = True
+        mock_settings.FACET_BATCH_ENABLED = False
+
+        from workers.tasks.facet_tasks import check_stale_facet_runs
+        result = check_stale_facet_runs()
+
+    assert result == {"closed": 0}
+    mock_dispatch.apply_async.assert_not_called()
+
+
+def test_watchdog_idle_redispatches(session):
+    """running run이 없으면(idle) stale 닫은 게 없어도 재디스패치한다."""
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch, \
+         patch("workers.tasks.facet_tasks.settings") as mock_settings:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_settings.FACET_CONTINUOUS = True
+        mock_settings.FACET_BATCH_ENABLED = True
+        mock_settings.FACET_CONTINUOUS_DELAY_S = 60
+
+        from workers.tasks.facet_tasks import check_stale_facet_runs
+        result = check_stale_facet_runs()
+
+    assert result == {"closed": 0}
+    mock_dispatch.apply_async.assert_called_once_with(
+        kwargs={"trigger": "auto"}, countdown=60
+    )
+
+
+def test_watchdog_running_no_redispatch(session):
+    """신선한(non-stale) running run이 있으면 재디스패치 안 함."""
+    run = FacetBatchRun(
+        status="running",
+        trigger="auto",
+        total_count=1,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(run)
+    session.commit()
+
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.dispatch_facet_batch") as mock_dispatch, \
+         patch("workers.tasks.facet_tasks.settings") as mock_settings:
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_settings.FACET_CONTINUOUS = True
+        mock_settings.FACET_BATCH_ENABLED = True
+        mock_settings.FACET_CONTINUOUS_DELAY_S = 60
 
         from workers.tasks.facet_tasks import check_stale_facet_runs
         result = check_stale_facet_runs()
@@ -217,3 +267,58 @@ def test_watchdog_stale_triggers_redispatch(session):
     mock_dispatch.apply_async.assert_called_once_with(
         kwargs={"trigger": "auto"}, countdown=60
     )
+
+
+# ── evaluate_tmdb_facet payload ───────────────────────────────────────────────
+
+def test_evaluate_payload_includes_backfill(session):
+    """evaluate_tmdb_facet이 MediSearch에 보내는 payload에 backfill=True가 포함된다."""
+    import httpx
+    from unittest.mock import patch, MagicMock
+    from api.programming.metadata.models.external import FacetBatchRun
+    from api.programming.metadata.models.tmdb_cache import TmdbMovieCache
+
+    # 테스트용 run + cache row 준비
+    run = FacetBatchRun(status="running", trigger="manual", total_count=1)
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    from datetime import date
+    cache = TmdbMovieCache(
+        id=99999,
+        title="테스트영화",
+        original_language="ko",
+        vote_count=100,
+        release_date=date(2020, 1, 1),
+    )
+    session.add(cache)
+    session.commit()
+
+    captured_payload = {}
+
+    def fake_post(url, json=None, **kwargs):
+        captured_payload.update(json or {})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "source_count": 2,
+            "facet": {"mood": ["경쾌"]},
+        }
+        return mock_resp
+
+    with patch("workers.tasks.facet_tasks.SessionLocal") as mock_sl, \
+         patch("workers.tasks.facet_tasks.httpx.Client") as mock_client:
+        # SessionLocal이 테스트 session 반환
+        mock_sl.return_value.__enter__ = lambda s: session
+        mock_sl.return_value.__exit__ = MagicMock(return_value=False)
+        # httpx.Client.post → fake_post
+        mock_client.return_value.__enter__ = lambda s: MagicMock(post=fake_post)
+        mock_client.return_value.__exit__ = MagicMock(return_value=False)
+
+        from workers.tasks.facet_tasks import evaluate_tmdb_facet
+        evaluate_tmdb_facet(tmdb_id=99999, run_id=run.id)
+
+    assert captured_payload.get("backfill") is True, \
+        f"payload에 backfill=True 없음: {captured_payload}"

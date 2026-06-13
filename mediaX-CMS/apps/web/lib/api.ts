@@ -2607,6 +2607,7 @@ export interface FacetEventOut {
   id: number
   run_id: number
   content_id: number | null
+  content_title: string | null
   event_type: string
   message: string | null
   detail: Record<string, unknown> | null
@@ -2681,11 +2682,12 @@ export const facetApi = {
       body: JSON.stringify({ log_enabled: logEnabled }),
     }),
 
-  getEvents: (params: { since?: number; limit?: number; run_id?: number }) => {
+  getEvents: (params: { since?: number; limit?: number; run_id?: number; tail?: boolean }) => {
     const q = new URLSearchParams()
     if (params.since !== undefined) q.set("since", String(params.since))
     if (params.limit !== undefined) q.set("limit", String(params.limit))
     if (params.run_id !== undefined) q.set("run_id", String(params.run_id))
+    if (params.tail) q.set("tail", "true")
     return request<FacetEventsPage>(`${FACETS}/events?${q.toString()}`)
   },
 }
