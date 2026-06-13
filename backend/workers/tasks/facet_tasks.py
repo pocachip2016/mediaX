@@ -45,7 +45,7 @@ def _decide_facet_outcome(data: dict) -> tuple[str, str | None, int, float | Non
     """
     skipped_reason = data.get("skipped_reason")
     source_count = data.get("source_count") or 0
-    confidence = data.get("confidence")
+    confidence = data.get("confidence") or (data.get("facet") or {}).get("confidence")
     if skipped_reason:
         return "skipped", skipped_reason, source_count, confidence
     if source_count == 0:
