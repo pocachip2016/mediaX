@@ -101,6 +101,19 @@ class TmdbDiscoverySource(DiscoverySource):
             else:
                 raise ValueError(f"지원하지 않는 mode: {mode!r}")
 
+    async def _fill_overview(self, client: TmdbClient, item: dict, kind: str) -> None:
+        """ko overview가 빈 값이면 en-US detail로 폴백 (in-place)."""
+        if item.get("overview"):
+            return
+        tmdb_id = item.get("id")
+        if not tmdb_id:
+            return
+        try:
+            detail = await client._get(f"/{kind}/{tmdb_id}", {"language": "en-US"})
+            item["overview"] = detail.get("overview") or ""
+        except Exception:
+            pass
+
     async def _trending(self, client: TmdbClient, window: str) -> list[DiscoveryResult]:
         results: list[DiscoveryResult] = []
         for kind in ("movie", "tv"):
@@ -112,6 +125,7 @@ class TmdbDiscoverySource(DiscoverySource):
                 for item in items:
                     if _is_adult(item):
                         continue
+                    await self._fill_overview(client, item, kind)
                     results.append(_movie_to_result(item) if kind == "movie" else _tv_to_result(item))
                 if page >= data.get("total_pages", 1):
                     break
@@ -127,6 +141,7 @@ class TmdbDiscoverySource(DiscoverySource):
             for item in items:
                 if _is_adult(item):
                     continue
+                await self._fill_overview(client, item, "movie")
                 results.append(_movie_to_result(item))
             if page >= data.get("total_pages", 1):
                 break
@@ -153,6 +168,7 @@ class TmdbDiscoverySource(DiscoverySource):
                 for item in items:
                     if _is_adult(item):
                         continue
+                    await self._fill_overview(client, item, kind)
                     results.append(convert(item))
                 if page >= data.get("total_pages", 1):
                     break

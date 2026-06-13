@@ -61,7 +61,7 @@ class TmdbClient:
         release_date_lte: str | None = None,
     ) -> dict:
         """GET /discover/movie — 필터·정렬·페이지네이션 지원."""
-        params: dict = {"sort_by": sort_by, "page": page, "language": "ko-KR,en-US"}
+        params: dict = {"sort_by": sort_by, "page": page, "language": "ko-KR"}
         if year:
             params["primary_release_date.gte"] = f"{year}-01-01"
             params["primary_release_date.lte"] = f"{year}-12-31"
@@ -80,7 +80,7 @@ class TmdbClient:
         first_air_date_lte: str | None = None,
     ) -> dict:
         """GET /discover/tv"""
-        params: dict = {"sort_by": sort_by, "page": page, "language": "ko-KR,en-US"}
+        params: dict = {"sort_by": sort_by, "page": page, "language": "ko-KR"}
         if first_air_year:
             params["first_air_date.gte"] = f"{first_air_year}-01-01"
             params["first_air_date.lte"] = f"{first_air_year}-12-31"
@@ -103,18 +103,18 @@ class TmdbClient:
             {"start_date": start_date, "end_date": end_date, "page": page},
         )
 
-    async def detail_movie(self, tmdb_id: int) -> dict:
+    async def detail_movie(self, tmdb_id: int, language: str = "ko-KR") -> dict:
         """GET /movie/{id}?append_to_response=credits"""
         return await self._get(
             f"/movie/{tmdb_id}",
-            {"language": "ko-KR", "append_to_response": "credits"},
+            {"language": language, "append_to_response": "credits"},
         )
 
-    async def detail_tv(self, tmdb_id: int) -> dict:
+    async def detail_tv(self, tmdb_id: int, language: str = "ko-KR") -> dict:
         """GET /tv/{id}?append_to_response=credits"""
         return await self._get(
             f"/tv/{tmdb_id}",
-            {"language": "ko-KR", "append_to_response": "credits"},
+            {"language": language, "append_to_response": "credits"},
         )
 
     async def images_movie(self, tmdb_id: int) -> dict:

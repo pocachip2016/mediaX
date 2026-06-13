@@ -443,6 +443,13 @@ async def _async_backfill_tmdb(db, api_key: str, batch: int) -> dict:
                     failed += 1
                     continue
                 detail = resp.json()
+                if not detail.get("overview"):
+                    en_resp = await client.get(
+                        detail_url,
+                        params={"api_key": api_key, "language": "en-US", "append_to_response": "credits"},
+                    )
+                    if en_resp.status_code == 200:
+                        detail["overview"] = en_resp.json().get("overview") or ""
 
                 if not content.runtime_minutes:
                     runtime = (
@@ -661,6 +668,12 @@ async def _tmdb_search_and_save(content, db, api_key: str) -> dict | None:
                 params={"api_key": api_key, "language": "ko-KR", "append_to_response": "credits"},
             )
             detail = detail_resp.json()
+            if not detail.get("overview"):
+                en_resp = await client.get(
+                    detail_url,
+                    params={"api_key": api_key, "language": "en-US", "append_to_response": "credits"},
+                )
+                detail["overview"] = en_resp.json().get("overview") or ""
 
             # ExternalMetaSource 저장
             existing_src = (
