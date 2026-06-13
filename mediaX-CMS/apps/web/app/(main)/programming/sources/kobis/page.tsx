@@ -8,6 +8,7 @@ import {
   type KobisCacheItem,
   type TmdbSyncLogItem,
 } from "@/lib/api"
+import { SourceBarChart } from "@/components/SourceBarChart"
 
 // ── Mock 데이터 ───────────────────────────────────────────
 
@@ -193,6 +194,8 @@ export default function KobisPage() {
         <StatCard icon={<Clock       className="w-5 h-5" />} label="마지막 수집"    value={formatDate(stats.last_run_at)} sub={stats.last_run_status ? (SYNC_STATUS_LABEL[stats.last_run_status] ?? stats.last_run_status) : "-"} />
         <StatCard icon={<CheckCircle className="w-5 h-5" />} label="최근 7일 수집" value={stats.last_7d_daily.reduce((a, d) => a + d.count, 0).toLocaleString()} sub="건" />
       </div>
+
+      <SourceBarChart data={stats.last_7d_daily} />
 
       {/* 동기화 로그 */}
       <div>

@@ -2567,6 +2567,7 @@ export const curationApi = {
 const FACETS = "/api/programming/metadata/facets"
 
 export interface FacetCoverageOut {
+  cache_total: number
   movies_total: number
   with_final_facet: number
   stale: number

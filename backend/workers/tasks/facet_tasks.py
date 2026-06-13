@@ -74,37 +74,30 @@ def _select_targets(
 ) -> list[int]:
     """평가 대상 tmdb_id 목록 반환.
 
-    모집단: tmdb_movie_cache (release_date <= 오늘) 중
-      - 한국영화(original_language='ko'): vote_count 필터 면제 (나무위키 적중률 높음)
-      - 그 외: vote_count >= FACET_MIN_VOTE_COUNT
-    정렬: 한국영화 우선 → release_date DESC (한국작부터 채우고 점진 해외 확대).
+    모집단(정책 E): tmdb_movie_cache 개봉작(release_date <= 오늘) ∧ 시놉시스(overview) 보유.
+      - 국내/해외 무관. vote/popularity 게이트 폐지 — released_with_overview_filter SSOT.
+    정렬: 한국영화 우선 → popularity DESC → 최신순 (슬로우 드레인에서 의미작 우선 소진).
     제외:
       - status=skipped (force=True 시에만 포함)
       - status=failed + attempt_count >= FACET_MAX_ATTEMPTS
       - status=failed + last_attempted_at >= now - FACET_RETRY_BACKOFF_DAYS (백오프 중)
     """
-    from sqlalchemy import func, and_, or_, not_, case
+    from sqlalchemy import and_, or_, not_
     from api.programming.metadata.models.tmdb_cache import TmdbMovieCache, TmdbMovieFacet
+    from api.programming.metadata.facet_population import (
+        released_with_overview_filter,
+        facet_order_by,
+    )
 
     today = date.today()
     backoff_cutoff = datetime.now(timezone.utc) - timedelta(days=settings.FACET_RETRY_BACKOFF_DAYS)
     freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=staleness_days)
 
-    # 모집단: 한국영화는 vote 무관, 해외영화는 vote>=N
-    population_filter = or_(
-        TmdbMovieCache.original_language == "ko",
-        TmdbMovieCache.vote_count >= settings.FACET_MIN_VOTE_COUNT,
-    )
-
-    # tmdb_movie_cache LEFT JOIN tmdb_movie_facets
+    # 모집단(정책 E): 개봉작 ∧ 시놉시스 보유 — tmdb_movie_cache LEFT JOIN tmdb_movie_facets
     q = (
         db.query(TmdbMovieCache.id)
         .outerjoin(TmdbMovieFacet, TmdbMovieFacet.tmdb_id == TmdbMovieCache.id)
-        .filter(
-            TmdbMovieCache.release_date.isnot(None),
-            TmdbMovieCache.release_date <= today,
-            population_filter,
-        )
+        .filter(released_with_overview_filter(today))
     )
 
     if tmdb_ids:
@@ -142,9 +135,8 @@ def _select_targets(
             or_(no_facet, not_(failed_backoff)),      # 백오프 중 failed 제외
         )
 
-    # 한국영화 우선 → 최신순
-    ko_priority = case((TmdbMovieCache.original_language == "ko", 0), else_=1)
-    q = q.order_by(ko_priority, TmdbMovieCache.release_date.desc(), TmdbMovieCache.id.desc())
+    # 슬로우 드레인 — 의미작 우선 정렬(ko → popularity → 최신)
+    q = q.order_by(*facet_order_by())
     rows = q.limit(limit).all()
     return [r[0] for r in rows]
 

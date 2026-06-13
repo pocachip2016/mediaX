@@ -55,7 +55,8 @@ class FacetBatchRunOut(BaseModel):
 
 
 class CoverageOut(BaseModel):
-    movies_total: int   # tmdb_movie_cache 모집단 (개봉작 + vote_count 필터)
+    cache_total: int = 0   # tmdb_movie_cache 전체 행 (소스 페이지 기준)
+    movies_total: int   # 평가 모집단 (개봉작 ∧ 시놉시스 보유)
     with_final_facet: int  # status=success 수
     stale: int          # success 중 staleness 초과
     pending: int        # movies_total - success - skipped
@@ -191,26 +192,22 @@ def get_batch_run(run_id: int, db: Session = Depends(get_db)):
 
 @router.get("/coverage", response_model=CoverageOut)
 def get_coverage(db: Session = Depends(get_db)):
-    """TMDB 캐시 모집단(개봉작 + vote_count 필터) 기준 facet 커버리지 통계."""
+    """facet 커버리지 통계 — 전체 캐시 + 평가 모집단(개봉작 ∧ 시놉시스 보유) 양쪽."""
     from datetime import date
-    from sqlalchemy import func, or_
+    from sqlalchemy import func
     from api.programming.metadata.models.tmdb_cache import TmdbMovieCache, TmdbMovieFacet
+    from api.programming.metadata.facet_population import released_with_overview_filter
 
     today = date.today()
     freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=settings.FACET_STALENESS_DAYS)
 
-    # 모집단: 개봉작 중 한국영화(vote 무관) OR 해외영화(vote>=N)
-    population_filter = or_(
-        TmdbMovieCache.original_language == "ko",
-        TmdbMovieCache.vote_count >= settings.FACET_MIN_VOTE_COUNT,
-    )
+    # 전체 캐시 행(소스 페이지와 동일 기준)
+    cache_total = db.query(func.count(TmdbMovieCache.id)).scalar() or 0
+
+    # 평가 모집단(정책 E): 개봉작 ∧ 시놉시스 보유 — _select_targets와 동일 SSOT
     movies_total = (
         db.query(func.count(TmdbMovieCache.id))
-        .filter(
-            TmdbMovieCache.release_date.isnot(None),
-            TmdbMovieCache.release_date <= today,
-            population_filter,
-        )
+        .filter(released_with_overview_filter(today))
         .scalar()
     ) or 0
 
@@ -236,6 +233,7 @@ def get_coverage(db: Session = Depends(get_db)):
     pending = max(movies_total - success_total - skipped_total, 0)
 
     return CoverageOut(
+        cache_total=cache_total,
         movies_total=movies_total,
         with_final_facet=success_total,
         stale=stale,
